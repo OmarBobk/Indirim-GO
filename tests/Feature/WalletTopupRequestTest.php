@@ -1,9 +1,9 @@
 <?php
 
 use App\Actions\Topups\CreateTopupRequestAction;
-use App\Enums\TopupMethod;
 use App\Enums\TopupRequestStatus;
 use App\Events\TopupRequestsChanged;
+use App\Models\PaymentMethod;
 use App\Models\TopupProof;
 use App\Models\TopupRequest;
 use App\Models\User;
@@ -22,6 +22,16 @@ beforeEach(function (): void {
     Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
 });
 
+function shamCashPaymentMethodId(): int
+{
+    return (int) PaymentMethod::query()->where('name', 'Sham Cash')->value('id');
+}
+
+function eftPaymentMethodId(): int
+{
+    return (int) PaymentMethod::query()->where('name', 'EFT Transfer')->value('id');
+}
+
 test('user can create a topup request with proof from wallet page', function () {
     Storage::fake('local');
     $user = User::factory()->create();
@@ -29,7 +39,7 @@ test('user can create a topup request with proof from wallet page', function () 
     Livewire::actingAs($user)
         ->test('pages::frontend.wallet')
         ->set('topupAmount', '25')
-        ->set('topupMethod', TopupMethod::ShamCash->value)
+        ->set('paymentMethodId', shamCashPaymentMethodId())
         ->set('attachProof', true)
         ->set('proofFile', UploadedFile::fake()->image('proof.jpg'))
         ->call('submitTopup')
@@ -60,7 +70,7 @@ test('user can create a topup request without proof when attach proof is off', f
     Livewire::actingAs($user)
         ->test('pages::frontend.wallet')
         ->set('topupAmount', '25')
-        ->set('topupMethod', TopupMethod::ShamCash->value)
+        ->set('paymentMethodId', shamCashPaymentMethodId())
         ->set('attachProof', false)
         ->call('submitTopup')
         ->assertSet('noticeMessage', __('messages.topup_request_created'))
@@ -80,7 +90,7 @@ test('creating a topup request broadcasts change event', function () {
     Livewire::actingAs($user)
         ->test('pages::frontend.wallet')
         ->set('topupAmount', '40')
-        ->set('topupMethod', TopupMethod::ShamCash->value)
+        ->set('paymentMethodId', shamCashPaymentMethodId())
         ->set('attachProof', true)
         ->set('proofFile', UploadedFile::fake()->image('proof.jpg'))
         ->call('submitTopup');
@@ -102,7 +112,7 @@ test('user cannot create a second pending topup request', function () {
     app(CreateTopupRequestAction::class)->handle([
         'user_id' => $user->id,
         'wallet_id' => $wallet->id,
-        'method' => TopupMethod::ShamCash,
+        'payment_method_id' => shamCashPaymentMethodId(),
         'amount' => 20,
         'currency' => $wallet->currency,
         'status' => TopupRequestStatus::Pending,
@@ -111,7 +121,7 @@ test('user cannot create a second pending topup request', function () {
     Livewire::actingAs($user)
         ->test('pages::frontend.wallet')
         ->set('topupAmount', '30')
-        ->set('topupMethod', TopupMethod::ShamCash->value)
+        ->set('paymentMethodId', shamCashPaymentMethodId())
         ->set('attachProof', true)
         ->set('proofFile', UploadedFile::fake()->image('proof.jpg'))
         ->call('submitTopup')
@@ -126,7 +136,7 @@ test('submit topup without proof fails when attach proof is on', function () {
     Livewire::actingAs($user)
         ->test('pages::frontend.wallet')
         ->set('topupAmount', '25')
-        ->set('topupMethod', TopupMethod::ShamCash->value)
+        ->set('paymentMethodId', shamCashPaymentMethodId())
         ->set('attachProof', true)
         ->call('submitTopup')
         ->assertHasErrors('proofFile');
@@ -140,7 +150,7 @@ test('submit topup with invalid file type fails validation when attach proof is 
     Livewire::actingAs($user)
         ->test('pages::frontend.wallet')
         ->set('topupAmount', '25')
-        ->set('topupMethod', TopupMethod::ShamCash->value)
+        ->set('paymentMethodId', shamCashPaymentMethodId())
         ->set('attachProof', true)
         ->set('proofFile', UploadedFile::fake()->create('proof.txt', 100, 'text/plain'))
         ->call('submitTopup')
@@ -157,7 +167,7 @@ test('submit topup with file exceeding max size fails validation when attach pro
     Livewire::actingAs($user)
         ->test('pages::frontend.wallet')
         ->set('topupAmount', '25')
-        ->set('topupMethod', TopupMethod::ShamCash->value)
+        ->set('paymentMethodId', shamCashPaymentMethodId())
         ->set('attachProof', true)
         ->set('proofFile', $oversizedFile)
         ->call('submitTopup')
@@ -173,7 +183,7 @@ test('valid proof creates request and single proof record', function () {
     Livewire::actingAs($user)
         ->test('pages::frontend.wallet')
         ->set('topupAmount', '10')
-        ->set('topupMethod', TopupMethod::EftTransfer->value)
+        ->set('paymentMethodId', eftPaymentMethodId())
         ->set('attachProof', true)
         ->set('proofFile', UploadedFile::fake()->create('proof.pdf', 100, 'application/pdf'))
         ->call('submitTopup')
@@ -200,7 +210,7 @@ test('try-preferred customer topup input is converted to usd wallet amount', fun
     Livewire::actingAs($user)
         ->test('pages::frontend.wallet')
         ->set('topupAmount', '1000')
-        ->set('topupMethod', TopupMethod::ShamCash->value)
+        ->set('paymentMethodId', shamCashPaymentMethodId())
         ->set('attachProof', false)
         ->call('submitTopup')
         ->assertSet('noticeMessage', __('messages.topup_request_created'));
@@ -225,7 +235,7 @@ test('try-preferred topup conversion rounds up to avoid under-crediting', functi
     Livewire::actingAs($user)
         ->test('pages::frontend.wallet')
         ->set('topupAmount', '10000')
-        ->set('topupMethod', TopupMethod::ShamCash->value)
+        ->set('paymentMethodId', shamCashPaymentMethodId())
         ->set('attachProof', false)
         ->call('submitTopup')
         ->assertSet('noticeMessage', __('messages.topup_request_created'));

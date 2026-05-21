@@ -18,7 +18,7 @@ class CreateTopupRequestAction
     /**
      * Create a top-up request and its pending wallet transaction atomically.
      *
-     * @param  array<string, mixed>  $attributes  TopupRequest attributes (user_id, wallet_id?, method, amount, currency, status?, note?)
+     * @param  array<string, mixed>  $attributes  TopupRequest attributes (user_id, wallet_id?, payment_method_id, amount, currency, status?, note?)
      */
     public function handle(array $attributes): TopupRequest
     {
@@ -36,8 +36,10 @@ class CreateTopupRequestAction
             }
 
             $topupRequest = TopupRequest::withoutEvents(function () use ($attributes): TopupRequest {
-                return TopupRequest::create($attributes);
+                return TopupRequest::query()->create($attributes);
             });
+
+            $topupRequest->loadMissing('paymentMethod');
 
             WalletTransaction::create([
                 'wallet_id' => $topupRequest->wallet_id,
@@ -48,7 +50,8 @@ class CreateTopupRequestAction
                 'reference_type' => TopupRequest::class,
                 'reference_id' => $topupRequest->id,
                 'meta' => array_filter([
-                    'method' => $topupRequest->method->value ?? null,
+                    'payment_method_id' => $topupRequest->payment_method_id,
+                    'payment_method' => $topupRequest->paymentMethod?->name,
                     'note' => $topupRequest->note ?? null,
                 ], fn ($v) => $v !== null && $v !== ''),
             ]);

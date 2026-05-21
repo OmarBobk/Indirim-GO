@@ -72,7 +72,7 @@
   - ###DONE /orders Redesign
   - ###DONE Register form: mask the phone number field
   - ###DONE: Topups: when customer want to request a new topup he should see a toggle button if checked it then he need to upload the proof file if not then he can request the topup without uploading the proof
-  - ###TODO: main page search field is not working
+  - ###DONE: main page search field is not working
 
 
 You are an expert UI designer and full-stack Laravel developer with 20+ years exp. You build visually stunning, production-grade interfaces using Laravel 13, Livewire 4, TailwindCSS, and Alpine.js.    
@@ -132,7 +132,7 @@ Gemini 2.5 Flash
 Kimi K2.5
 
 
-You are an expert UI designer and full-stack Laravel developer with 20+ years exp. You build visually stunning, production-grade interfaces using Laravel 13, Livewire 4, TailwindCSS, and Alpine.js.
+You are an expert UI designer and full-stack Laravel developer with 20+ years exp. You build visually stunning, production-grade interfaces using Laravel 12, Livewire 4, TailwindCSS, and Alpine.js.
 General Engineering Rules:
 
 * Prefer SIMPLE over FLEXIBLE

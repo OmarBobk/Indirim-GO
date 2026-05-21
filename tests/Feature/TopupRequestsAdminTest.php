@@ -1,8 +1,8 @@
 <?php
 
 use App\Actions\Topups\CreateTopupRequestAction;
-use App\Enums\TopupMethod;
 use App\Enums\TopupRequestStatus;
+use App\Models\PaymentMethod;
 use App\Models\TopupRequest;
 use App\Models\User;
 use App\Models\Wallet;
@@ -27,7 +27,7 @@ test('admin can approve topup and credit wallet', function () {
 
     $topupRequest = app(CreateTopupRequestAction::class)->handle([
         'user_id' => $customer->id,
-        'method' => TopupMethod::ShamCash,
+        'payment_method_id' => PaymentMethod::query()->where('name', 'Sham Cash')->value('id'),
         'amount' => 50,
         'currency' => 'USD',
         'status' => TopupRequestStatus::Pending,
@@ -63,7 +63,7 @@ test('pending topup without proof still shows approve action', function () {
 
     app(CreateTopupRequestAction::class)->handle([
         'user_id' => $customer->id,
-        'method' => TopupMethod::ShamCash,
+        'payment_method_id' => PaymentMethod::query()->where('name', 'Sham Cash')->value('id'),
         'amount' => 25,
         'currency' => 'USD',
         'status' => TopupRequestStatus::Pending,

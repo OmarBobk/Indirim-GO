@@ -3,8 +3,8 @@
 use App\Actions\Loyalty\EvaluateLoyaltyForUserAction;
 use App\Actions\Topups\CreateTopupRequestAction;
 use App\Enums\OrderStatus;
-use App\Enums\TopupMethod;
 use App\Enums\TopupRequestStatus;
+use App\Models\PaymentMethod;
 use App\Enums\WalletTransactionDirection;
 use App\Enums\WalletTransactionType;
 use App\Events\TopupRequestsChanged;
@@ -39,7 +39,8 @@ new #[Layout('layouts::frontend')] class extends Component
     use WithFileUploads;
 
     public ?string $topupAmount = null;
-    public string $topupMethod = TopupMethod::ShamCash->value;
+
+    public ?int $paymentMethodId = null;
 
     /** @var \Illuminate\Http\UploadedFile|null */
     public $proofFile = null;
@@ -56,6 +57,11 @@ new #[Layout('layouts::frontend')] class extends Component
         if ($user?->loyaltyRole() !== null) {
             $evaluateLoyalty->handle($user);
         }
+
+        $this->paymentMethodId = PaymentMethod::query()
+            ->active()
+            ->ordered()
+            ->value('id');
     }
 
     /**
@@ -65,7 +71,11 @@ new #[Layout('layouts::frontend')] class extends Component
     {
         $rules = [
             'topupAmount' => ['required', 'numeric', 'min:0.01'],
-            'topupMethod' => ['required', Rule::in(TopupMethod::values())],
+            'paymentMethodId' => [
+                'required',
+                'integer',
+                Rule::exists('payment_methods', 'id')->where(fn ($query) => $query->where('is_active', true)),
+            ],
             'attachProof' => ['boolean'],
         ];
 
@@ -111,11 +121,13 @@ new #[Layout('layouts::frontend')] class extends Component
             $topupRequest = app(CreateTopupRequestAction::class)->handle([
                 'user_id' => $user->id,
                 'wallet_id' => $wallet->id,
-                'method' => TopupMethod::from($validated['topupMethod']),
+                'payment_method_id' => (int) $validated['paymentMethodId'],
                 'amount' => $requestAmount,
                 'currency' => $wallet->currency,
                 'status' => TopupRequestStatus::Pending,
             ]);
+
+            $topupRequest->load('paymentMethod');
 
             if ($this->attachProof && $this->proofFile !== null) {
                 $ext = $this->proofFile->getClientOriginalExtension() ?: $this->proofFile->guessExtension() ?? 'bin';
@@ -152,7 +164,8 @@ new #[Layout('layouts::frontend')] class extends Component
                     'user_id' => $user->id,
                     'amount' => $topupRequest->amount,
                     'currency' => $wallet->currency,
-                    'method' => $topupRequest->method->value,
+                    'payment_method_id' => $topupRequest->payment_method_id,
+                    'payment_method' => $topupRequest->paymentMethod?->name,
                 ])
                 ->log('Topup requested');
 
@@ -171,7 +184,10 @@ new #[Layout('layouts::frontend')] class extends Component
         });
 
         $this->reset('topupAmount', 'proofFile', 'attachProof');
-        $this->topupMethod = TopupMethod::ShamCash->value;
+        $this->paymentMethodId = PaymentMethod::query()
+            ->active()
+            ->ordered()
+            ->value('id');
 
         $this->noticeVariant = 'success';
         $this->noticeMessage = __('messages.topup_request_created');
@@ -345,14 +361,12 @@ new #[Layout('layouts::frontend')] class extends Component
     }
 
     /**
-     * @return array<string, string>
+     * @return \Illuminate\Support\Collection<int, PaymentMethod>
      */
-    public function getTopupMethodOptionsProperty(): array
+    #[Computed]
+    public function activePaymentMethods(): Collection
     {
-        return [
-            TopupMethod::ShamCash->value => __('messages.topup_method_sham_cash'),
-            TopupMethod::EftTransfer->value => __('messages.topup_method_eft_transfer'),
-        ];
+        return PaymentMethod::query()->active()->ordered()->get();
     }
 
     protected function orderStatusLabel(OrderStatus $status): string
@@ -424,15 +438,15 @@ new #[Layout('layouts::frontend')] class extends Component
         }
 
         if ($transaction->reference_type === TopupRequest::class) {
-            $methodValue = data_get($transaction->meta, 'method');
-            $method = $methodValue ? TopupMethod::tryFrom($methodValue) : null;
+            $methodName = data_get($transaction->meta, 'payment_method');
 
-            if ($method === null && $transaction->reference instanceof TopupRequest) {
-                $method = $transaction->reference->method;
+            if ($methodName === null && $transaction->reference instanceof TopupRequest) {
+                $transaction->reference->loadMissing('paymentMethod');
+                $methodName = $transaction->reference->paymentMethod?->name;
             }
 
-            $label = $method
-                ? __('messages.topup_method_'.$method->value)
+            $label = filled($methodName)
+                ? $methodName
                 : __('messages.topup_request');
 
             return [
@@ -541,6 +555,10 @@ new #[Layout('layouts::frontend')] class extends Component
                         </flux:callout>
                     </div>
                 @endif
+                <x-wallet.payment-methods
+                    class="mt-4"
+                    :methods="$this->activePaymentMethods"
+                />
                 <form class="mt-4 space-y-4" wire:submit.prevent="submitTopup">
                     <div class="grid gap-2">
                         <flux:input
@@ -550,18 +568,6 @@ new #[Layout('layouts::frontend')] class extends Component
                             wire:model.defer="topupAmount"
                             placeholder="0.00"
                         />
-                    </div>
-                    <div class="grid gap-2">
-                        <flux:select
-                            name="topupMethodMobile"
-                            class="focus:!border-(--color-accent) focus:!border-1 focus:!ring-0 focus:!outline-none focus:!ring-offset-0"
-                            label="{{ __('messages.method') }}"
-                            wire:model.defer="topupMethod"
-                        >
-                            @foreach ($this->topupMethodOptions as $value => $label)
-                                <flux:select.option value="{{ $value }}">{{ $label }}</flux:select.option>
-                            @endforeach
-                        </flux:select>
                     </div>
                     <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-zinc-100 bg-zinc-50 px-3 py-3 dark:border-zinc-800 dark:bg-zinc-800/60">
                         <div class="min-w-0 flex-1 space-y-1 pe-2">
@@ -807,6 +813,11 @@ new #[Layout('layouts::frontend')] class extends Component
                     </div>
                 @endif
 
+                <x-wallet.payment-methods
+                    class="mt-4"
+                    :methods="$this->activePaymentMethods"
+                />
+
                 <form class="mt-4 space-y-4" wire:submit.prevent="submitTopup">
                     <div class="grid gap-2">
                         <flux:input
@@ -816,22 +827,6 @@ new #[Layout('layouts::frontend')] class extends Component
                             wire:model.defer="topupAmount"
                             placeholder="0.00"
                         />
-                    </div>
-
-                    <div class="grid gap-2">
-                        <flux:select
-                            name="topupMethod"
-                            class="focus:!border-(--color-accent) focus:!border-1 focus:!ring-0 focus:!outline-none focus:!ring-offset-0"
-                            label="{{ __('messages.method') }}"
-                            wire:model.defer="topupMethod"
-                        >
-                            @foreach ($this->topupMethodOptions as $value => $label)
-                                <flux:select.option value="{{ $value }}">{{ $label }}</flux:select.option>
-                            @endforeach
-                        </flux:select>
-                        @error('topupMethod')
-                            <flux:text class="text-xs text-red-600">{{ $message }}</flux:text>
-                        @enderror
                     </div>
 
                     <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-zinc-100 bg-zinc-50 px-3 py-3 dark:border-zinc-800 dark:bg-zinc-800/60">

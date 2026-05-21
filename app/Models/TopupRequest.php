@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Models;
 
-use App\Enums\TopupMethod;
 use App\Enums\TopupRequestStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -18,14 +17,12 @@ class TopupRequest extends Model
     use HasFactory;
 
     /**
-     * The attributes that are mass assignable.
-     *
      * @var list<string>
      */
     protected $fillable = [
         'user_id',
         'wallet_id',
-        'method',
+        'payment_method_id',
         'amount',
         'currency',
         'status',
@@ -35,8 +32,6 @@ class TopupRequest extends Model
     ];
 
     /**
-     * Get the attributes that should be cast.
-     *
      * @return array<string, string>
      */
     protected function casts(): array
@@ -44,7 +39,7 @@ class TopupRequest extends Model
         return [
             'user_id' => 'integer',
             'wallet_id' => 'integer',
-            'method' => TopupMethod::class,
+            'payment_method_id' => 'integer',
             'amount' => 'decimal:2',
             'currency' => 'string',
             'status' => TopupRequestStatus::class,
@@ -78,6 +73,11 @@ class TopupRequest extends Model
     public function wallet(): BelongsTo
     {
         return $this->belongsTo(Wallet::class);
+    }
+
+    public function paymentMethod(): BelongsTo
+    {
+        return $this->belongsTo(PaymentMethod::class);
     }
 
     public function proofs(): HasMany

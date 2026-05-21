@@ -3,7 +3,6 @@
 use App\Enums\FulfillmentStatus;
 use App\Enums\OrderItemStatus;
 use App\Enums\OrderStatus;
-use App\Enums\TopupMethod;
 use App\Enums\TopupRequestStatus;
 use App\Livewire\Sidebar\FulfillmentIndicator;
 use App\Livewire\Sidebar\NotificationIndicator;
@@ -12,6 +11,7 @@ use App\Models\Fulfillment;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Package;
+use App\Models\PaymentMethod;
 use App\Models\Product;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -110,7 +110,7 @@ test('topup indicator updates when pending topups exist', function () {
     app(\App\Actions\Topups\CreateTopupRequestAction::class)->handle([
         'user_id' => $requestOwner->id,
         'wallet_id' => null,
-        'method' => TopupMethod::ShamCash,
+        'payment_method_id' => PaymentMethod::query()->where('name', 'Sham Cash')->value('id'),
         'amount' => 40,
         'currency' => 'USD',
         'status' => TopupRequestStatus::Pending,
