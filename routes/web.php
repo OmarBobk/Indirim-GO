@@ -2,6 +2,7 @@
 
 use App\Exports\UsersExport;
 use App\Http\Controllers\Api\PushTokenController;
+use App\Http\Controllers\Api\SearchPackagesController;
 use App\Http\Controllers\BugAttachmentController;
 use App\Http\Controllers\BuyNowCustomAmountQuoteController;
 use App\Http\Controllers\TopupProofController;
@@ -35,6 +36,9 @@ Route::get('language/{locale}', function (string $locale) {
 
 // Route::view('/', 'main')
 //    ->name('home');
+
+Route::get('/api/storefront/packages/search', SearchPackagesController::class)
+    ->name('api.storefront.packages.search');
 
 Route::livewire('/', 'pages::frontend.main')->name('home');
 Route::livewire('/categories/{category:slug}', 'pages::frontend.category-show')->name('categories.show');

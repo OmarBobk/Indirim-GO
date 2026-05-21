@@ -89,6 +89,4 @@ new #[Layout('layouts::frontend')] class extends Component {
 {{--    </section>--}}
     <!-- End Section of Products -->
 
-    <livewire:main.buy-now-modal />
-
 </div>
