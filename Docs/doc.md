@@ -1,7 +1,3 @@
-#1
-- lang is ar user logout -> automatically lang is en 
-
-
 #BUG
 - ###DONE if a non-admin user hit /dashboard he will see forbidden but he should be redirected to 404 error page
 - ###DONE If user click on the logo on the main page it should redirect him to home page
@@ -50,22 +46,26 @@
   - ###DONE: when user trying to log in and by accident click the login button twice he is redirected into "Page Expired | 419"
   - ###DONE: Backend Notification manager adds "Mark all as read" button.
   - ###DONE: redesign the login, register, reset password pages.
+  - ###DONE: pwa: if a user tries to install the app from chrome → three dots → open karman  instead of open indirimGo
   - ###TODO: Contactus: the messages that come from this form where we should handle them.
   - ###TODO: ###MAJOR### Record website views and how many users are logged in and who are they
   - ###TODO: ###MAJOR### Users hierarchy.
   - ###TODO: Dashboard Page:
     - #TODO: who is online by role
-  - ###TODO: pwa: if a user tries to install the app from chrome → three dots → open karman  instead of open indirimGo
   - ###TODO: Referral Feature:
     - ###DONE: Salesperson should be able to create new user under him, see users under him and update there information (phone, username, password, email, name)
     - ###DONE: Admin should be able to set the commission percent for every salesperson
     - ###DONE: Salesperson should see only the dashboard there is no need to access the fulfillments
     - ###DONE: if admin hit the salesperson dashboard he should be able to select some salesperson to see his states
+    - ###DONE: add the default commission rate to the website settings
+    - ###DONE: salesperson dashboard light mode isn't matched
   - ###TODO: admin/users/{user}: customer price needs to be fixed
   - ###TODO: Add new products
   - ###TODO: Set the testing environment
-  - ###TDOD: when new user is created automatically the customer role should be assigned to him.
-  - ###TODO: if admin approve an topup request by accident what he should do ?
+  - ###DONE: when new user is created automatically the customer role should be assigned to him.
+  - ###DONE: if admin approve an topup request by accident what he should do ?
+  - ###DONE: orders/{order}: "Delivered payload" should not be hashed like this "••••••••••••••••klds"
+  - ###TODO: Add the payments ways like iban, sham cash wallet barcode, usdt wallt ...etc
 - Frontend:
   - ###DONE wallet transaction in /wallets should be more described
   - ###DONE Wallet /wallet Request topups form borders remove the ring
@@ -74,7 +74,8 @@
   - ###DONE: Topups: when customer want to request a new topup he should see a toggle button if checked it then he need to upload the proof file if not then he can request the topup without uploading the proof
   - ###TODO: main page search field is not working
 
-    
+
+You are an expert UI designer and full-stack Laravel developer with 20+ years exp. You build visually stunning, production-grade interfaces using Laravel 13, Livewire 4, TailwindCSS, and Alpine.js.    
 
 You are an expert UI designer and full-stack Laravel developer with 20+ years exp. You build visually stunning, production-grade interfaces using Laravel 12, Livewire 4, TailwindCSS, and Alpine.js.
 Lets build a new page in the backend Content Management section
@@ -85,6 +86,10 @@ now the idea is like this:
 - then he will see the fields on two side to side sections.
 - the left section will contain fields that filled with the product name, id, entry_price. (these fields disabled)
 - on the right section user can enter the new entry price..
+
+
+Admin Profit: 19.25 USD
+Salesperson Profit: 5.69 USD
 
 
 
@@ -127,7 +132,7 @@ Gemini 2.5 Flash
 Kimi K2.5
 
 
-
+You are an expert UI designer and full-stack Laravel developer with 20+ years exp. You build visually stunning, production-grade interfaces using Laravel 13, Livewire 4, TailwindCSS, and Alpine.js.
 General Engineering Rules:
 
 * Prefer SIMPLE over FLEXIBLE
@@ -222,4 +227,3 @@ You are an expert UI designer and full-stack Laravel developer. You build visual
 3. Compose into section components (Livewire)
 4. Assemble on the page layout
 5. Add interactivity last (Alpine.js)
-
