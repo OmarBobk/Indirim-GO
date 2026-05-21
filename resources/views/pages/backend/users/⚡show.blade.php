@@ -3,12 +3,15 @@
 use App\Models\LoyaltyTierConfig;
 use App\Models\User;
 use App\Services\LoyaltySpendService;
+use App\Support\UserRegistrationSourceResolver;
 use Illuminate\View\View;
 use Livewire\Component;
 
 new class extends Component
 {
     public User $user;
+
+    public string $registrationSummary = '';
 
     public ?string $lockUntilDate = null;
 
@@ -17,7 +20,8 @@ new class extends Component
     public function mount(User $user): void
     {
         $this->authorize('view', $user);
-        $this->user = $user->load('loyaltyOverrideBy');
+        $this->user = $user->load(['loyaltyOverrideBy', 'referredBy:id,username,name']);
+        $this->registrationSummary = UserRegistrationSourceResolver::resolveForUser($this->user)->describe($this->user);
         if ($user->loyalty_locked_until !== null) {
             $this->lockUntilDate = $user->loyalty_locked_until->format('Y-m-d');
             $this->lockUntilTime = $user->loyalty_locked_until->format('H:i');
@@ -156,12 +160,49 @@ new class extends Component
                             <dt class="text-xs font-medium uppercase tracking-wide text-cyan-700 dark:text-cyan-300">{{ __('messages.username') }}</dt>
                             <dd class="mt-1 font-medium text-zinc-900 dark:text-zinc-100">{{ $user->username ?? '—' }}</dd>
                         </div>
+                        <div class="sm:col-span-2 rounded-xl border border-fuchsia-200/70 border-l-4 border-l-fuchsia-500 bg-gradient-to-r from-fuchsia-50/80 to-white/70 px-4 py-3 shadow-sm dark:border-fuchsia-500/30 dark:from-fuchsia-950/35 dark:to-zinc-900/60 dark:shadow-fuchsia-900/20">
+                            <dt class="text-xs font-medium uppercase tracking-wide text-fuchsia-700 dark:text-fuchsia-300">{{ __('messages.user_registration') }}</dt>
+                            <dd class="mt-1 text-sm font-medium leading-snug text-zinc-900 dark:text-zinc-100">{{ $this->registrationSummary }}</dd>
+                        </div>
                     </dl>
                 </div>
             </div>
-            <flux:button variant="ghost" icon="arrow-left" icon-position="left" :href="route('admin.users.index')" wire:navigate class="shrink-0 self-start border border-violet-200/60 bg-white/50 hover:bg-white/90 dark:border-violet-500/25 dark:bg-zinc-900/50 dark:hover:bg-zinc-800">
-                {{ __('messages.back') }}
-            </flux:button>
+            <div class="flex shrink-0 flex-col gap-2 self-start sm:flex-row sm:flex-wrap sm:items-center">
+                @can('update', $user)
+                    <flux:button
+                        type="button"
+                        variant="primary"
+                        size="sm"
+                        icon="pencil"
+                        class="!bg-accent !text-accent-foreground hover:!bg-accent-hover"
+                        wire:click="$dispatch('open-edit-modal', { userId: {{ $user->id }} })"
+                    >
+                        {{ __('messages.edit') }}
+                    </flux:button>
+                @endcan
+                @can('resetPassword', $user)
+                    <flux:button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        icon="key"
+                        class="border border-violet-200/60 bg-white/50 hover:bg-white/90 dark:border-violet-500/25 dark:bg-zinc-900/50 dark:hover:bg-zinc-800"
+                        wire:click="$dispatch('open-reset-password-modal', { userId: {{ $user->id }} })"
+                    >
+                        {{ __('messages.reset_password') }}
+                    </flux:button>
+                @endcan
+                <flux:button
+                    variant="ghost"
+                    icon="arrow-left"
+                    icon-position="left"
+                    :href="auth()->user()?->can('manage_users') ? route('admin.users.index') : route('salesperson.users.index')"
+                    wire:navigate
+                    class="border border-violet-200/60 bg-white/50 hover:bg-white/90 dark:border-violet-500/25 dark:bg-zinc-900/50 dark:hover:bg-zinc-800"
+                >
+                    {{ __('messages.back') }}
+                </flux:button>
+            </div>
         </div>
     </section>
 
@@ -253,28 +294,34 @@ new class extends Component
         </section>
     @endcan
 
-    {{-- Audit & activity --}}
-    <section class="rounded-2xl border border-indigo-200/60 bg-gradient-to-br from-indigo-50/35 via-white to-fuchsia-50/25 p-5 shadow-sm ring-1 ring-indigo-500/10 dark:border-indigo-500/20 dark:from-indigo-950/35 dark:via-zinc-900 dark:to-fuchsia-950/20 dark:ring-indigo-400/10 sm:p-6">
-        <flux:heading size="sm" class="text-zinc-900 dark:text-zinc-100">{{ __('messages.audit_log') }}</flux:heading>
-        <flux:text class="mt-1 block text-sm text-zinc-600 dark:text-zinc-400">{{ __('messages.customer_detail_audit_intro') }}</flux:text>
-        <div class="mt-5 flex flex-wrap gap-3">
-            <flux:button variant="primary" size="sm" icon="clock" :href="route('admin.users.audit', $user)" wire:navigate class="!bg-accent !text-accent-foreground hover:!bg-accent-hover">
-                {{ __('messages.audit_timeline') }}
-            </flux:button>
-            <flux:button variant="ghost" size="sm" icon="document-text" :href="route('admin.activities.index')" wire:navigate>
-                {{ __('messages.view_activity_for_user') }}
-            </flux:button>
-        </div>
-        <flux:text class="mt-4 block text-xs text-zinc-500 dark:text-zinc-400">{{ __('messages.loyalty_audit_hint') }}</flux:text>
-    </section>
+    @can('manage_users')
+        {{-- Audit & activity --}}
+        <section class="rounded-2xl border border-indigo-200/60 bg-gradient-to-br from-indigo-50/35 via-white to-fuchsia-50/25 p-5 shadow-sm ring-1 ring-indigo-500/10 dark:border-indigo-500/20 dark:from-indigo-950/35 dark:via-zinc-900 dark:to-fuchsia-950/20 dark:ring-indigo-400/10 sm:p-6">
+            <flux:heading size="sm" class="text-zinc-900 dark:text-zinc-100">{{ __('messages.audit_log') }}</flux:heading>
+            <flux:text class="mt-1 block text-sm text-zinc-600 dark:text-zinc-400">{{ __('messages.customer_detail_audit_intro') }}</flux:text>
+            <div class="mt-5 flex flex-wrap gap-3">
+                <flux:button variant="primary" size="sm" icon="clock" :href="route('admin.users.audit', $user)" wire:navigate class="!bg-accent !text-accent-foreground hover:!bg-accent-hover">
+                    {{ __('messages.audit_timeline') }}
+                </flux:button>
+                <flux:button variant="ghost" size="sm" icon="document-text" :href="route('admin.activities.index')" wire:navigate>
+                    {{ __('messages.view_activity_for_user') }}
+                </flux:button>
+            </div>
+            <flux:text class="mt-4 block text-xs text-zinc-500 dark:text-zinc-400">{{ __('messages.loyalty_audit_hint') }}</flux:text>
+        </section>
 
-    <section class="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm ring-1 ring-fuchsia-500/5 dark:border-zinc-700 dark:bg-zinc-900 dark:ring-fuchsia-400/10">
-        <div class="border-b border-cyan-200/50 bg-gradient-to-r from-cyan-500/[0.08] via-violet-500/[0.08] to-fuchsia-500/[0.1] px-5 py-4 dark:border-cyan-500/20 dark:from-cyan-950/50 dark:via-violet-950/40 dark:to-fuchsia-950/50">
-            <flux:heading size="sm" class="inline-block bg-gradient-to-r from-cyan-700 to-fuchsia-700 bg-clip-text text-transparent dark:from-cyan-200 dark:to-fuchsia-200">{{ __('messages.system_events') }}</flux:heading>
-            <flux:text class="mt-1 block text-sm text-zinc-600 dark:text-zinc-300">{{ __('messages.customer_detail_timeline_intro') }}</flux:text>
-        </div>
-        <div class="p-4 sm:p-5">
-            <x-timeline :entity="$user" :show-heading="false" class="!rounded-xl !border-0 !bg-transparent !p-0 !shadow-none" />
-        </div>
-    </section>
+        <section class="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm ring-1 ring-fuchsia-500/5 dark:border-zinc-700 dark:bg-zinc-900 dark:ring-fuchsia-400/10">
+            <div class="border-b border-cyan-200/50 bg-gradient-to-r from-cyan-500/[0.08] via-violet-500/[0.08] to-fuchsia-500/[0.1] px-5 py-4 dark:border-cyan-500/20 dark:from-cyan-950/50 dark:via-violet-950/40 dark:to-fuchsia-950/50">
+                <flux:heading size="sm" class="inline-block bg-gradient-to-r from-cyan-700 to-fuchsia-700 bg-clip-text text-transparent dark:from-cyan-200 dark:to-fuchsia-200">{{ __('messages.system_events') }}</flux:heading>
+                <flux:text class="mt-1 block text-sm text-zinc-600 dark:text-zinc-300">{{ __('messages.customer_detail_timeline_intro') }}</flux:text>
+            </div>
+            <div class="p-4 sm:p-5">
+                <x-timeline :entity="$user" :show-heading="false" class="!rounded-xl !border-0 !bg-transparent !p-0 !shadow-none" />
+            </div>
+        </section>
+    @endcan
+
+    @if (auth()->user()?->can('update', $user) || auth()->user()?->can('resetPassword', $user))
+        <livewire:users.user-modals :referred-only="! auth()->user()?->can('manage_users')" :key="'user-modals-'.$user->id" />
+    @endif
 </div>

@@ -36,6 +36,8 @@ return [
     'logout' => 'تسجيل الخروج',
     'wallet' => 'المحفظة',
     'my_orders' => 'طلباتي',
+    'referral_link' => 'رابط الإحالة',
+    'my_commissions' => 'عمولاتي',
     'loyalty' => 'الولاء',
     'profile' => 'الملف الشخصي',
     'shopping_cart' => 'سلة التسوق',

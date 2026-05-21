@@ -37,6 +37,8 @@ return [
     'logout' => 'Logout',
     'wallet' => 'Wallet',
     'my_orders' => 'My orders',
+    'referral_link' => 'Referral link',
+    'my_commissions' => 'My commissions',
     'loyalty' => 'Loyalty',
     'profile' => 'Profile',
     'shopping_cart' => 'Shopping Cart',

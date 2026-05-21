@@ -129,27 +129,8 @@ new #[Layout('layouts::frontend')] class extends Component
         };
     }
 
-    private function maskValue(string $value): string
-    {
-        $value = trim($value);
-
-        if ($value === '') {
-            return '';
-        }
-
-        $length = mb_strlen($value);
-
-        if ($length <= 4) {
-            return str_repeat('•', $length);
-        }
-
-        $visible = 4;
-
-        return str_repeat('•', $length - $visible).mb_substr($value, -$visible);
-    }
-
     /**
-     * @return array<int, array{key: string, masked: string, encoded: string, sensitive: bool}>
+     * @return array<int, array{key: string, value: string}>
      */
     protected function payloadEntries(mixed $payload): array
     {
@@ -159,21 +140,15 @@ new #[Layout('layouts::frontend')] class extends Component
             return [];
         }
 
-        $forceSensitive = ! is_array($payload);
         $values = is_array($payload) ? $payload : ['value' => $payload];
         $entries = [];
 
         foreach ($values as $key => $value) {
             $keyLabel = is_string($key) ? $key : (string) $key;
-            $valueString = $this->stringifyPayloadValue($value);
-            $isSensitive = $forceSensitive || $this->isSensitiveKey($keyLabel);
-            $masked = $isSensitive ? $this->maskValue($valueString) : $valueString;
 
             $entries[] = [
                 'key' => $keyLabel,
-                'masked' => $masked,
-                'encoded' => base64_encode($valueString),
-                'sensitive' => $isSensitive,
+                'value' => $this->stringifyPayloadValue($value),
             ];
         }
 
@@ -210,13 +185,6 @@ new #[Layout('layouts::frontend')] class extends Component
         }
 
         return $payload;
-    }
-
-    protected function isSensitiveKey(string $key): bool
-    {
-        $sensitive = ['code', 'pin', 'serial', 'token', 'password'];
-
-        return in_array(mb_strtolower($key), $sensitive, true);
     }
 
     /**
@@ -439,74 +407,23 @@ new #[Layout('layouts::frontend')] class extends Component
                                     <div class="mt-3">
                                         @if ($fulfillment->status === FulfillmentStatus::Completed)
                                             @if ($payloadEntries !== [])
-                                                <div
-                                                    class="min-w-0 space-y-2"
-                                                    x-data="{
-                                                        revealed: false,
-                                                        copiedIndex: null,
-                                                        entries: @js($payloadEntries),
-                                                        decode(encoded) {
-                                                            try {
-                                                                const bytes = Uint8Array.from(atob(encoded), c => c.charCodeAt(0));
-                                                                if (typeof TextDecoder === 'undefined') {
-                                                                    return atob(encoded);
-                                                                }
-                                                                return new TextDecoder().decode(bytes);
-                                                            } catch (e) {
-                                                                return '';
-                                                            }
-                                                        },
-                                                        async copyEntry(entry, index) {
-                                                            try {
-                                                                await navigator.clipboard.writeText(this.decode(entry.encoded));
-                                                                this.copiedIndex = index;
-                                                                setTimeout(() => this.copiedIndex = null, 1500);
-                                                            } catch (e) {
-                                                            }
-                                                        }
-                                                    }"
-                                                >
-                                                    <div class="flex flex-wrap items-center justify-between gap-2">
-                                                        <flux:text class="text-sm text-zinc-600 dark:text-zinc-400">
-                                                            {{ __('messages.delivery_payload') }}
-                                                        </flux:text>
-                                                        <div class="flex flex-wrap items-center gap-2">
-                                                            <flux:button
-                                                                variant="ghost"
-                                                                size="xs"
-                                                                x-on:click="revealed = !revealed"
-                                                            >
-                                                                <span x-show="!revealed">{{ __('messages.reveal') }}</span>
-                                                                <span x-show="revealed">{{ __('messages.hide') }}</span>
-                                                            </flux:button>
-                                                        </div>
-                                                    </div>
+                                                <div class="min-w-0 space-y-2">
+                                                    <flux:text class="text-sm text-zinc-600 dark:text-zinc-400">
+                                                        {{ __('messages.delivery_payload') }}
+                                                    </flux:text>
                                                     <div class="grid min-w-0 gap-2 overflow-hidden rounded-xl border border-zinc-200 bg-white p-3 text-xs text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">
-                                                        <template x-for="(entry, entryIndex) in entries" :key="entryIndex">
-                                                            <div class="flex min-w-0 flex-wrap items-start justify-between gap-2">
+                                                        @foreach ($payloadEntries as $entry)
+                                                            <div class="flex min-w-0 flex-wrap items-start justify-between gap-2" wire:key="fulfillment-payload-{{ $fulfillment->id }}-{{ $entry['key'] }}">
                                                                 <div class="flex min-w-0 flex-1 flex-col gap-1">
-                                                                    <span
-                                                                        class="text-[11px] uppercase tracking-wide"
-                                                                        x-bind:class="entry.sensitive ? 'text-amber-600 dark:text-amber-400' : 'text-zinc-500 dark:text-zinc-400'"
-                                                                        x-text="entry.key"
-                                                                    ></span>
+                                                                    <span class="text-[11px] uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                                                                        {{ $entry['key'] }}
+                                                                    </span>
                                                                     <span class="block max-w-full break-all font-mono text-xs text-zinc-900 dark:text-zinc-100">
-                                                                        <span x-text="revealed ? decode(entry.encoded) : entry.masked"></span>
+                                                                        {{ $entry['value'] }}
                                                                     </span>
                                                                 </div>
-                                                                <flux:button
-                                                                    class="shrink-0"
-                                                                    x-show="entry.sensitive"
-                                                                    variant="ghost"
-                                                                    size="xs"
-                                                                    x-on:click="copyEntry(entry, entryIndex)"
-                                                                >
-                                                                    <flux:icon.document-duplicate x-show="copiedIndex !== entryIndex" variant="outline"></flux:icon.document-duplicate>
-                                                                    <flux:icon.check x-show="copiedIndex === entryIndex" variant="solid" class="text-green-500"></flux:icon.check>
-                                                                    {{ __('messages.copy_to_clipboard') }}
-                                                                </flux:button>
                                                             </div>
-                                                        </template>
+                                                        @endforeach
                                                     </div>
                                                 </div>
                                             @else

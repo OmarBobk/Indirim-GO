@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Users;
 
 use App\Models\User;
+use App\Support\UserRegistrationSourceResolver;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -28,6 +29,7 @@ class GetUsers
                 'email',
                 'phone',
                 'country_code',
+                'referred_by_user_id',
                 'email_verified_at',
                 'blocked_at',
                 'last_login_at',
@@ -65,8 +67,27 @@ class GetUsers
             $query->orderBy($sortColumn, $direction);
         }
 
-        return $query
-            ->with('roles:id,name')
+        $paginator = $query
+            ->with([
+                'roles:id,name',
+                'referredBy:id,username,name',
+            ])
             ->paginate($perPage, ['*'], 'page', $page);
+
+        $sources = UserRegistrationSourceResolver::resolveForUserIds(
+            $paginator->getCollection()->pluck('id')->all()
+        );
+
+        $paginator->getCollection()->transform(function (User $user) use ($sources): User {
+            $source = $sources[$user->id] ?? null;
+            $user->setAttribute(
+                'registration_summary',
+                $source !== null ? $source->describe($user) : ''
+            );
+
+            return $user;
+        });
+
+        return $paginator;
     }
 }

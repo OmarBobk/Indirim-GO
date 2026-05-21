@@ -5,15 +5,19 @@ declare(strict_types=1);
 namespace App\Actions\Orders;
 
 use App\Actions\Fulfillments\CreateFulfillmentsForOrder;
+use App\Enums\CommissionStatus;
 use App\Enums\OrderStatus;
 use App\Enums\WalletTransactionDirection;
 use App\Enums\WalletTransactionType;
+use App\Models\Commission;
 use App\Models\Order;
 use App\Models\User;
 use App\Models\Wallet;
 use App\Models\WalletTransaction;
+use App\Models\WebsiteSetting;
 use App\Services\OperationalIntelligenceService;
 use App\Services\SystemEventService;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -72,6 +76,7 @@ class PayOrderWithWallet
                 (new CreateFulfillmentsForOrder)->handle($lockedOrder);
 
                 $this->logOrderPaid($lockedOrder, $lockedWallet, $existingTransaction);
+                $this->queueReferralCommissionAfterCommit($lockedOrder);
 
                 return $lockedOrder;
             }
@@ -112,6 +117,7 @@ class PayOrderWithWallet
             (new CreateFulfillmentsForOrder)->handle($lockedOrder);
 
             $this->logOrderPaid($lockedOrder, $lockedWallet, $existingTransaction);
+            $this->queueReferralCommissionAfterCommit($lockedOrder);
 
             $orderUser = User::query()->find($lockedOrder->user_id);
             app(SystemEventService::class)->record(
@@ -141,6 +147,120 @@ class PayOrderWithWallet
         return $useTransaction
             ? DB::transaction($operation)
             : $operation();
+    }
+
+    private function queueReferralCommissionAfterCommit(Order $order): void
+    {
+        $orderId = $order->id;
+        DB::afterCommit(function () use ($orderId): void {
+            try {
+                $this->ensureReferralCommission($orderId);
+            } catch (\Throwable) {
+                // Never break payment flow because of commission side-effects.
+            }
+        });
+    }
+
+    private function ensureReferralCommission(int $orderId): void
+    {
+        $order = Order::query()
+            ->with(['items:id,order_id,unit_price,quantity,line_total', 'items.fulfillments:id,order_id,order_item_id,status'])
+            ->find($orderId);
+        if ($order === null || $order->status !== OrderStatus::Paid) {
+            return;
+        }
+
+        $referral = data_get($order->meta, 'referral');
+
+        if (! is_array($referral)) {
+            return;
+        }
+
+        $salespersonId = (int) data_get($referral, 'salesperson_id', 0);
+
+        if ($salespersonId <= 0) {
+            return;
+        }
+
+        if ($salespersonId === $order->user_id) {
+            return;
+        }
+
+        $referralCode = (string) data_get($referral, 'code', '');
+        $commissionRatePercent = $this->resolveCommissionRatePercent($salespersonId);
+        $commissionMultiplier = bcdiv($commissionRatePercent, '100', 4);
+
+        foreach ($order->items as $item) {
+            $lineTotal = number_format((float) $item->line_total, 2, '.', '');
+            $quantity = max(1, (int) $item->quantity);
+            $unitTotal = bcdiv($lineTotal, (string) $quantity, 2);
+
+            foreach ($item->fulfillments as $fulfillment) {
+                $orderTotal = $unitTotal;
+                $commissionAmount = bcmul($orderTotal, $commissionMultiplier, 2);
+
+                $this->createCommissionForFulfillment(
+                    $order->id,
+                    (int) $fulfillment->id,
+                    $salespersonId,
+                    (int) $order->user_id,
+                    $referralCode,
+                    $orderTotal,
+                    $commissionAmount,
+                    $commissionRatePercent
+                );
+            }
+        }
+    }
+
+    private function createCommissionForFulfillment(
+        int $orderId,
+        int $fulfillmentId,
+        int $salespersonId,
+        int $customerId,
+        string $referralCode,
+        string $orderTotal,
+        string $commissionAmount,
+        string $commissionRatePercent
+    ): void {
+        try {
+            Commission::query()->create([
+                'order_id' => $orderId,
+                'fulfillment_id' => $fulfillmentId,
+                'salesperson_id' => $salespersonId,
+                'customer_id' => $customerId,
+                'referral_code' => $referralCode,
+                'order_total' => $orderTotal,
+                'commission_amount' => $commissionAmount,
+                'commission_rate_percent' => $commissionRatePercent,
+                'status' => CommissionStatus::Pending,
+                'paid_at' => null,
+            ]);
+        } catch (QueryException $exception) {
+            // Duplicate fulfillment_id (unique) can happen under race; keep idempotent.
+            if ($exception->getCode() !== '23000') {
+                throw $exception;
+            }
+        }
+    }
+
+    private function resolveCommissionRatePercent(int $salespersonId): string
+    {
+        $defaultRate = WebsiteSetting::getDefaultCommissionRatePercent();
+        $salesperson = User::query()->select(['id', 'commission_rate_percent'])->find($salespersonId);
+        $customRate = $salesperson?->commission_rate_percent;
+
+        if ($customRate === null || $customRate === '') {
+            return $defaultRate;
+        }
+
+        $normalized = number_format((float) $customRate, 2, '.', '');
+
+        if ((float) $normalized <= 0 || (float) $normalized > 100) {
+            return $defaultRate;
+        }
+
+        return $normalized;
     }
 
     private function logOrderPaid(Order $order, Wallet $wallet, WalletTransaction $transaction): void

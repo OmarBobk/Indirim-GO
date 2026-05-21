@@ -145,6 +145,7 @@ return [
 
     'features' => [
         // Disabled temporarily due to abuse — re-add Features::registration() to allow sign-ups again.
+        Features::registration(),
         Features::resetPasswords(),
         Features::emailVerification(),
         Features::twoFactorAuthentication([

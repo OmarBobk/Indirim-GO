@@ -22,6 +22,9 @@ new class extends Component
     public bool $pricesVisible = true;
 
     public ?string $usdTryRate = null;
+    public int $commissionPayoutWaitDays = 3;
+    public ?string $commissionPayoutMinAmount = '200.00';
+    public ?string $defaultCommissionRatePercent = '20.00';
 
     public function mount(): void
     {
@@ -32,6 +35,9 @@ new class extends Component
         [$this->secondaryCountryCode, $this->secondaryPhone] = $this->parsePhone($settings->secondary_phone ?? '');
         $this->pricesVisible = (bool) $settings->prices_visible;
         $this->usdTryRate = $settings->usd_try_rate !== null ? number_format((float) $settings->usd_try_rate, 6, '.', '') : null;
+        $this->commissionPayoutWaitDays = max(0, (int) ($settings->commission_payout_wait_days ?? 3));
+        $this->commissionPayoutMinAmount = number_format((float) ($settings->commission_payout_min_amount ?? 200), 2, '.', '');
+        $this->defaultCommissionRatePercent = number_format((float) ($settings->default_commission_rate_percent ?? 20), 2, '.', '');
     }
 
     /**
@@ -75,6 +81,9 @@ new class extends Component
             'secondaryCountryCode' => ['nullable', 'string', 'in:+90,+963'],
             'secondaryPhone' => ['nullable', 'string', 'max:30'],
             'usdTryRate' => ['nullable', 'numeric', 'gt:0'],
+            'commissionPayoutWaitDays' => ['required', 'integer', 'min:0', 'max:365'],
+            'commissionPayoutMinAmount' => ['required', 'numeric', 'min:0', 'max:9999999999.99'],
+            'defaultCommissionRatePercent' => ['required', 'numeric', 'min:0.01', 'max:100'],
         ]);
 
         WebsiteSetting::instance()->update([
@@ -84,6 +93,9 @@ new class extends Component
             'prices_visible' => $this->pricesVisible,
             'usd_try_rate' => $this->usdTryRate !== null && $this->usdTryRate !== '' ? (float) $this->usdTryRate : null,
             'usd_try_rate_updated_at' => now(),
+            'commission_payout_wait_days' => $this->commissionPayoutWaitDays,
+            'commission_payout_min_amount' => (float) $this->commissionPayoutMinAmount,
+            'default_commission_rate_percent' => (float) $this->defaultCommissionRatePercent,
         ]);
 
         $this->dispatch('website-settings-saved');
@@ -201,6 +213,24 @@ new class extends Component
                 </div>
                 <flux:text class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{{ __('messages.website_usd_try_rate_hint') }}</flux:text>
                 <flux:error name="usdTryRate" />
+            </flux:field>
+            <flux:field>
+                <flux:label>{{ __('messages.commission_payout_wait_days') }}</flux:label>
+                <flux:input wire:model.defer="commissionPayoutWaitDays" type="number" min="0" max="365" class="w-full max-w-xs" class:input="focus:!border-(--color-accent) focus:!border-1 focus:!ring-0 focus:!outline-none focus:!ring-offset-0" />
+                <flux:text class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{{ __('messages.commission_payout_wait_days_hint') }}</flux:text>
+                <flux:error name="commissionPayoutWaitDays" />
+            </flux:field>
+            <flux:field>
+                <flux:label>{{ __('messages.commission_payout_min_amount') }}</flux:label>
+                <flux:input wire:model.defer="commissionPayoutMinAmount" type="number" min="0" step="0.01" class="w-full max-w-xs" class:input="focus:!border-(--color-accent) focus:!border-1 focus:!ring-0 focus:!outline-none focus:!ring-offset-0" />
+                <flux:text class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{{ __('messages.commission_payout_min_amount_hint') }}</flux:text>
+                <flux:error name="commissionPayoutMinAmount" />
+            </flux:field>
+            <flux:field>
+                <flux:label>{{ __('messages.website_default_commission_rate_percent') }}</flux:label>
+                <flux:input wire:model.defer="defaultCommissionRatePercent" type="number" min="0.01" max="100" step="0.01" class="w-full max-w-xs" class:input="focus:!border-(--color-accent) focus:!border-1 focus:!ring-0 focus:!outline-none focus:!ring-offset-0" />
+                <flux:text class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{{ __('messages.website_default_commission_rate_percent_hint') }}</flux:text>
+                <flux:error name="defaultCommissionRatePercent" />
             </flux:field>
             <div class="flex flex-wrap items-center gap-2">
                 <flux:button type="submit" variant="primary" wire:loading.attr="disabled">

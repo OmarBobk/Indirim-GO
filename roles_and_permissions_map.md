@@ -7,8 +7,8 @@ Roles and permissions are provided by spatie/laravel-permission. Roles and their
 | Role | Defined in | Permissions | Checked in |
 | --- | --- | --- | --- |
 | `admin` | `database/seeders/RolesAndPermissionsSeeder.php` | All permissions | No direct role checks; access via permissions only. |
-| `supervisor` | `database/seeders/RolesAndPermissionsSeeder.php` | `view_sales`, `view_orders`, `create_orders` | — |
-| `salesperson` | `database/seeders/RolesAndPermissionsSeeder.php` | `view_sales`, `view_orders`, `create_orders`, `edit_orders` | — |
+| `supervisor` | `database/seeders/RolesAndPermissionsSeeder.php` | `view_dashboard`, `view_referrals`, `view_orders`, `create_orders` | — |
+| `salesperson` | `database/seeders/RolesAndPermissionsSeeder.php` | `view_referrals`, `view_orders`, `create_orders`, `edit_orders` | — |
 | `customer` | `database/seeders/RolesAndPermissionsSeeder.php` | `customer_profile` | — |
 
 ### Permissions
@@ -19,7 +19,7 @@ Roles and permissions are provided by spatie/laravel-permission. Roles and their
 | `manage_sections` | admin | `resources/views/pages/backend/categories/⚡index.blade.php` (mount), `resources/views/layouts/app/sidebar.blade.php` (Categories nav link) |
 | `manage_products` | admin | `resources/views/pages/backend/packages/⚡index.blade.php`, `resources/views/pages/backend/products/⚡index.blade.php` (mount), `resources/views/layouts/app/sidebar.blade.php` (Packages, Products nav) |
 | `manage_topups` | admin | `resources/views/pages/backend/topups/⚡index.blade.php` (mount), `resources/views/layouts/app/sidebar.blade.php` (Topups nav), `app/Http/Controllers/TopupProofController.php` (view proof) |
-| `view_sales` | admin, salesperson, supervisor | Backend access (config), dashboard available to any backend user |
+| `view_referrals` | admin, salesperson, supervisor | `routes/web.php` (`referral-link`, `salesperson.dashboard`), `resources/views/pages/frontend/⚡referral-link.blade.php` (mount), `resources/views/pages/backend/⚡salesperson-dashboard.blade.php` (mount), `resources/views/layouts/frontend/header.blade.php`, `resources/views/layouts/app/sidebar.blade.php`; `config/permission.php` `backend_permissions` |
 | `view_orders` | admin, salesperson, supervisor | `app/Policies/OrderPolicy.php` (viewAny, view), `resources/views/layouts/app/sidebar.blade.php` (Orders nav) |
 | `create_orders` | admin, salesperson, supervisor | `app/Policies/OrderPolicy.php` (create) |
 | `edit_orders` | admin, salesperson | `app/Policies/OrderPolicy.php` (update) |

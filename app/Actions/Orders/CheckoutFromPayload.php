@@ -52,10 +52,17 @@ class CheckoutFromPayload
                 return app(PayOrderWithWallet::class)->handle($existingOrder, $lockedWallet, false);
             }
 
+            $metaForCreate = array_merge($meta, ['cart_hash' => $cartHash]);
+            $referralPayload = $this->referralPayloadFromCookie($user)
+                ?? $this->referralPayloadFromReferredByUser($user);
+            if ($referralPayload !== null) {
+                $metaForCreate['referral'] = $referralPayload;
+            }
+
             $order = app(CreateOrderFromCartPayload::class)->handle(
                 $user,
                 $items,
-                array_merge($meta, ['cart_hash' => $cartHash]),
+                $metaForCreate,
                 false
             );
 
@@ -87,6 +94,75 @@ class CheckoutFromPayload
     /**
      * @param  array<int, array<string, mixed>>  $items
      */
+    /**
+     * Server-side referral from cookie (never trust client meta). Cookie wins when present.
+     *
+     * @return array{code: string, salesperson_id: int}|null
+     */
+    private function referralPayloadFromCookie(User $buyer): ?array
+    {
+        $cookieName = (string) config('referral.cookie_name', 'karman_ref');
+        $raw = request()->cookie($cookieName);
+
+        if (! is_string($raw) || trim($raw) === '') {
+            return null;
+        }
+
+        $code = strtoupper(trim($raw));
+
+        if ($code === '' || strlen($code) > 16) {
+            return null;
+        }
+
+        $referrer = User::findByReferralCode($code);
+
+        if ($referrer === null) {
+            return null;
+        }
+
+        if ($referrer->id === $buyer->id) {
+            return null;
+        }
+
+        return [
+            'code' => $code,
+            'salesperson_id' => $referrer->id,
+        ];
+    }
+
+    /**
+     * When the buyer has no referral cookie, attribute to their permanent referrer (e.g. salesperson-created account).
+     * Only users who may earn referral commissions (`view_referrals`) are used.
+     *
+     * @return array{code: string, salesperson_id: int}|null
+     */
+    private function referralPayloadFromReferredByUser(User $buyer): ?array
+    {
+        $referrerId = $buyer->referred_by_user_id;
+        if ($referrerId === null || (int) $referrerId <= 0) {
+            return null;
+        }
+
+        $referrer = User::query()->select(['id', 'referral_code'])->find((int) $referrerId);
+        if ($referrer === null || (int) $referrer->id === (int) $buyer->id) {
+            return null;
+        }
+
+        if (! $referrer->can('view_referrals')) {
+            return null;
+        }
+
+        $code = strtoupper(trim((string) $referrer->referral_code));
+        if ($code === '' || strlen($code) > 16) {
+            return null;
+        }
+
+        return [
+            'code' => $code,
+            'salesperson_id' => (int) $referrer->id,
+        ];
+    }
+
     private function cartHash(array $items): string
     {
         $normalized = collect($items)

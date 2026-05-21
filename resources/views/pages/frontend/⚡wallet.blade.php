@@ -629,6 +629,7 @@ new #[Layout('layouts::frontend')] class extends Component
                                         WalletTransactionType::Refund => __('messages.wallet_transaction_type_refund'),
                                         WalletTransactionType::Adjustment => __('messages.wallet_transaction_type_adjustment'),
                                         WalletTransactionType::Settlement => __('messages.wallet_transaction_type_settlement'),
+                                        WalletTransactionType::CommissionCredit => __('messages.wallet_transaction_type_commission_credit'),
                                         default => $transaction->type->value,
                                     };
                                     $directionLabel = $transaction->direction === WalletTransactionDirection::Credit
@@ -725,6 +726,7 @@ new #[Layout('layouts::frontend')] class extends Component
                                                 WalletTransactionType::Refund => __('messages.wallet_transaction_type_refund'),
                                                 WalletTransactionType::Adjustment => __('messages.wallet_transaction_type_adjustment'),
                                                 WalletTransactionType::Settlement => __('messages.wallet_transaction_type_settlement'),
+                                                WalletTransactionType::CommissionCredit => __('messages.wallet_transaction_type_commission_credit'),
                                                 default => $transaction->type->value,
                                             };
                                             $directionLabel = $transaction->direction === WalletTransactionDirection::Credit

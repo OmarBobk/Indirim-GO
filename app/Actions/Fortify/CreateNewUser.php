@@ -2,6 +2,7 @@
 
 namespace App\Actions\Fortify;
 
+use App\Concerns\AssignsDefaultCustomerRole;
 use App\Concerns\PasswordValidationRules;
 use App\Concerns\ProfileValidationRules;
 use App\Enums\Timezone;
@@ -12,7 +13,7 @@ use Laravel\Fortify\Contracts\CreatesNewUsers;
 
 class CreateNewUser implements CreatesNewUsers
 {
-    use PasswordValidationRules, ProfileValidationRules;
+    use AssignsDefaultCustomerRole, PasswordValidationRules, ProfileValidationRules;
 
     /**
      * Validate and create a newly registered user.
@@ -31,11 +32,13 @@ class CreateNewUser implements CreatesNewUsers
             $input['timezone_detected'] ?? null,
             $input['country_code'] ?? null
         );
+        $referrerId = $this->resolveReferrerIdFromCookie();
 
         $user = User::create([
             'name' => $input['name'],
             'username' => $input['username'],
             'email' => $input['email'],
+            'referred_by_user_id' => $referrerId,
             'locale' => SupportedLocale::fromRequest(request()),
             'locale_manually_set' => false,
             'preferred_currency' => $input['preferred_currency'],
@@ -46,6 +49,8 @@ class CreateNewUser implements CreatesNewUsers
             'profile_photo' => $input['profile_photo'] ?? null,
             'is_active' => true,
         ]);
+
+        $this->syncInitialUserRoles($user, []);
 
         activity()
             ->inLog('admin')
@@ -63,5 +68,19 @@ class CreateNewUser implements CreatesNewUsers
             ->log('User registered');
 
         return $user;
+    }
+
+    private function resolveReferrerIdFromCookie(): ?int
+    {
+        $cookieName = (string) config('referral.cookie_name', 'karman_ref');
+        $raw = request()->cookie($cookieName);
+
+        if (! is_string($raw) || trim($raw) === '') {
+            return null;
+        }
+
+        $referrer = User::findByReferralCode($raw);
+
+        return $referrer?->id;
     }
 }

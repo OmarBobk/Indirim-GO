@@ -133,7 +133,7 @@ test('order details page is forbidden for other users', function () {
         ->assertForbidden();
 });
 
-test('delivered payload renders masked by default', function () {
+test('delivered payload renders for order owner', function () {
     $user = User::factory()->create();
     $payload = [
         'code' => 'ABC-12345',
@@ -142,20 +142,15 @@ test('delivered payload renders masked by default', function () {
     ];
     $orderPayload = makeCompletedOrder($user, $payload);
 
-    $maskedCode = '\\\\u2022\\\\u2022\\\\u2022\\\\u2022\\\\u2022';
-    $maskedPin = '\\\\u2022\\\\u2022\\\\u2022\\\\u2022';
-
     $this->actingAs($user)
         ->get(route('orders.show', $orderPayload['order']->order_number))
         ->assertOk()
-        ->assertSee($maskedCode, false)
-        ->assertSee($maskedPin, false)
-        ->assertDontSee($payload['code'], false)
-        ->assertDontSee($payload['pin'], false)
+        ->assertSee($payload['code'], false)
+        ->assertSee($payload['pin'], false)
         ->assertSee($payload['server']);
 });
 
-test('delivered payload section includes overflow-safe classes for long masked codes', function () {
+test('delivered payload section includes overflow-safe classes for long codes', function () {
     $user = User::factory()->create();
     $longCode = str_repeat('a', 200).'Z9X7';
     $orderPayload = makeCompletedOrder($user, ['code' => $longCode]);

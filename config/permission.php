@@ -210,7 +210,7 @@ return [
         'manage_sections',
         'manage_products',
         'manage_topups',
-        'view_sales',
+        'view_referrals',
         'create_orders',
         'edit_orders',
         'delete_orders',

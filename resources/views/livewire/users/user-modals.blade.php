@@ -16,7 +16,11 @@
                     {{ __('messages.create_user') }}
                 </flux:heading>
                 <flux:text class="text-zinc-600 dark:text-zinc-400">
-                    {{ __('messages.create_user_hint') }}
+                    @if ($referredOnly)
+                        {{ __('messages.create_referred_user_hint') }}
+                    @else
+                        {{ __('messages.create_user_hint') }}
+                    @endif
                 </flux:text>
             </div>
 
@@ -70,8 +74,28 @@
                     </flux:input.group>
                     <flux:error name="newPhone" />
                 </flux:field>
+                @unless ($referredOnly)
+                <flux:field>
+                    <flux:label>{{ __('messages.commission_rate_percent') }}</flux:label>
+                    <flux:input
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        max="100"
+                        wire:model.defer="newCommissionRatePercent"
+                        :placeholder="__('messages.commission_rate_percent_placeholder')"
+                        class="w-full"
+                        class:input="focus:!border-(--color-accent) focus:!border-1 focus:!ring-0 focus:!outline-none focus:!ring-offset-0"
+                    />
+                    <flux:text class="text-xs text-zinc-500 dark:text-zinc-400">
+                        {{ __('messages.commission_rate_percent_hint') }}
+                    </flux:text>
+                    <flux:error name="newCommissionRatePercent" />
+                </flux:field>
+                @endunless
             </div>
 
+            @unless ($referredOnly)
             <div class="space-y-2">
                 <flux:heading size="sm" class="text-zinc-900 dark:text-zinc-100">{{ __('messages.roles') }}</flux:heading>
                 <div class="flex flex-wrap gap-2">
@@ -161,6 +185,7 @@
                     </div>
                 </div>
             </div>
+            @endunless
 
             <div class="flex flex-wrap items-center gap-2">
                 <flux:spacer />
@@ -182,7 +207,11 @@
                     {{ __('messages.edit_user') }}
                 </flux:heading>
                 <flux:text class="text-zinc-600 dark:text-zinc-400">
-                    {{ __('messages.edit_user_hint') }}
+                    @if ($referredOnly)
+                        {{ __('messages.edit_referred_user_hint') }}
+                    @else
+                        {{ __('messages.edit_user_hint') }}
+                    @endif
                 </flux:text>
             </div>
 
@@ -223,8 +252,54 @@
                     </flux:input.group>
                     <flux:error name="editPhone" />
                 </flux:field>
+                @if ($referredOnly)
+                    <flux:field class="md:col-span-2">
+                        <flux:label>{{ __('messages.new_password') }}</flux:label>
+                        <flux:text class="mb-2 block text-xs text-zinc-500 dark:text-zinc-400">
+                            {{ __('messages.edit_referred_user_password_hint') }}
+                        </flux:text>
+                        <flux:input
+                            type="password"
+                            wire:model.defer="editPassword"
+                            viewable
+                            class="w-full"
+                            class:input="focus:!border-(--color-accent) focus:!border-1 focus:!ring-0 focus:!outline-none focus:!ring-offset-0"
+                        />
+                        <flux:error name="editPassword" />
+                    </flux:field>
+                    <flux:field class="md:col-span-2">
+                        <flux:label>{{ __('messages.confirm_password') }}</flux:label>
+                        <flux:input
+                            type="password"
+                            wire:model.defer="editPasswordConfirmation"
+                            viewable
+                            class="w-full"
+                            class:input="focus:!border-(--color-accent) focus:!border-1 focus:!ring-0 focus:!outline-none focus:!ring-offset-0"
+                        />
+                    </flux:field>
+                @endif
+                @unless ($referredOnly)
+                <flux:field>
+                    <flux:label>{{ __('messages.commission_rate_percent') }}</flux:label>
+                    <flux:input
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        max="100"
+                        wire:model.defer="editCommissionRatePercent"
+                        :placeholder="__('messages.commission_rate_percent_placeholder')"
+                        class="w-full"
+                        class:input="focus:!border-(--color-accent) focus:!border-1 focus:!ring-0 focus:!outline-none focus:!ring-offset-0"
+                    />
+                    <flux:text class="text-xs text-zinc-500 dark:text-zinc-400">
+                        {{ __('messages.commission_rate_percent_hint') }}
+                    </flux:text>
+                    <flux:error name="editCommissionRatePercent" />
+                </flux:field>
+                @endunless
             </div>
 
+            @unless ($referredOnly)
             <div class="space-y-2">
                 <flux:heading size="sm" class="text-zinc-900 dark:text-zinc-100">{{ __('messages.roles') }}</flux:heading>
                 <div class="flex flex-wrap gap-2">
@@ -314,6 +389,7 @@
                     </div>
                 </div>
             </div>
+            @endunless
 
             <div class="flex flex-wrap items-center gap-2">
                 <flux:spacer />

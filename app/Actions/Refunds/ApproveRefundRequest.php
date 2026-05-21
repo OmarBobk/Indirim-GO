@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace App\Actions\Refunds;
 
 use App\Actions\Fulfillments\AppendFulfillmentLog;
+use App\Enums\CommissionStatus;
 use App\Enums\FulfillmentLogLevel;
 use App\Enums\FulfillmentStatus;
 use App\Enums\OrderStatus;
 use App\Enums\WalletTransactionDirection;
 use App\Enums\WalletTransactionType;
 use App\Jobs\EvaluateLoyaltyForUser;
+use App\Models\Commission;
 use App\Models\Fulfillment;
 use App\Models\Order;
 use App\Models\OrderItem;
@@ -330,6 +332,21 @@ class ApproveRefundRequest
                             'transaction_id' => $transaction->id,
                         ], fn ($value) => $value !== null && $value !== ''))
                         ->log('Order refunded');
+                }
+
+                if ($fulfillment !== null) {
+                    // Commission credits are NOT reversed on refund in Phase 1.
+                    Commission::query()
+                        ->where('fulfillment_id', $fulfillment->id)
+                        ->where('status', CommissionStatus::Pending)
+                        ->update(['status' => CommissionStatus::Failed]);
+                } else {
+                    // Commission credits are NOT reversed on refund in Phase 1.
+                    Commission::query()
+                        ->where('order_id', $order->id)
+                        ->whereNull('fulfillment_id')
+                        ->where('status', CommissionStatus::Pending)
+                        ->update(['status' => CommissionStatus::Failed]);
                 }
 
                 $userId = $order->user_id;

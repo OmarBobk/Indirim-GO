@@ -22,6 +22,17 @@ class User extends Authenticatable implements HasLocalePreference
     /** @use HasFactory<\Database\Factories\UserFactory> */
     use HasFactory, HasRoles, Notifiable, TwoFactorAuthenticatable;
 
+    protected static function booted(): void
+    {
+        static::creating(function (User $user): void {
+            if ($user->referral_code !== null && $user->referral_code !== '') {
+                return;
+            }
+
+            $user->referral_code = static::generateUniqueReferralCode();
+        });
+    }
+
     /**
      * The attributes that are mass assignable.
      *
@@ -31,6 +42,8 @@ class User extends Authenticatable implements HasLocalePreference
         'name',
         'username',
         'email',
+        'referred_by_user_id',
+        'commission_rate_percent',
         'locale',
         'locale_manually_set',
         'preferred_currency',
@@ -69,6 +82,8 @@ class User extends Authenticatable implements HasLocalePreference
     {
         return [
             'email_verified_at' => 'datetime',
+            'referred_by_user_id' => 'integer',
+            'commission_rate_percent' => 'decimal:2',
             'password' => 'hashed',
             'is_active' => 'boolean',
             'timezone' => Timezone::class,
@@ -144,6 +159,31 @@ class User extends Authenticatable implements HasLocalePreference
         return $this->belongsTo(User::class, 'loyalty_override_by');
     }
 
+    public function referredBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'referred_by_user_id');
+    }
+
+    public function referredUsers(): HasMany
+    {
+        return $this->hasMany(User::class, 'referred_by_user_id');
+    }
+
+    public function customerCommissions(): HasMany
+    {
+        return $this->hasMany(Commission::class, 'customer_id');
+    }
+
+    /**
+     * Manual payout requests from the salesperson dashboard (one pending row max per user).
+     *
+     * @return HasMany<PayoutRequest, $this>
+     */
+    public function payoutRequests(): HasMany
+    {
+        return $this->hasMany(PayoutRequest::class);
+    }
+
     /**
      * Admin-defined custom prices for this user (per product).
      *
@@ -181,5 +221,32 @@ class User extends Authenticatable implements HasLocalePreference
     public function preferredLocale(): string
     {
         return in_array($this->locale, ['en', 'ar'], true) ? $this->locale : config('app.locale', 'en');
+    }
+
+    /**
+     * Public shareable code for ?ref= links (8 chars, uppercase alphanumeric).
+     */
+    public static function generateUniqueReferralCode(): string
+    {
+        while (true) {
+            $code = strtoupper(Str::random(8));
+            if (strlen($code) === 8 && ! static::query()->where('referral_code', $code)->exists()) {
+                return $code;
+            }
+        }
+    }
+
+    /**
+     * Resolve a user by normalized referral code, or null if none.
+     */
+    public static function findByReferralCode(string $code): ?self
+    {
+        $normalized = strtoupper(trim($code));
+
+        if ($normalized === '') {
+            return null;
+        }
+
+        return static::query()->where('referral_code', $normalized)->first();
     }
 }

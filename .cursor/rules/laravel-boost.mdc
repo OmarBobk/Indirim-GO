@@ -48,6 +48,16 @@ This application is a Laravel application and its main Laravel ecosystems packag
 ## Documentation Files
 - You must only create documentation files if explicitly requested by the user.
 
+## Project-Specific Guardrails (karman.store)
+- Treat `wallet_transactions` + `wallets.balance` as the only financial source of truth. Do not derive money state from `system_events`.
+- Every wallet balance mutation must be transactional, idempotent, and mirrored by exactly one financial `system_events` record.
+- Keep financial side-effects and broadcasts in `DB::afterCommit()` to avoid emitting events on rolled-back transactions.
+- Do not trust client cart totals or pricing. Recompute server-side through existing pricing flow and domain classes.
+- Keep custom amount semantics intact: order lines use `requested_amount` and custom-amount lines are treated as quantity 1.
+- Never bypass backend access boundaries. Respect `backend` middleware and permission checks from `config('permission.backend_permissions')`.
+- For changes touching pricing, checkout, wallet, refunds, topups, fulfillments, or commissions, inspect and preserve existing behavior in sibling Actions before refactoring.
+- Preserve referral/commission flow contracts: referral attribution from cookie/server-side metadata, commission creation on payment flow, commission failure updates on refund flow.
+
 === boost rules ===
 
 ## Laravel Boost

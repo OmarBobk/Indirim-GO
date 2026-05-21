@@ -1,6 +1,8 @@
 @php
     $pendingRefundsCount = 0;
-    $dashboardHref = auth()->user()?->can('view_dashboard') ? route('dashboard') : route('home');
+    $dashboardHref = auth()->user()?->can('view_dashboard')
+        ? route('dashboard')
+        : (auth()->user()?->can('view_referrals') ? route('salesperson.dashboard') : route('home'));
     if (auth()->check() && auth()->user()?->can('view_refunds')) {
         $pendingRefundsCount = \App\Models\WalletTransaction::query()
             ->where('type', \App\Enums\WalletTransactionType::Refund)
@@ -24,13 +26,25 @@
             <x-admin.usd-try-rate-panel variant="sidebar" />
 
             <flux:sidebar.nav>
-                @can('view_dashboard')
+                @if (auth()->user()?->can('view_dashboard') || auth()->user()?->can('view_referrals'))
                     <flux:sidebar.group :heading="__('messages.nav_overview')" class="grid">
-                        <flux:sidebar.item icon="home" :href="route('dashboard')" :current="request()->routeIs('dashboard')" wire:navigate>
-                            {{ __('messages.dashboard') }}
-                        </flux:sidebar.item>
+                        @can('view_dashboard')
+                            <flux:sidebar.item icon="home" :href="route('dashboard')" :current="request()->routeIs('dashboard')" wire:navigate>
+                                {{ __('messages.dashboard') }}
+                            </flux:sidebar.item>
+                        @endcan
+                        @can('view_referrals')
+                            <flux:sidebar.item icon="chart-bar" :href="route('salesperson.dashboard')" :current="request()->routeIs('salesperson.dashboard')" wire:navigate>
+                                {{ __('messages.salesperson_dashboard') }}
+                            </flux:sidebar.item>
+                        @endcan
+                        @can('manage_referred_users')
+                            <flux:sidebar.item icon="users" :href="route('salesperson.users.index')" :current="request()->routeIs('salesperson.users.*')" wire:navigate>
+                                {{ __('messages.nav_my_customers') }}
+                            </flux:sidebar.item>
+                        @endcan
                     </flux:sidebar.group>
-                @endcan
+                @endif
 
                 @if (auth()->user()?->can('manage_products') || auth()->user()?->can('manage_sections') || auth()->user()?->can('manage_loyalty_tiers') || auth()->user()?->can('update_product_prices'))
                 <flux:sidebar.group expandable :expanded="(request()->routeIs('categories')) or (request()->routeIs('packages')) or (request()->routeIs('products')) or (request()->routeIs('product-entry-prices')) or (request()->routeIs('pricing-rules')) or (request()->routeIs('loyalty-tiers'))" :heading="__('messages.nav_content_management')" class="grid">
@@ -101,7 +115,7 @@
 
                 @if (auth()->user()?->can('manage_topups') || auth()->user()?->can('manage_settlements'))
                     <livewire:sidebar.financials-group
-                        :expanded="request()->routeIs('topups') || request()->routeIs('settlements') || request()->routeIs('customer-funds')"
+                        :expanded="request()->routeIs('topups') || request()->routeIs('settlements') || request()->routeIs('customer-funds') || request()->routeIs('admin.commissions') || request()->routeIs('admin.payout-requests')"
                         :heading="__('messages.nav_financials')"
                         :key="'sidebar-financials-group'"
                     >
@@ -121,6 +135,12 @@
                         @can('manage_settlements')
                         <flux:sidebar.item icon="currency-dollar" :href="route('settlements')" :current="request()->routeIs('settlements')" wire:navigate>
                             {{ __('messages.settlements') }}
+                        </flux:sidebar.item>
+                        <flux:sidebar.item icon="document-text" :href="route('admin.commissions')" :current="request()->routeIs('admin.commissions')" wire:navigate>
+                            {{ __('messages.commissions') }}
+                        </flux:sidebar.item>
+                        <flux:sidebar.item icon="inbox-arrow-down" :href="route('admin.payout-requests')" :current="request()->routeIs('admin.payout-requests')" wire:navigate>
+                            {{ __('messages.payout_requests') }}
                         </flux:sidebar.item>
                         @endcan
                     </livewire:sidebar.financials-group>
