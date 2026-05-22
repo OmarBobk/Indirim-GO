@@ -503,7 +503,11 @@ new #[Layout('layouts::frontend')] class extends Component
     $topupCurrencySign = $topupDisplayCurrency === 'TRY' ? '₺' : '$';
 @endphp
 
-<div class="mx-auto w-full max-w-7xl px-3 py-6 sm:px-0 sm:py-10">
+<div
+    class="mx-auto w-full max-w-7xl px-3 py-6 sm:px-0 sm:py-10"
+    data-wallet-payment-root
+    x-data="{ selectedId: @entangle('paymentMethodId').defer }"
+>
     <div class="mb-4 flex items-center">
         <x-back-button />
     </div>
@@ -555,10 +559,6 @@ new #[Layout('layouts::frontend')] class extends Component
                         </flux:callout>
                     </div>
                 @endif
-                <x-wallet.payment-methods
-                    class="mt-4"
-                    :methods="$this->activePaymentMethods"
-                />
                 <form class="mt-4 space-y-4" wire:submit.prevent="submitTopup">
                     <div class="grid gap-2">
                         <flux:input
@@ -606,6 +606,11 @@ new #[Layout('layouts::frontend')] class extends Component
                         <span wire:loading>{{ __('messages.please_wait') }}</span>
                     </flux:button>
                 </form>
+                <x-wallet.payment-methods
+                    class="mt-6"
+                    instance="mobile"
+                    :methods="$this->activePaymentMethods"
+                />
             </section>
 
             <section class="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 sm:p-6">
@@ -813,11 +818,6 @@ new #[Layout('layouts::frontend')] class extends Component
                     </div>
                 @endif
 
-                <x-wallet.payment-methods
-                    class="mt-4"
-                    :methods="$this->activePaymentMethods"
-                />
-
                 <form class="mt-4 space-y-4" wire:submit.prevent="submitTopup">
                     <div class="grid gap-2">
                         <flux:input
@@ -867,6 +867,11 @@ new #[Layout('layouts::frontend')] class extends Component
                         <span wire:loading>{{ __('messages.please_wait') }}</span>
                     </flux:button>
                 </form>
+                <x-wallet.payment-methods
+                    class="mt-6"
+                    instance="desktop"
+                    :methods="$this->activePaymentMethods"
+                />
             </section>
 
             <section class="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 sm:p-6">

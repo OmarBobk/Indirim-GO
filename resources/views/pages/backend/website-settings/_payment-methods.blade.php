@@ -100,10 +100,13 @@
                 <flux:label>{{ __('messages.payment_method_image') }}</flux:label>
                 <input
                     type="file"
-                    accept="image/*"
+                    accept="image/jpeg,image/png,image/webp,image/gif"
                     wire:model="paymentMethodImageFile"
                     class="block w-full max-w-md text-sm text-zinc-600 file:mr-4 file:rounded-lg file:border-0 file:bg-zinc-100 file:px-4 file:py-2 dark:text-zinc-400 dark:file:bg-zinc-700"
                 />
+                <div wire:loading wire:target="paymentMethodImageFile" class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                    {{ __('messages.please_wait') }}
+                </div>
                 <flux:error name="paymentMethodImageFile" />
                 @if ($editingPaymentMethodId > 0)
                     @php $editingMethod = $this->paymentMethods->firstWhere('id', $editingPaymentMethodId); @endphp

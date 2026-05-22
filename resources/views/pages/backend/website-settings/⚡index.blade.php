@@ -186,7 +186,7 @@ new class extends Component
             'paymentMethodAccountText' => ['required', 'string', 'max:5000'],
             'paymentMethodSortOrder' => ['required', 'integer', 'min:0', 'max:9999'],
             'paymentMethodIsActive' => ['boolean'],
-            'paymentMethodImageFile' => ['nullable', 'image', 'max:2048'],
+            'paymentMethodImageFile' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp,gif', 'max:5120'],
         ]);
 
         app(UpsertPaymentMethod::class)->handle(

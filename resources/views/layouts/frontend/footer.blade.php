@@ -69,8 +69,10 @@
                 </a>
                 <flux:text class="text-sm text-zinc-600 dark:text-zinc-300">
                     {{ __('main.footer_tagline') }}
-                    <livewire:language-switcher />
                 </flux:text>
+                <div class="mt-3">
+                    <livewire:language-switcher />
+                </div>
             </div>
             <div class="flex flex-col gap-3">
                 <flux:heading class="text-zinc-900 dark:text-zinc-100">{{ __('main.footer_shopping') }}</flux:heading>

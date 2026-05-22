@@ -1792,6 +1792,79 @@ document.addEventListener('alpine:init', () => {
         },
     }));
 
+    Alpine.data('walletPaymentMethodCard', (config) => ({
+        copied: false,
+        methodId: config.methodId,
+        copyAriaLabel: config.copyAriaLabel ?? '',
+        copiedAnnouncement: config.copiedAnnouncement ?? '',
+        paymentRoot() {
+            const root = this.$el.closest('[data-wallet-payment-root]');
+
+            if (! root) {
+                return { selectedId: null };
+            }
+
+            const data = Alpine.$data(root);
+
+            return data ?? { selectedId: null };
+        },
+        accountText() {
+            return (this.$refs.accountText?.textContent ?? '').trim();
+        },
+        async copyAccount() {
+            const text = this.accountText();
+
+            if (text === '') {
+                return;
+            }
+
+            const ok = await this.writeClipboard(text);
+
+            if (! ok) {
+                return;
+            }
+
+            this.copied = true;
+            window.setTimeout(() => {
+                this.copied = false;
+            }, 2500);
+        },
+        async writeClipboard(text) {
+            try {
+                if (navigator.clipboard?.writeText) {
+                    await navigator.clipboard.writeText(text);
+
+                    return true;
+                }
+            } catch {
+                /* try legacy copy */
+            }
+
+            return this.legacyCopy(text);
+        },
+        legacyCopy(text) {
+            const el = document.createElement('textarea');
+            el.value = text;
+            el.setAttribute('readonly', '');
+            el.style.position = 'fixed';
+            el.style.left = '-9999px';
+            document.body.appendChild(el);
+            el.select();
+
+            let ok = false;
+
+            try {
+                ok = document.execCommand('copy');
+            } catch {
+                ok = false;
+            }
+
+            document.body.removeChild(el);
+
+            return ok;
+        },
+    }));
+
     Alpine.data('storefrontPackageSearch', (config) => ({
         query: '',
         results: [],
