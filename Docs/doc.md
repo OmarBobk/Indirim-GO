@@ -56,7 +56,7 @@
     - ###DONE: Salesperson should be able to create new user under him, see users under him and update there information (phone, username, password, email, name)
     - ###DONE: Admin should be able to set the commission percent for every salesperson
     - ###DONE: Salesperson should see only the dashboard there is no need to access the fulfillments
-    - ###DONE: if admin hit the salesperson dashboard he should be able to select some salesperson to see his states
+    - ###DONE: if admin hit the salesperson dashboard[playwright.config.js](../../../../../Users/karma/OneDrive/Desktop/playwright/playwright.config.js) he should be able to select some salesperson to see his states
     - ###DONE: add the default commission rate to the website settings
     - ###DONE: salesperson dashboard light mode isn't matched
   - ###TODO: admin/users/{user}: customer price needs to be fixed
@@ -65,7 +65,7 @@
   - ###DONE: when new user is created automatically the customer role should be assigned to him.
   - ###DONE: if admin approve an topup request by accident what he should do ?
   - ###DONE: orders/{order}: "Delivered payload" should not be hashed like this "••••••••••••••••klds"
-  - ###TODO: Add the payments ways like iban, sham cash wallet barcode, usdt wallt ...etc
+  - ###DONE: Add the payments ways like iban, sham cash wallet barcode, usdt wallt ...etc
 - Frontend:
   - ###DONE wallet transaction in /wallets should be more described
   - ###DONE Wallet /wallet Request topups form borders remove the ring

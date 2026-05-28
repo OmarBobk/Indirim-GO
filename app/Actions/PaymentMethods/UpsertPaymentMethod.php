@@ -40,7 +40,7 @@ class UpsertPaymentMethod
 
         $paymentMethod->fill([
             'name' => trim($data['name']),
-            'account_text' => trim($data['account_text']),
+            'account_text' => $this->sanitizeAccountText($data['account_text']),
             'is_active' => $data['is_active'],
             'sort_order' => max(0, (int) $data['sort_order']),
             'image' => $imagePath,
@@ -102,5 +102,20 @@ class UpsertPaymentMethod
         if (is_file($absolute)) {
             File::delete($absolute);
         }
+    }
+
+    private function sanitizeAccountText(string $accountText): string
+    {
+        $sanitized = trim($accountText);
+        $sanitized = preg_replace('/\r\n|\r|\n/', '<br>', $sanitized) ?? $sanitized;
+        $sanitized = preg_replace('/<\s*br\b[^>]*>/i', '<br>', $sanitized) ?? $sanitized;
+        $sanitized = preg_replace('/<\s*b\b[^>]*>/i', '<strong>', $sanitized) ?? $sanitized;
+        $sanitized = preg_replace('/<\s*\/\s*b\s*>/i', '</strong>', $sanitized) ?? $sanitized;
+        $sanitized = preg_replace('/<\s*strong\b[^>]*>/i', '<strong>', $sanitized) ?? $sanitized;
+        $sanitized = preg_replace('/<\s*\/\s*strong\s*>/i', '</strong>', $sanitized) ?? $sanitized;
+        $sanitized = strip_tags($sanitized, '<br><strong>');
+        $sanitized = preg_replace('/(?:<br>\s*){3,}/', '<br><br>', $sanitized) ?? $sanitized;
+
+        return trim($sanitized);
     }
 }

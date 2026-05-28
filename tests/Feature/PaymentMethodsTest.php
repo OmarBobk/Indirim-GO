@@ -72,6 +72,37 @@ test('wallet page shows active payment methods only', function () {
         ->assertDontSee('EFT Transfer');
 });
 
+test('payment method account text allows limited html formatting', function () {
+    $admin = User::factory()->create();
+    $admin->assignRole('admin');
+
+    Livewire::actingAs($admin)
+        ->test('pages::backend.website-settings.index')
+        ->call('startCreatePaymentMethod')
+        ->set('paymentMethodName', 'Formatted')
+        ->set('paymentMethodAccountText', '<strong onclick="alert(1)">Ahmet Omer</strong>
+TR72 0001
+<script>alert(1)</script>
+<b>0090 1021 6057 1050 06</b>')
+        ->set('paymentMethodSortOrder', 3)
+        ->set('paymentMethodIsActive', true)
+        ->call('savePaymentMethod');
+
+    $method = PaymentMethod::query()->where('name', 'Formatted')->firstOrFail();
+
+    expect($method->account_text)->toBe('<strong>Ahmet Omer</strong><br>TR72 0001<br>alert(1)<br><strong>0090 1021 6057 1050 06</strong>');
+    expect($method->accountTextPlain())->toBe("Ahmet Omer\nTR72 0001\nalert(1)\n0090 1021 6057 1050 06");
+
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->get(route('wallet'))
+        ->assertOk()
+        ->assertSee('<strong>Ahmet Omer</strong>', false)
+        ->assertSee('<strong>0090 1021 6057 1050 06</strong>', false)
+        ->assertDontSee('<strong onclick=', false);
+});
+
 test('migration seeds legacy topup methods', function () {
     expect(PaymentMethod::query()->where('name', 'Sham Cash')->exists())->toBeTrue();
     expect(PaymentMethod::query()->where('name', 'EFT Transfer')->exists())->toBeTrue();

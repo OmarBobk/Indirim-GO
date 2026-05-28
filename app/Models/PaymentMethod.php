@@ -8,6 +8,8 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\HtmlString;
+use Illuminate\Support\Str;
 
 class PaymentMethod extends Model
 {
@@ -66,5 +68,20 @@ class PaymentMethod extends Model
         }
 
         return asset($this->image);
+    }
+
+    public function accountTextHtml(): HtmlString
+    {
+        return new HtmlString($this->account_text);
+    }
+
+    public function accountTextPlain(): string
+    {
+        $plain = Str::of($this->account_text)
+            ->replaceMatches('/<br\s*\/?>/i', "\n")
+            ->stripTags()
+            ->toString();
+
+        return trim(html_entity_decode($plain, ENT_QUOTES | ENT_HTML5, 'UTF-8'));
     }
 }

@@ -70,12 +70,12 @@
                             <p
                                 dir="ltr"
                                 class="mt-2 font-mono text-base leading-relaxed tracking-wide break-all text-zinc-900 sm:text-lg dark:text-zinc-100"
-                            >{{ $method->account_text }}</p>
+                            >{!! $method->accountTextHtml() !!}</p>
                         </div>
                     </button>
 
                     <div class="border-t border-zinc-100 px-4 pb-4 pt-3 dark:border-zinc-800 sm:px-5">
-                        <span class="sr-only" x-ref="accountText">{{ $method->account_text }}</span>
+                        <span class="sr-only whitespace-pre-line" x-ref="accountText">{{ $method->accountTextPlain() }}</span>
                         <p class="sr-only" aria-live="polite" x-text="copied ? copiedAnnouncement : ''"></p>
                         <button
                             type="button"

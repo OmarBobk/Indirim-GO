@@ -41,8 +41,8 @@
                                     {{ $method->name }}
                                 </div>
                             </td>
-                            <td class="max-w-xs truncate px-4 py-3 text-zinc-600 dark:text-zinc-300" title="{{ $method->account_text }}">
-                                {{ Str::limit($method->account_text, 48) }}
+                            <td class="max-w-xs truncate px-4 py-3 text-zinc-600 dark:text-zinc-300" title="{{ $method->accountTextPlain() }}">
+                                {{ Str::limit($method->accountTextPlain(), 48) }}
                             </td>
                             <td class="px-4 py-3 text-zinc-600 dark:text-zinc-300">{{ $method->sort_order }}</td>
                             <td class="px-4 py-3">
@@ -63,7 +63,88 @@
     @endif
 
     @if ($editingPaymentMethodId !== null)
-        <form wire:submit="savePaymentMethod" class="mt-6 space-y-4 rounded-xl border border-dashed border-zinc-300 p-4 dark:border-zinc-600">
+        <form
+            wire:submit="savePaymentMethod"
+            class="mt-6 space-y-4 rounded-xl border border-dashed border-zinc-300 p-4 dark:border-zinc-600"
+            wire:key="payment-method-form-{{ $editingPaymentMethodId }}"
+            x-data="{
+                accountText: '',
+                syncFromInput() {
+                    this.accountText = this.$refs.accountTextInput?.value ?? '';
+                },
+                updateInputValue(nextValue) {
+                    const textarea = this.$refs.accountTextInput;
+                    if (! textarea) {
+                        return;
+                    }
+
+                    textarea.value = nextValue;
+                    this.accountText = nextValue;
+                    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+                },
+                wrapSelection(tag) {
+                    const textarea = this.$refs.accountTextInput;
+                    if (! textarea) {
+                        return;
+                    }
+
+                    const start = textarea.selectionStart ?? 0;
+                    const end = textarea.selectionEnd ?? 0;
+                    const selected = this.accountText.slice(start, end);
+                    const openTag = `<${tag}>`;
+                    const closeTag = `</${tag}>`;
+                    const before = this.accountText.slice(0, start);
+                    const after = this.accountText.slice(end);
+                    const replacement = `${openTag}${selected || ''}${closeTag}`;
+
+                    this.updateInputValue(`${before}${replacement}${after}`);
+
+                    this.$nextTick(() => {
+                        textarea.focus();
+                        const cursorStart = start + openTag.length;
+                        const cursorEnd = cursorStart + selected.length;
+                        textarea.setSelectionRange(cursorStart, cursorEnd);
+                    });
+                },
+                insertLineBreak() {
+                    const textarea = this.$refs.accountTextInput;
+                    if (! textarea) {
+                        return;
+                    }
+
+                    const start = textarea.selectionStart ?? 0;
+                    const end = textarea.selectionEnd ?? 0;
+                    const before = this.accountText.slice(0, start);
+                    const after = this.accountText.slice(end);
+
+                    this.updateInputValue(`${before}<br>${after}`);
+
+                    this.$nextTick(() => {
+                        const cursor = start + 4;
+                        textarea.focus();
+                        textarea.setSelectionRange(cursor, cursor);
+                    });
+                },
+                useTemplate() {
+                    this.updateInputValue('<strong>Ahmet Omer Karman</strong><br>TR72 0001 0090 1021 6057 1050 06');
+                },
+                previewHtml() {
+                    const value = this.accountText ?? '';
+                    const escaped = value
+                        .replace(/&/g, '&amp;')
+                        .replace(/</g, '&lt;')
+                        .replace(/>/g, '&gt;');
+
+                    return escaped
+                        .replace(new RegExp('&lt;\\s*br\\s*&gt;', 'gi'), '<br>')
+                        .replace(new RegExp('&lt;\\s*strong\\s*&gt;', 'gi'), '<strong>')
+                        .replace(new RegExp('&lt;\\s*\\/\\s*strong\\s*&gt;', 'gi'), '</strong>')
+                        .replace(new RegExp('&lt;\\s*b\\s*&gt;', 'gi'), '<strong>')
+                        .replace(new RegExp('&lt;\\s*\\/\\s*b\\s*&gt;', 'gi'), '</strong>');
+                },
+            }"
+            x-init="$nextTick(() => syncFromInput())"
+        >
             <flux:heading size="sm" class="text-zinc-900 dark:text-zinc-100">
                 {{ $editingPaymentMethodId > 0 ? __('messages.payment_method_edit') : __('messages.payment_method_add') }}
             </flux:heading>
@@ -76,9 +157,38 @@
 
             <flux:field>
                 <flux:label>{{ __('messages.payment_method_account_text') }}</flux:label>
-                <flux:textarea wire:model.defer="paymentMethodAccountText" rows="4" class="w-full max-w-xl" />
+                <div class="mb-2 flex flex-wrap items-center gap-2">
+                    <flux:button type="button" size="xs" variant="outline" x-on:click="wrapSelection('strong')">
+                        {{ __('messages.payment_method_format_bold') }}
+                    </flux:button>
+                    <flux:button type="button" size="xs" variant="outline" x-on:click="insertLineBreak()">
+                        {{ __('messages.payment_method_format_line_break') }}
+                    </flux:button>
+                    <flux:button type="button" size="xs" variant="ghost" x-on:click="useTemplate()">
+                        {{ __('messages.payment_method_format_template') }}
+                    </flux:button>
+                </div>
+                <textarea
+                    wire:model.defer="paymentMethodAccountText"
+                    x-ref="accountTextInput"
+                    x-on:input="accountText = $event.target.value"
+                    rows="4"
+                    class="w-full max-w-xl rounded-xl border border-zinc-200 bg-white px-3 py-2 text-zinc-900 focus:border-(--color-accent) focus:outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+                ></textarea>
                 <flux:text class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{{ __('messages.payment_method_account_text_hint') }}</flux:text>
                 <flux:error name="paymentMethodAccountText" />
+            </flux:field>
+
+            <flux:field>
+                <flux:label>{{ __('messages.payment_method_preview') }}</flux:label>
+                <div class="w-full max-w-xl rounded-xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-800/80">
+                    <p
+                        dir="ltr"
+                        class="font-mono text-base leading-relaxed tracking-wide break-all text-zinc-900 sm:text-lg dark:text-zinc-100"
+                        x-html="previewHtml()"
+                    ></p>
+                </div>
+                <flux:text class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{{ __('messages.payment_method_preview_hint') }}</flux:text>
             </flux:field>
 
             <div class="flex flex-wrap gap-4">
