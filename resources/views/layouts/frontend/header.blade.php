@@ -66,13 +66,9 @@
                         </span>
                     </a>
 
-                    <!-- Search Bar -->
-                    <div class=" w-full max-w-3xl mx-auto sm:order-2 order-3">
-                        <flux:input
-                            placeholder="{{__('main.search_for_games_and_products_...')}}"
-                            icon-leading="magnifying-glass"
-                            class:input=" focus:!border-(--color-accent) focus:!border-1 focus:!ring-0 focus:!outline-none focus:!ring-offset-0"
-                        />
+                    <!-- Search Bar (Alpine + JSON API; packages only, inline results) -->
+                    <div class="w-full max-w-3xl mx-auto sm:order-2 order-3">
+                        <x-storefront.package-search />
                     </div>
 
                     <!-- Action Icons -->
@@ -443,6 +439,8 @@
         <livewire:bugs.quick-report-button :key="'quick-report-frontend-'.auth()->id()" />
 
         <x-toaster-hub />
+
+        <livewire:main.buy-now-modal />
 
         @RegisterServiceWorkerScript
         @fluxScripts

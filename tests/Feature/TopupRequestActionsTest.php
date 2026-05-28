@@ -3,9 +3,9 @@
 use App\Actions\Topups\ApproveTopupRequest;
 use App\Actions\Topups\CreateTopupRequestAction;
 use App\Actions\Topups\RejectTopupRequest;
-use App\Enums\TopupMethod;
 use App\Enums\TopupRequestStatus;
 use App\Events\TopupRequestsChanged;
+use App\Models\PaymentMethod;
 use App\Models\TopupRequest;
 use App\Models\User;
 use App\Models\Wallet;
@@ -28,7 +28,7 @@ test('approving a topup posts ledger and increments balance once', function () {
     $request = app(CreateTopupRequestAction::class)->handle([
         'user_id' => $user->id,
         'wallet_id' => $wallet->id,
-        'method' => TopupMethod::ShamCash,
+        'payment_method_id' => PaymentMethod::query()->where('name', 'Sham Cash')->value('id'),
         'amount' => 100,
         'currency' => 'USD',
         'status' => TopupRequestStatus::Pending,
@@ -74,7 +74,7 @@ test('approving a topup dispatches change event', function () {
     $request = app(CreateTopupRequestAction::class)->handle([
         'user_id' => $user->id,
         'wallet_id' => $wallet->id,
-        'method' => TopupMethod::ShamCash,
+        'payment_method_id' => PaymentMethod::query()->where('name', 'Sham Cash')->value('id'),
         'amount' => 60,
         'currency' => 'USD',
         'status' => TopupRequestStatus::Pending,
@@ -100,7 +100,7 @@ test('rejecting a topup does not change balance', function () {
     $request = app(CreateTopupRequestAction::class)->handle([
         'user_id' => $user->id,
         'wallet_id' => $wallet->id,
-        'method' => TopupMethod::EftTransfer,
+        'payment_method_id' => PaymentMethod::query()->where('name', 'EFT Transfer')->value('id'),
         'amount' => 55,
         'currency' => 'USD',
         'status' => TopupRequestStatus::Pending,
@@ -142,7 +142,7 @@ test('rejecting a topup dispatches change event', function () {
     $request = app(CreateTopupRequestAction::class)->handle([
         'user_id' => $user->id,
         'wallet_id' => $wallet->id,
-        'method' => TopupMethod::EftTransfer,
+        'payment_method_id' => PaymentMethod::query()->where('name', 'EFT Transfer')->value('id'),
         'amount' => 45,
         'currency' => 'USD',
         'status' => TopupRequestStatus::Pending,

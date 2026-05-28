@@ -30,6 +30,11 @@ return [
     // Header
     'announcement_welcome' => 'مرحباً بكم في متجرنا',
     'search_for_games_and_products_...' => 'ابحث عن الألعاب والمنتجات...',
+    'search_packages_placeholder' => 'ابحث عن الباقات…',
+    'package_search_clear' => 'مسح البحث',
+    'package_search_loading' => 'جاري البحث…',
+    'package_search_type_more' => 'اكتب حرفين على الأقل',
+    'package_search_no_results' => 'لم يتم العثور على باقات',
     'login' => 'تسحيل الدخول',
     'register' => 'تسجيل',
     'dashboard' => 'لوحة التحكم',

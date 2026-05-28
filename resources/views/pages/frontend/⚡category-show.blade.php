@@ -205,5 +205,4 @@ new #[Layout('layouts::frontend')] class extends Component
         @endif
     </section>
 
-    <livewire:main.buy-now-modal />
 </div>

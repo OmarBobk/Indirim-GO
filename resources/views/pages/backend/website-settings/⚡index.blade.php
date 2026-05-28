@@ -1,12 +1,17 @@
 <?php
 
+use App\Actions\PaymentMethods\UpsertPaymentMethod;
+use App\Models\PaymentMethod;
 use App\Models\WebsiteSetting;
 use Illuminate\Contracts\View\View;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
 use Livewire\Component;
+use Livewire\WithFileUploads;
 
 new class extends Component
 {
+    use WithFileUploads;
     private const ALLOWED_COUNTRY_CODES = ['+90', '+963'];
 
     public string $contactEmail = '';
@@ -25,6 +30,21 @@ new class extends Component
     public int $commissionPayoutWaitDays = 3;
     public ?string $commissionPayoutMinAmount = '200.00';
     public ?string $defaultCommissionRatePercent = '20.00';
+
+    public ?int $editingPaymentMethodId = null;
+
+    public string $paymentMethodName = '';
+
+    public string $paymentMethodAccountText = '';
+
+    public int $paymentMethodSortOrder = 0;
+
+    public bool $paymentMethodIsActive = true;
+
+    /** @var \Illuminate\Http\UploadedFile|null */
+    public $paymentMethodImageFile = null;
+
+    public bool $removePaymentMethodImage = false;
 
     public function mount(): void
     {
@@ -126,6 +146,71 @@ new class extends Component
         } catch (\Throwable) {
             $this->addError('usdTryRate', __('messages.something_went_wrong_checkout'));
         }
+    }
+
+    public function startCreatePaymentMethod(): void
+    {
+        $this->resetPaymentMethodForm();
+        $this->editingPaymentMethodId = 0;
+    }
+
+    public function editPaymentMethod(int $paymentMethodId): void
+    {
+        $method = PaymentMethod::query()->findOrFail($paymentMethodId);
+
+        $this->editingPaymentMethodId = $method->id;
+        $this->paymentMethodName = $method->name;
+        $this->paymentMethodAccountText = $method->account_text;
+        $this->paymentMethodSortOrder = $method->sort_order;
+        $this->paymentMethodIsActive = $method->is_active;
+        $this->paymentMethodImageFile = null;
+        $this->removePaymentMethodImage = false;
+    }
+
+    public function resetPaymentMethodForm(): void
+    {
+        $this->editingPaymentMethodId = null;
+        $this->paymentMethodName = '';
+        $this->paymentMethodAccountText = '';
+        $this->paymentMethodSortOrder = 0;
+        $this->paymentMethodIsActive = true;
+        $this->paymentMethodImageFile = null;
+        $this->removePaymentMethodImage = false;
+        $this->resetValidation();
+    }
+
+    public function savePaymentMethod(): void
+    {
+        $this->validate([
+            'paymentMethodName' => ['required', 'string', 'max:255'],
+            'paymentMethodAccountText' => ['required', 'string', 'max:5000'],
+            'paymentMethodSortOrder' => ['required', 'integer', 'min:0', 'max:9999'],
+            'paymentMethodIsActive' => ['boolean'],
+            'paymentMethodImageFile' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp,gif', 'max:5120'],
+        ]);
+
+        app(UpsertPaymentMethod::class)->handle(
+            $this->editingPaymentMethodId > 0 ? $this->editingPaymentMethodId : null,
+            [
+                'name' => $this->paymentMethodName,
+                'account_text' => $this->paymentMethodAccountText,
+                'is_active' => $this->paymentMethodIsActive,
+                'sort_order' => $this->paymentMethodSortOrder,
+            ],
+            $this->paymentMethodImageFile,
+            $this->removePaymentMethodImage,
+        );
+
+        $this->resetPaymentMethodForm();
+        $this->dispatch('payment-methods-saved');
+    }
+
+    /**
+     * @return Collection<int, PaymentMethod>
+     */
+    public function getPaymentMethodsProperty(): Collection
+    {
+        return PaymentMethod::query()->ordered()->get();
     }
 
     public function render(): View
@@ -240,4 +325,6 @@ new class extends Component
             </div>
         </form>
     </section>
+
+    @include('pages.backend.website-settings._payment-methods')
 </div>

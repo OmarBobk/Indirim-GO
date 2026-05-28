@@ -31,6 +31,11 @@ return [
     // Header
     'announcement_welcome' => 'Welcome to our store',
     'search_for_games_and_products_...' => 'Search for games and products...',
+    'search_packages_placeholder' => 'Search packages…',
+    'package_search_clear' => 'Clear search',
+    'package_search_loading' => 'Searching…',
+    'package_search_type_more' => 'Type at least 2 characters',
+    'package_search_no_results' => 'No packages found',
     'login' => 'Login',
     'register' => 'Register',
     'dashboard' => 'Dashboard',

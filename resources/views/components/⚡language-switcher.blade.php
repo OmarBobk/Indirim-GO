@@ -4,19 +4,12 @@ use Livewire\Component;
 
 new class extends Component
 {
-    public string $currentLocale;
-
-    public function mount(): void
-    {
-        $this->currentLocale = app()->getLocale();
-    }
-
-    public function updatedCurrentLocale(): void
-    {
-        $this->currentLocale = app()->getLocale();
-    }
 };
 ?>
+
+@php
+    $currentLocale = app()->getLocale();
+@endphp
 
 <div>
     <flux:dropdown>
@@ -36,7 +29,7 @@ new class extends Component
                     icon="check"
                     :icon-active="$currentLocale === 'en'"
                     wire:navigate
-                    class="{{$currentLocale === 'en' ? 'hidden' : ''}}"
+                    class="{{ $currentLocale === 'en' ? 'hidden' : '' }}"
                 >
                     {{ __('messages.english') }}
                 </flux:menu.item>
@@ -46,7 +39,7 @@ new class extends Component
                     icon="check"
                     :icon-active="$currentLocale === 'ar'"
                     wire:navigate
-                    class="{{$currentLocale === 'ar' ? 'hidden' : ''}}"
+                    class="{{ $currentLocale === 'ar' ? 'hidden' : '' }}"
                 >
                     {{ __('messages.arabic') }}
                 </flux:menu.item>

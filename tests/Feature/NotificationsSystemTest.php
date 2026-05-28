@@ -2,8 +2,8 @@
 
 use App\Actions\Topups\ApproveTopupRequest;
 use App\Actions\Topups\CreateTopupRequestAction;
-use App\Enums\TopupMethod;
 use App\Enums\TopupRequestStatus;
+use App\Models\PaymentMethod;
 use App\Models\TopupRequest;
 use App\Models\User;
 use App\Models\Wallet;
@@ -33,7 +33,7 @@ it('sends topup requested notification to admins after commit', function () {
         $request = app(CreateTopupRequestAction::class)->handle([
             'user_id' => $this->customer->id,
             'wallet_id' => $wallet->id,
-            'method' => TopupMethod::ShamCash,
+            'payment_method_id' => PaymentMethod::query()->where('name', 'Sham Cash')->value('id'),
             'amount' => 50,
             'currency' => 'USD',
             'status' => TopupRequestStatus::Pending,
@@ -66,7 +66,7 @@ it('does not send notification when transaction rolls back', function () {
             $request = app(CreateTopupRequestAction::class)->handle([
                 'user_id' => $this->customer->id,
                 'wallet_id' => $wallet->id,
-                'method' => TopupMethod::ShamCash,
+                'payment_method_id' => PaymentMethod::query()->where('name', 'Sham Cash')->value('id'),
                 'amount' => 50,
                 'currency' => 'USD',
                 'status' => TopupRequestStatus::Pending,
@@ -92,7 +92,7 @@ it('does not duplicate topup approved notification on idempotent re-call', funct
     $topupRequest = app(CreateTopupRequestAction::class)->handle([
         'user_id' => $this->customer->id,
         'wallet_id' => $wallet->id,
-        'method' => TopupMethod::ShamCash,
+        'payment_method_id' => PaymentMethod::query()->where('name', 'Sham Cash')->value('id'),
         'amount' => 100,
         'currency' => 'USD',
         'status' => TopupRequestStatus::Pending,

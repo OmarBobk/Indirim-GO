@@ -1792,6 +1792,180 @@ document.addEventListener('alpine:init', () => {
         },
     }));
 
+    Alpine.data('walletPaymentMethodCard', (config) => ({
+        copied: false,
+        methodId: config.methodId,
+        copyAriaLabel: config.copyAriaLabel ?? '',
+        copiedAnnouncement: config.copiedAnnouncement ?? '',
+        paymentRoot() {
+            const root = this.$el.closest('[data-wallet-payment-root]');
+
+            if (! root) {
+                return { selectedId: null };
+            }
+
+            const data = Alpine.$data(root);
+
+            return data ?? { selectedId: null };
+        },
+        accountText() {
+            return (this.$refs.accountText?.textContent ?? '').trim();
+        },
+        async copyAccount() {
+            const text = this.accountText();
+
+            if (text === '') {
+                return;
+            }
+
+            const ok = await this.writeClipboard(text);
+
+            if (! ok) {
+                return;
+            }
+
+            this.copied = true;
+            window.setTimeout(() => {
+                this.copied = false;
+            }, 2500);
+        },
+        async writeClipboard(text) {
+            try {
+                if (navigator.clipboard?.writeText) {
+                    await navigator.clipboard.writeText(text);
+
+                    return true;
+                }
+            } catch {
+                /* try legacy copy */
+            }
+
+            return this.legacyCopy(text);
+        },
+        legacyCopy(text) {
+            const el = document.createElement('textarea');
+            el.value = text;
+            el.setAttribute('readonly', '');
+            el.style.position = 'fixed';
+            el.style.left = '-9999px';
+            document.body.appendChild(el);
+            el.select();
+
+            let ok = false;
+
+            try {
+                ok = document.execCommand('copy');
+            } catch {
+                ok = false;
+            }
+
+            document.body.removeChild(el);
+
+            return ok;
+        },
+    }));
+
+    Alpine.data('storefrontPackageSearch', (config) => ({
+        query: '',
+        results: [],
+        loading: false,
+        panelOpen: false,
+        hint: '',
+        abortController: null,
+        searchUrl: config.searchUrl,
+        minLength: config.minLength ?? 2,
+        pricesVisible: config.pricesVisible ?? false,
+        strings: config.strings ?? {},
+
+        onFocus() {
+            if (this.query.trim().length >= this.minLength) {
+                this.panelOpen = true;
+            }
+        },
+
+        closePanel() {
+            this.panelOpen = false;
+        },
+
+        clear() {
+            this.query = '';
+            this.results = [];
+            this.hint = '';
+            this.panelOpen = false;
+            if (this.abortController) {
+                this.abortController.abort();
+                this.abortController = null;
+            }
+        },
+
+        async search() {
+            const term = this.query.trim();
+
+            if (term.length < this.minLength) {
+                this.results = [];
+                this.hint = term.length === 0 ? '' : this.strings.typeMore;
+                this.panelOpen = term.length > 0;
+                this.loading = false;
+
+                return;
+            }
+
+            this.panelOpen = true;
+            this.loading = true;
+            this.hint = '';
+
+            if (this.abortController) {
+                this.abortController.abort();
+            }
+
+            this.abortController = new AbortController();
+
+            try {
+                const url = new URL(this.searchUrl, window.location.origin);
+                url.searchParams.set('q', term);
+
+                const response = await fetch(url.toString(), {
+                    method: 'GET',
+                    headers: {
+                        Accept: 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                    credentials: 'same-origin',
+                    signal: this.abortController.signal,
+                });
+
+                if (!response.ok) {
+                    this.results = [];
+                    this.hint = this.strings.noResults;
+
+                    return;
+                }
+
+                const payload = await response.json();
+                this.results = Array.isArray(payload?.data) ? payload.data : [];
+                this.hint = this.results.length === 0 ? this.strings.noResults : '';
+            } catch (error) {
+                if (error?.name === 'AbortError') {
+                    return;
+                }
+
+                this.results = [];
+                this.hint = this.strings.noResults;
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        selectPackage(pkg) {
+            if (!pkg?.id) {
+                return;
+            }
+
+            this.closePanel();
+            this.$dispatch('open-package-overlay', { packageId: pkg.id });
+        },
+    }));
+
     Alpine.store('cart').init();
 });
 

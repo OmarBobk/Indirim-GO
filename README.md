@@ -111,6 +111,8 @@ For production-like behavior, review:
 
 ## Architecture Overview
 
+See **[`Docs/PROJECT_STRUCTURE.md`](Docs/PROJECT_STRUCTURE.md)** for the full Laravel project map (skeleton, route table, Actions/Livewire conventions, models, and financial guardrails).
+
 ```text
 app/Actions/          Domain application actions (Orders, Fulfillments, Topups, Refunds, Pricing...)
 app/Domain/           Core domain logic (e.g., pricing engine)
@@ -138,6 +140,7 @@ Docs/                 Deeper project docs
 
 Reference docs:
 
+- [`Docs/PROJECT_STRUCTURE.md`](Docs/PROJECT_STRUCTURE.md) — Laravel 12 layout, routes, conventions, domain map
 - [`Docs/roles.md`](Docs/roles.md)
 - [`Docs/DB.md`](Docs/DB.md)
 - [`Docs/system_events_map.md`](Docs/system_events_map.md)
