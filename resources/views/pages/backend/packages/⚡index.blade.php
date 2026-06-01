@@ -43,6 +43,7 @@ new class extends Component
     public ?string $packageIcon = null;
     public $packageImageFile = null;
     public bool $packageIsActive = true;
+    public string $packageFulfillmentProvider = '';
 
     public ?int $editingRequirementId = null;
     public string $requirementKey = 'id';
@@ -94,7 +95,68 @@ new class extends Component
             'packageIcon' => ['nullable', 'string', 'max:255'],
             'packageImageFile' => ['nullable', 'image', 'max:2048'],
             'packageIsActive' => ['boolean'],
+            'packageFulfillmentProvider' => ['nullable', 'string', Rule::in($this->allowedFulfillmentProviderValues())],
         ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function allowedFulfillmentProviderValues(): array
+    {
+        return array_keys($this->fulfillmentProviderOptions);
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function fulfillmentProviderOptions(): array
+    {
+        $options = [
+            '' => __('messages.package_fulfillment_manual'),
+        ];
+
+        $supplierKey = array_key_first(config('fulfillment_automation.suppliers', []));
+
+        if (is_string($supplierKey) && $supplierKey !== '') {
+            $options['browser:'.$supplierKey] = __('messages.package_fulfillment_browser');
+        }
+
+        return $options;
+    }
+
+    public function fulfillmentProviderLabel(?string $provider): string
+    {
+        if ($provider === null || $provider === '' || $provider === 'manual') {
+            return __('messages.package_fulfillment_manual');
+        }
+
+        if (str_starts_with($provider, 'browser:')) {
+            return __('messages.package_fulfillment_browser');
+        }
+
+        return $provider;
+    }
+
+    private function formValueForFulfillmentProvider(?string $provider): string
+    {
+        $normalized = UpsertPackage::normalizeFulfillmentProvider($provider);
+
+        if ($normalized === null) {
+            return '';
+        }
+
+        if (array_key_exists($normalized, $this->fulfillmentProviderOptions)) {
+            return $normalized;
+        }
+
+        $supplierKey = array_key_first(config('fulfillment_automation.suppliers', []));
+
+        if (is_string($supplierKey) && $supplierKey !== '' && str_starts_with($normalized, 'browser:')) {
+            return 'browser:'.$supplierKey;
+        }
+
+        return '';
     }
 
     /**
@@ -125,6 +187,7 @@ new class extends Component
                 'is_active' => $validated['packageIsActive'],
                 'order' => $validated['packageOrder'],
                 'icon' => $validated['packageIcon'],
+                'fulfillment_provider' => $validated['packageFulfillmentProvider'] ?? null,
             ],
             $this->packageImageFile
         );
@@ -151,6 +214,7 @@ new class extends Component
         $this->packageIcon = $package->icon;
         $this->packageImageFile = null;
         $this->packageIsActive = $package->is_active;
+        $this->packageFulfillmentProvider = $this->formValueForFulfillmentProvider($package->fulfillment_provider);
 
         $this->dispatch('open-package-panel');
     }
@@ -287,6 +351,7 @@ new class extends Component
             'packageIcon',
             'packageImageFile',
             'packageIsActive',
+            'packageFulfillmentProvider',
         ]);
         $this->resetValidation();
     }
@@ -369,6 +434,14 @@ new class extends Component
             'number' => __('messages.requirement_type_number'),
             'select' => __('messages.requirement_type_select'),
         ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function getFulfillmentProviderOptionsProperty(): array
+    {
+        return $this->fulfillmentProviderOptions();
     }
 
     public function render(): View
@@ -653,6 +726,21 @@ new class extends Component
                         </div>
                     @endif
                 </div>
+                <div class="grid gap-2">
+                    <flux:select
+                        class="focus:!border-(--color-accent) focus:!border-1 focus:!ring-0 focus:!outline-none focus:!ring-offset-0"
+                        name="packageFulfillmentProvider"
+                        label="{{ __('messages.package_fulfillment_provider') }}"
+                        wire:model.defer="packageFulfillmentProvider"
+                    >
+                        @foreach ($this->fulfillmentProviderOptions as $value => $label)
+                            <flux:select.option value="{{ $value }}">{{ $label }}</flux:select.option>
+                        @endforeach
+                    </flux:select>
+                    @error('packageFulfillmentProvider')
+                        <flux:text color="red">{{ $message }}</flux:text>
+                    @enderror
+                </div>
                 <div class="flex items-center gap-3">
                     <flux:label>{{ __('messages.active') }}:</flux:label>
                     <flux:switch
@@ -781,6 +869,11 @@ new class extends Component
                                                                 {{ $package->icon }}
                                                             </span>
                                                         @endif
+                                                        @if ($package->fulfillment_provider && $package->fulfillment_provider !== 'manual')
+                                                            <flux:badge size="sm" class="shrink-0">
+                                                                {{ $this->fulfillmentProviderLabel($package->fulfillment_provider) }}
+                                                            </flux:badge>
+                                                        @endif
                                                     </div>
                                                     <div class="text-xs text-zinc-500 dark:text-zinc-400">
                                                         @if ($package->category)
@@ -892,6 +985,10 @@ new class extends Component
                                 @else
                                     /{{ $this->selectedPackage->slug }}
                                 @endif
+                            </div>
+                            <div class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                                {{ __('messages.package_fulfillment_provider') }}:
+                                {{ $this->fulfillmentProviderLabel($this->selectedPackage->fulfillment_provider) }}
                             </div>
                         </div>
                     @else

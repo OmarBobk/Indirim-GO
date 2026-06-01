@@ -127,6 +127,64 @@ test('packages page shows order range placeholder from database', function () {
         ->assertSee(__('messages.order_range_placeholder', ['min' => 2, 'max' => 8]));
 });
 
+test('package fulfillment provider can be saved as browser automation', function () {
+    $user = User::factory()->create();
+    $user->assignRole('admin');
+    $category = Category::factory()->create();
+
+    $this->actingAs($user);
+
+    Livewire::test('pages::backend.packages.index')
+        ->set('packageCategoryId', $category->id)
+        ->set('packageName', 'Automated Pack')
+        ->set('packageOrder', 3)
+        ->set('packageIsActive', true)
+        ->set('packageFulfillmentProvider', 'browser:acme')
+        ->call('savePackage')
+        ->assertHasNoErrors();
+
+    $this->assertDatabaseHas('packages', [
+        'name' => 'Automated Pack',
+        'fulfillment_provider' => 'browser:acme',
+    ]);
+});
+
+test('package fulfillment provider is stored as null for manual', function () {
+    $user = User::factory()->create();
+    $user->assignRole('admin');
+    $category = Category::factory()->create();
+
+    $this->actingAs($user);
+
+    Livewire::test('pages::backend.packages.index')
+        ->set('packageCategoryId', $category->id)
+        ->set('packageName', 'Manual Pack')
+        ->set('packageOrder', 4)
+        ->set('packageIsActive', true)
+        ->set('packageFulfillmentProvider', '')
+        ->call('savePackage')
+        ->assertHasNoErrors();
+
+    $this->assertDatabaseHas('packages', [
+        'name' => 'Manual Pack',
+        'fulfillment_provider' => null,
+    ]);
+});
+
+test('editing package loads fulfillment provider into form', function () {
+    $user = User::factory()->create();
+    $user->assignRole('admin');
+    $package = Package::factory()->create([
+        'fulfillment_provider' => 'browser:acme',
+    ]);
+
+    $this->actingAs($user);
+
+    Livewire::test('pages::backend.packages.index')
+        ->call('startEditPackage', $package->id)
+        ->assertSet('packageFulfillmentProvider', 'browser:acme');
+});
+
 test('package requirement can be added to selected package', function () {
     $user = User::factory()->create();
     $user->assignRole('admin');
