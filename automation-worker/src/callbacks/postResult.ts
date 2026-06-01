@@ -32,35 +32,3 @@ export async function postResult(
     throw new Error(`Callback failed with HTTP ${response.status}`);
   }
 }
-
-export async function uploadArtifact(
-  artifactsUrl: string,
-  secret: string,
-  buffer: Buffer,
-  filename: string,
-  label: string,
-): Promise<void> {
-  const form = new FormData();
-  form.append('label', label);
-  form.append('file', new Blob([buffer]), filename);
-
-  const bodyBuffer = Buffer.from(await form.arrayBuffer());
-  const body = bodyBuffer.toString('binary');
-  const { signature, timestamp } = signCallbackBody(
-    JSON.stringify({ label, filename }),
-    secret,
-  );
-
-  const response = await fetch(artifactsUrl, {
-    method: 'POST',
-    headers: {
-      'X-Automation-Signature': signature,
-      'X-Automation-Timestamp': timestamp,
-    },
-    body: form,
-  });
-
-  if (!response.ok) {
-    throw new Error(`Artifact upload failed with HTTP ${response.status}`);
-  }
-}

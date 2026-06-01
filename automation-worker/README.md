@@ -62,8 +62,11 @@ Worker sends:
 ```bash
 cd automation-worker
 npm install
-npm run dev
+npm run build
+npm start
 ```
+
+Screenshots are saved under `storage/screenshots/{run_uuid}/` on the worker host. Laravel artifact upload from the worker is not wired yet; use local files for debugging.
 
 ## Drivers
 
