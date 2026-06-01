@@ -45,6 +45,8 @@ new class extends Component
 
     public ?int $productCustomAmountStep = null;
 
+    public ?string $productApi = null;
+
     public bool $showDeleteProductModal = false;
     public ?int $deleteProductId = null;
     public string $deleteProductName = '';
@@ -113,6 +115,7 @@ new class extends Component
                 Rule::unique('products', 'order')->ignore($this->editingProductId),
             ],
             'productIsActive' => ['boolean'],
+            'productApi' => ['nullable', 'string', 'max:2048'],
         ];
     }
 
@@ -133,6 +136,7 @@ new class extends Component
             'productCustomAmountStep' => __('messages.custom_amount_step'),
             'productOrder' => __('messages.order'),
             'productIsActive' => __('messages.active'),
+            'productApi' => __('messages.product_api'),
         ];
     }
 
@@ -154,6 +158,7 @@ new class extends Component
                 'custom_amount_min' => $validated['productCustomAmountMin'] ?? null,
                 'custom_amount_max' => $validated['productCustomAmountMax'] ?? null,
                 'custom_amount_step' => $validated['productCustomAmountStep'] ?? null,
+                'product_api' => $validated['productApi'] ?? null,
             ]
         );
 
@@ -182,6 +187,7 @@ new class extends Component
         $this->productCustomAmountMin = $product->custom_amount_min;
         $this->productCustomAmountMax = $product->custom_amount_max;
         $this->productCustomAmountStep = $product->custom_amount_step;
+        $this->productApi = $product->product_api;
 
         $this->dispatch('open-product-panel');
     }
@@ -238,6 +244,7 @@ new class extends Component
             'productCustomAmountMin',
             'productCustomAmountMax',
             'productCustomAmountStep',
+            'productApi',
         ]);
         $this->productAmountMode = ProductAmountMode::Fixed->value;
         $this->resetValidation();
@@ -594,6 +601,21 @@ new class extends Component
                         wire:model.defer="productSerial"
                     />
                     @error('productSerial')
+                        <flux:text color="red">{{ $message }}</flux:text>
+                    @enderror
+                </div>
+                <div class="grid gap-2 md:col-span-2">
+                    <flux:input
+                        class:input="focus:!border-(--color-accent) focus:!border-1 focus:!ring-0 focus:!outline-none focus:!ring-offset-0"
+                        name="productApi"
+                        label="{{ __('messages.product_api') }}"
+                        placeholder="{{ __('messages.product_api_placeholder') }}"
+                        wire:model.defer="productApi"
+                    />
+                    <flux:text class="text-xs text-zinc-500 dark:text-zinc-400">
+                        {{ __('messages.product_api_hint') }}
+                    </flux:text>
+                    @error('productApi')
                         <flux:text color="red">{{ $message }}</flux:text>
                     @enderror
                 </div>

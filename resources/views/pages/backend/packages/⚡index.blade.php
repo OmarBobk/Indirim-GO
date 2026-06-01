@@ -44,6 +44,7 @@ new class extends Component
     public $packageImageFile = null;
     public bool $packageIsActive = true;
     public string $packageFulfillmentProvider = '';
+    public ?string $packageApi = null;
 
     public ?int $editingRequirementId = null;
     public string $requirementKey = 'id';
@@ -96,6 +97,7 @@ new class extends Component
             'packageImageFile' => ['nullable', 'image', 'max:2048'],
             'packageIsActive' => ['boolean'],
             'packageFulfillmentProvider' => ['nullable', 'string', Rule::in($this->allowedFulfillmentProviderValues())],
+            'packageApi' => ['nullable', 'string', 'max:2048'],
         ];
     }
 
@@ -116,10 +118,12 @@ new class extends Component
             '' => __('messages.package_fulfillment_manual'),
         ];
 
-        $supplierKey = array_key_first(config('fulfillment_automation.suppliers', []));
+        foreach (config('fulfillment_automation.suppliers', []) as $supplierKey => $supplier) {
+            if (! is_string($supplierKey) || $supplierKey === '') {
+                continue;
+            }
 
-        if (is_string($supplierKey) && $supplierKey !== '') {
-            $options['browser:'.$supplierKey] = __('messages.package_fulfillment_browser');
+            $options['browser:'.$supplierKey] = __('messages.package_fulfillment_browser').' ('.$supplierKey.')';
         }
 
         return $options;
@@ -188,6 +192,7 @@ new class extends Component
                 'order' => $validated['packageOrder'],
                 'icon' => $validated['packageIcon'],
                 'fulfillment_provider' => $validated['packageFulfillmentProvider'] ?? null,
+                'package_api' => $validated['packageApi'] ?? null,
             ],
             $this->packageImageFile
         );
@@ -215,6 +220,7 @@ new class extends Component
         $this->packageImageFile = null;
         $this->packageIsActive = $package->is_active;
         $this->packageFulfillmentProvider = $this->formValueForFulfillmentProvider($package->fulfillment_provider);
+        $this->packageApi = $package->package_api;
 
         $this->dispatch('open-package-panel');
     }
@@ -352,6 +358,7 @@ new class extends Component
             'packageImageFile',
             'packageIsActive',
             'packageFulfillmentProvider',
+            'packageApi',
         ]);
         $this->resetValidation();
     }
@@ -738,6 +745,21 @@ new class extends Component
                         @endforeach
                     </flux:select>
                     @error('packageFulfillmentProvider')
+                        <flux:text color="red">{{ $message }}</flux:text>
+                    @enderror
+                </div>
+                <div class="grid gap-2" x-show="$wire.packageFulfillmentProvider.startsWith('browser:')" x-cloak>
+                    <flux:input
+                        class:input="focus:!border-(--color-accent) focus:!border-1 focus:!ring-0 focus:!outline-none focus:!ring-offset-0"
+                        name="packageApi"
+                        label="{{ __('messages.package_api') }}"
+                        placeholder="{{ __('messages.package_api_placeholder') }}"
+                        wire:model.defer="packageApi"
+                    />
+                    <flux:text class="text-xs text-zinc-500 dark:text-zinc-400">
+                        {{ __('messages.package_api_hint') }}
+                    </flux:text>
+                    @error('packageApi')
                         <flux:text color="red">{{ $message }}</flux:text>
                     @enderror
                 </div>

@@ -149,6 +149,29 @@ test('package fulfillment provider can be saved as browser automation', function
     ]);
 });
 
+test('package api can be saved for browser automation packages', function () {
+    $user = User::factory()->create();
+    $user->assignRole('admin');
+    $category = Category::factory()->create();
+
+    $this->actingAs($user);
+
+    Livewire::test('pages::backend.packages.index')
+        ->set('packageCategoryId', $category->id)
+        ->set('packageName', 'Wasim Pack')
+        ->set('packageOrder', 5)
+        ->set('packageIsActive', true)
+        ->set('packageFulfillmentProvider', 'browser:wasim')
+        ->set('packageApi', '/Customer/Category/games')
+        ->call('savePackage')
+        ->assertHasNoErrors();
+
+    $this->assertDatabaseHas('packages', [
+        'name' => 'Wasim Pack',
+        'package_api' => '/Customer/Category/games',
+    ]);
+});
+
 test('package fulfillment provider is stored as null for manual', function () {
     $user = User::factory()->create();
     $user->assignRole('admin');

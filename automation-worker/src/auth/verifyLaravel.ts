@@ -1,5 +1,32 @@
 import crypto from 'node:crypto';
 
+export function signArtifactUpload(
+  runUuid: string,
+  label: string,
+  fileData: Buffer,
+  secret: string,
+): { signature: string; timestamp: string } {
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  const fileHash = crypto.createHash('sha256').update(fileData).digest('hex');
+  const payload = `${timestamp}.${runUuid}.${label}.${fileHash}`;
+  const signature = crypto.createHmac('sha256', secret).update(payload).digest('hex');
+
+  return {
+    timestamp,
+    signature: `sha256=${signature}`,
+  };
+}
+
+export function extractRunUuidFromArtifactsUrl(callbackUrl: string): string {
+  const match = callbackUrl.match(/\/runs\/([^/]+)\/artifacts\/?$/);
+
+  if (match === null) {
+    throw new Error(`Invalid artifacts callback URL: ${callbackUrl}`);
+  }
+
+  return match[1];
+}
+
 export function verifyLaravelRequest(
   rawBody: string,
   signatureHeader: string,
@@ -38,10 +65,18 @@ export function verifyLaravelRequest(
 }
 
 export function signCallbackBody(rawBody: string, secret: string): { signature: string; timestamp: string } {
+  return signCallbackBuffer(Buffer.from(rawBody, 'utf8'), secret);
+}
+
+export function signCallbackBuffer(
+  rawBody: Buffer,
+  secret: string,
+): { signature: string; timestamp: string } {
   const timestamp = String(Math.floor(Date.now() / 1000));
   const signature = crypto
     .createHmac('sha256', secret)
-    .update(`${timestamp}.${rawBody}`)
+    .update(`${timestamp}.`)
+    .update(rawBody)
     .digest('hex');
 
   return {

@@ -159,6 +159,8 @@ class FulfillmentAutomationService
             'custom_amount' => $customAmount,
             'product_slug' => $orderItem?->product?->slug,
             'package_slug' => $orderItem?->package?->slug,
+            'package_api' => $orderItem?->package?->package_api,
+            'product_api' => $orderItem?->product?->product_api,
             'credentials' => $supplier['credentials'] ?? [],
             'callback_urls' => [
                 'result' => URL::to('/internal/automation/runs/'.$run->uuid.'/result'),
@@ -204,8 +206,87 @@ class FulfillmentAutomationService
         return hash_equals($expected, $provided);
     }
 
+    public function signArtifactPayload(
+        string $runUuid,
+        string $label,
+        string $fileHash,
+        ?int $timestamp = null,
+    ): string {
+        $timestamp ??= time();
+        $secret = (string) config('fulfillment_automation.callback_secret');
+        $payload = $timestamp.'.'.$runUuid.'.'.$label.'.'.$fileHash;
+
+        return 'sha256='.hash_hmac('sha256', $payload, $secret);
+    }
+
+    public function verifyArtifactSignature(
+        string $runUuid,
+        string $label,
+        string $fileHash,
+        string $signatureHeader,
+        string $timestampHeader,
+    ): bool {
+        $secret = (string) config('fulfillment_automation.callback_secret');
+
+        if ($secret === '' || $runUuid === '' || $label === '' || $fileHash === '') {
+            return false;
+        }
+
+        if (! ctype_digit($timestampHeader)) {
+            return false;
+        }
+
+        $timestamp = (int) $timestampHeader;
+        $skew = (int) config('fulfillment_automation.timeouts.signature_skew_seconds', 300);
+
+        if (abs(time() - $timestamp) > $skew) {
+            return false;
+        }
+
+        $expected = hash_hmac('sha256', $timestamp.'.'.$runUuid.'.'.$label.'.'.$fileHash, $secret);
+        $provided = str_starts_with($signatureHeader, 'sha256=')
+            ? substr($signatureHeader, 7)
+            : $signatureHeader;
+
+        return hash_equals($expected, $provided);
+    }
+
     public function artifactStorageDirectory(string $runUuid): string
     {
         return 'fulfillment-automation/'.$runUuid;
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $resultPayload
+     * @return array<string, mixed>|null
+     */
+    public function enrichResultPayload(Fulfillment $fulfillment, ?array $resultPayload): ?array
+    {
+        $payload = is_array($resultPayload) ? $resultPayload : [];
+
+        $fulfillment->loadMissing('orderItem.product');
+
+        $productApi = $payload['product_api'] ?? $fulfillment->orderItem?->product?->product_api;
+
+        if (! is_string($productApi) || trim($productApi) === '') {
+            return $payload === [] ? null : $payload;
+        }
+
+        $productApi = trim($productApi);
+        $payload['product_api'] = $productApi;
+        $payload['product_url'] ??= $this->buildWasimProductUrl($productApi);
+
+        return $payload;
+    }
+
+    public function buildWasimProductUrl(string $productApi): string
+    {
+        $trimmed = trim($productApi);
+
+        if (str_starts_with($trimmed, 'http://') || str_starts_with($trimmed, 'https://')) {
+            return $trimmed;
+        }
+
+        return 'https://wasim-store.com/'.ltrim($trimmed, '/');
     }
 }

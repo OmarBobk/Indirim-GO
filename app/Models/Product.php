@@ -40,6 +40,7 @@ class Product extends Model
         'custom_amount_max',
         'custom_amount_step',
         'slug',
+        'product_api',
         'entry_price',
         'retail_price',
         'wholesale_price',

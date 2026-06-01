@@ -26,6 +26,15 @@ return [
     'queue' => env('FULFILLMENT_AUTOMATION_QUEUE', 'fulfillment-automation'),
 
     'suppliers' => [
+        'wasim' => [
+            'driver' => 'wasim',
+            'session_key' => 'wasim-main',
+            'max_concurrent_runs' => 1,
+            'credentials' => [
+                'username' => env('FULFILLMENT_AUTOMATION_WASIM_USERNAME'),
+                'password' => env('FULFILLMENT_AUTOMATION_WASIM_PASSWORD'),
+            ],
+        ],
         'acme' => [
             'driver' => 'acme',
             'session_key' => 'acme-main',

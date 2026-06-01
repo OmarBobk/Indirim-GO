@@ -54,6 +54,10 @@ class IngestFulfillmentAutomationResult
 
             $logExcerpt = $payload['log_excerpt'] ?? null;
             $resultPayload = $payload['delivered_payload'] ?? $payload['result_payload'] ?? null;
+            $resultPayload = $this->automationService->enrichResultPayload(
+                $lockedFulfillment,
+                is_array($resultPayload) ? $resultPayload : null,
+            );
 
             if ($outcome === 'success') {
                 $externalOrderId = isset($payload['external_order_id'])

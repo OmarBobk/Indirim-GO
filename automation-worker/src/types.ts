@@ -11,6 +11,8 @@ export type RunPayload = {
   custom_amount: { amount?: number; unit?: string } | null;
   product_slug?: string | null;
   package_slug?: string | null;
+  package_api?: string | null;
+  product_api?: string | null;
   credentials: Record<string, string | undefined>;
   callback_urls: {
     result: string;

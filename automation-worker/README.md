@@ -66,8 +66,14 @@ npm run build
 npm start
 ```
 
-Screenshots are saved under `storage/screenshots/{run_uuid}/` on the worker host. Laravel artifact upload from the worker is not wired yet; use local files for debugging.
+Screenshots are saved under `automation-worker/storage/screenshots/{run_uuid}/` and uploaded to Laravel after each run. View them in the fulfillment modal when artifact upload succeeds.
 
 ## Drivers
 
+| Driver | Supplier | Status |
+|--------|----------|--------|
+| `wasim` | Wasim Store | Open product URL first → login only if redirected → order TBD |
+| `acme` | Test placeholder | Simulated success for automated tests |
+
 Add `src/drivers/{name}/index.ts` and register in `src/drivers/index.ts`.
+Register the supplier in Laravel `config/fulfillment_automation.php` and set the package to `browser:{supplier_key}`.

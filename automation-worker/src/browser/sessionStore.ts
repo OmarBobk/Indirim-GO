@@ -1,14 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
-
-const sessionsRoot = path.resolve('storage/sessions');
+import { workerStoragePath } from '../storage/workerPaths.js';
 
 export function sessionStatePath(sessionKey: string): string {
-  return path.join(sessionsRoot, sessionKey, 'storageState.json');
+  return workerStoragePath('sessions', sessionKey, 'storageState.json');
 }
 
 export function ensureSessionDir(sessionKey: string): void {
-  const dir = path.join(sessionsRoot, sessionKey);
+  const dir = path.dirname(sessionStatePath(sessionKey));
   fs.mkdirSync(dir, { recursive: true });
 }
 

@@ -10,7 +10,7 @@ use Illuminate\Support\Str;
 class UpsertPackage
 {
     /**
-     * @param  array{category_id:int,name:string,description:?string,is_active:bool,order:int,icon:?string,fulfillment_provider:?string}  $data
+     * @param  array{category_id:int,name:string,description:?string,is_active:bool,order:int,icon:?string,fulfillment_provider:?string,package_api:?string}  $data
      */
     public function handle(?int $packageId, array $data, ?UploadedFile $imageFile): Package
     {
@@ -45,6 +45,7 @@ class UpsertPackage
             'description' => $data['description'] !== null && trim($data['description']) !== '' ? trim($data['description']) : null,
             'is_active' => $data['is_active'],
             'fulfillment_provider' => self::normalizeFulfillmentProvider($data['fulfillment_provider'] ?? null),
+            'package_api' => self::normalizeSupplierApi($data['package_api'] ?? null),
             'order' => $data['order'],
             'icon' => $data['icon'],
             'image' => $imagePath ?? $package->image,
@@ -62,5 +63,14 @@ class UpsertPackage
         }
 
         return $provider;
+    }
+
+    public static function normalizeSupplierApi(?string $value): ?string
+    {
+        if ($value === null || trim($value) === '') {
+            return null;
+        }
+
+        return trim($value);
     }
 }

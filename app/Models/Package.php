@@ -25,6 +25,7 @@ class Package extends Model
         'description',
         'is_active',
         'fulfillment_provider',
+        'package_api',
         'order',
         'icon',
         'image',
