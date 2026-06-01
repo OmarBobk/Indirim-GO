@@ -24,6 +24,20 @@ class ClaimFulfillment
                 ->lockForUpdate()
                 ->firstOrFail();
 
+            app(CancelFulfillmentAutomationRun::class)->handle($lockedFulfillment, 'human_claim');
+
+            $lockedFulfillment->refresh();
+
+            if (
+                $lockedFulfillment->status === FulfillmentStatus::Processing
+                && $lockedFulfillment->claimed_by === null
+            ) {
+                $lockedFulfillment->fill([
+                    'status' => FulfillmentStatus::Queued,
+                    'processed_at' => null,
+                ])->save();
+            }
+
             if ($lockedFulfillment->claimed_by === $actorId && $lockedFulfillment->status === FulfillmentStatus::Processing) {
                 return $lockedFulfillment;
             }

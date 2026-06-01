@@ -9,11 +9,13 @@ use App\Enums\FulfillmentStatus;
 use App\Enums\OrderStatus;
 use App\Enums\ProductAmountMode;
 use App\Events\FulfillmentListChanged;
+use App\Jobs\DispatchFulfillmentAutomationJob;
 use App\Models\Fulfillment;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\User;
 use App\Notifications\FulfillmentCreatedNotification;
+use App\Services\FulfillmentAutomationService;
 use App\Services\NotificationRecipientService;
 use App\Services\SystemEventService;
 use Illuminate\Support\Facades\DB;
@@ -34,9 +36,12 @@ class CreateFulfillmentsForOrder
         $order->items()->get()->each(function ($item) use ($order, $appendLog): void {
             DB::transaction(function () use ($order, $appendLog, $item): void {
                 $lockedItem = OrderItem::query()
+                    ->with('package:id,fulfillment_provider')
                     ->whereKey($item->id)
                     ->lockForUpdate()
                     ->firstOrFail();
+
+                $provider = app(ResolveFulfillmentProvider::class)->handle($lockedItem);
 
                 $quantity = max(0, (int) $lockedItem->quantity);
                 $amountMode = $lockedItem->amount_mode ?? ProductAmountMode::Fixed;
@@ -79,7 +84,7 @@ class CreateFulfillmentsForOrder
                     $fulfillment = Fulfillment::create([
                         'order_id' => $order->id,
                         'order_item_id' => $lockedItem->id,
-                        'provider' => 'manual',
+                        'provider' => $provider,
                         'status' => FulfillmentStatus::Queued,
                         'attempts' => 0,
                         'meta' => $meta,
@@ -98,6 +103,9 @@ class CreateFulfillmentsForOrder
                     DB::afterCommit(static function () use ($fulfillmentId, $orderId): void {
                         event(new FulfillmentListChanged($fulfillmentId, 'created'));
                         $fulfillment = Fulfillment::query()->find($fulfillmentId);
+                        if ($fulfillment !== null && app(FulfillmentAutomationService::class)->isEligible($fulfillment)) {
+                            DispatchFulfillmentAutomationJob::dispatch($fulfillmentId);
+                        }
                         $order = Order::query()->find($orderId);
                         if ($fulfillment !== null && $order !== null) {
                             $orderUser = User::query()->find($order->user_id);

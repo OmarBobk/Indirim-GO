@@ -1,11 +1,15 @@
 <?php
 
+use App\Actions\Fulfillments\CancelFulfillmentAutomationRun;
 use App\Actions\Fulfillments\CompleteFulfillment;
 use App\Actions\Fulfillments\ClaimFulfillment;
 use App\Actions\Fulfillments\FailFulfillment;
 use App\Actions\Fulfillments\GetFulfillments;
 use App\Actions\Fulfillments\RetryFulfillment;
 use App\Actions\Fulfillments\StartFulfillment;
+use App\Jobs\DispatchFulfillmentAutomationJob;
+use App\Models\FulfillmentAutomationRun;
+use App\Services\FulfillmentAutomationService;
 use App\Actions\Orders\RefundOrderItem;
 use App\Actions\Refunds\ApproveRefundRequest;
 use App\Enums\FulfillmentStatus;
@@ -342,6 +346,30 @@ new class extends Component
         app(RetryFulfillment::class)->handle($fulfillment, 'admin', auth()->id());
 
         $this->success(__('messages.fulfillment_marked_queued'));
+    }
+
+    public function retryAutomation(int $fulfillmentId): void
+    {
+        $fulfillment = Fulfillment::query()->findOrFail($fulfillmentId);
+
+        if (! $fulfillment->isBrowserAutomated()) {
+            return;
+        }
+
+        $this->authorize('update', $fulfillment);
+
+        if ($fulfillment->status === FulfillmentStatus::Failed) {
+            app(RetryFulfillment::class)->handle($fulfillment, 'admin', auth()->id());
+            $fulfillment = $fulfillment->refresh();
+        } else {
+            app(CancelFulfillmentAutomationRun::class)->handle($fulfillment, 'manual_retry');
+        }
+
+        if (app(FulfillmentAutomationService::class)->isEligible($fulfillment->refresh())) {
+            DispatchFulfillmentAutomationJob::dispatch($fulfillment->id);
+        }
+
+        $this->success(__('messages.fulfillment_automation_retry_queued'));
     }
 
     #[On('fulfillment-list-updated')]
@@ -745,8 +773,14 @@ new class extends Component
                 'order.user:id,username',
                 'orderItem.product:id,name,slug',
                 'logs' => fn ($query) => $query->latest('created_at'),
+                'automationRuns' => fn ($query) => $query->latest('id')->limit(3),
             ])
             ->find($this->selectedFulfillmentId);
+    }
+
+    public function getLatestAutomationRunProperty(): ?FulfillmentAutomationRun
+    {
+        return $this->selectedFulfillment?->automationRuns?->first();
     }
 
     public function getPaymentTransactionProperty(): ?WalletTransaction
@@ -1648,6 +1682,56 @@ new class extends Component
                                 $hasRequirementsPayload = ! blank($requirementsPayload);
                                 $hasDeliveredPayload = ! blank($deliveredPayload);
                             @endphp
+
+                            @if ($this->selectedFulfillment->isBrowserAutomated())
+                                @php($automationRun = $this->latestAutomationRun)
+                                <div class="mb-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800/60">
+                                    <div class="flex flex-wrap items-center justify-between gap-2">
+                                        <div class="text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                                            {{ __('messages.fulfillment_automation') }}
+                                        </div>
+                                        @if ($automationRun)
+                                            <flux:badge color="zinc">{{ $automationRun->status->value }}</flux:badge>
+                                        @endif
+                                    </div>
+                                    @if ($automationRun?->external_order_id)
+                                        <div class="mt-2 text-sm text-zinc-700 dark:text-zinc-300">
+                                            {{ __('messages.supplier_order_id') }}:
+                                            <span class="font-mono">{{ $automationRun->external_order_id }}</span>
+                                        </div>
+                                    @endif
+                                    @if (data_get($this->selectedFulfillment->meta, 'automation.requires_review'))
+                                        <flux:callout variant="warning" icon="exclamation-triangle" class="mt-2">
+                                            {{ __('messages.fulfillment_automation_needs_review') }}
+                                        </flux:callout>
+                                    @endif
+                                    @if ($automationRun && $automationRun->artifactPaths() !== [])
+                                        <div class="mt-2 flex flex-wrap gap-2">
+                                            @foreach ($automationRun->artifactPaths() as $artifactPath)
+                                                <flux:button
+                                                    size="sm"
+                                                    variant="ghost"
+                                                    href="{{ route('admin.fulfillment-automation.artifacts.show', ['run' => $automationRun->id, 'path' => $artifactPath]) }}"
+                                                    target="_blank"
+                                                >
+                                                    {{ basename($artifactPath) }}
+                                                </flux:button>
+                                            @endforeach
+                                        </div>
+                                    @endif
+                                    @if ($this->selectedFulfillment->status === \App\Enums\FulfillmentStatus::Failed || $automationRun?->status?->value === 'needs_review')
+                                        <div class="mt-3">
+                                            <flux:button
+                                                size="sm"
+                                                variant="outline"
+                                                wire:click="retryAutomation({{ $this->selectedFulfillment->id }})"
+                                            >
+                                                {{ __('messages.retry_automation') }}
+                                            </flux:button>
+                                        </div>
+                                    @endif
+                                </div>
+                            @endif
 
                             @if ($this->selectedFulfillment->status === \App\Enums\FulfillmentStatus::Failed && $this->selectedFulfillment->last_error)
                                 <flux:callout variant="subtle" icon="exclamation-triangle" class="mb-3">

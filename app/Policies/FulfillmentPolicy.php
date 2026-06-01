@@ -2,7 +2,9 @@
 
 namespace App\Policies;
 
+use App\Enums\FulfillmentAutomationRunStatus;
 use App\Models\Fulfillment;
+use App\Models\FulfillmentAutomationRun;
 use App\Models\User;
 
 class FulfillmentPolicy
@@ -57,6 +59,10 @@ class FulfillmentPolicy
 
     public function claim(User $user, Fulfillment $fulfillment): bool
     {
+        if ($this->hasActiveAutomationRun($fulfillment) && ! $this->isAdmin($user)) {
+            return false;
+        }
+
         if ($this->isAdmin($user)) {
             return true;
         }
@@ -67,6 +73,18 @@ class FulfillmentPolicy
 
         return $fulfillment->claimed_by === null
             && $fulfillment->status->value === 'queued';
+    }
+
+    private function hasActiveAutomationRun(Fulfillment $fulfillment): bool
+    {
+        if (! $fulfillment->isBrowserAutomated()) {
+            return false;
+        }
+
+        return FulfillmentAutomationRun::query()
+            ->where('fulfillment_id', $fulfillment->id)
+            ->where('status', FulfillmentAutomationRunStatus::Running)
+            ->exists();
     }
 
     public function delete(User $user, Fulfillment $fulfillment): bool

@@ -24,6 +24,7 @@ class Package extends Model
         'slug',
         'description',
         'is_active',
+        'fulfillment_provider',
         'order',
         'icon',
         'image',
