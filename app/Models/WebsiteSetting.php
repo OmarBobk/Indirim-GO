@@ -18,6 +18,7 @@ class WebsiteSetting extends Model
         'commission_payout_wait_days',
         'commission_payout_min_amount',
         'default_commission_rate_percent',
+        'automation_enabled',
     ];
 
     /**
@@ -32,6 +33,7 @@ class WebsiteSetting extends Model
             'commission_payout_wait_days' => 'integer',
             'commission_payout_min_amount' => 'decimal:2',
             'default_commission_rate_percent' => 'decimal:2',
+            'automation_enabled' => 'boolean',
         ];
     }
 
@@ -55,7 +57,13 @@ class WebsiteSetting extends Model
             'commission_payout_wait_days' => 3,
             'commission_payout_min_amount' => 200,
             'default_commission_rate_percent' => 20,
+            'automation_enabled' => true,
         ]);
+    }
+
+    public static function getAutomationEnabled(): bool
+    {
+        return (bool) self::instance()->automation_enabled;
     }
 
     public static function getContactEmail(): ?string

@@ -7,6 +7,7 @@ use App\Actions\Packages\GetPackageDetails;
 use App\Actions\Packages\GetPackageRequirementDetails;
 use App\Actions\Packages\GetPackageRequirements;
 use App\Actions\Packages\GetPackages;
+use App\Actions\Packages\TogglePackageFulfillment;
 use App\Actions\Packages\TogglePackageStatus;
 use App\Actions\Packages\UpsertPackage;
 use App\Actions\Packages\UpsertPackageRequirement;
@@ -234,6 +235,16 @@ new class extends Component
     public function toggleStatus(int $packageId): void
     {
         app(TogglePackageStatus::class)->handle($packageId);
+    }
+
+    public function toggleFulfillment(int $packageId): void
+    {
+        app(TogglePackageFulfillment::class)->handle($packageId);
+    }
+
+    public function canTogglePackageFulfillment(): bool
+    {
+        return TogglePackageFulfillment::defaultBrowserProvider() !== null;
     }
 
     public function confirmDeletePackage(int $packageId): void
@@ -852,6 +863,7 @@ new class extends Component
                                     <th class="px-5 py-3 text-start font-semibold">{{ __('messages.category') }}</th>
                                     <th class="px-5 py-3 text-start font-semibold">{{ __('messages.order') }}</th>
                                     <th class="px-5 py-3 text-start font-semibold">{{ __('messages.status') }}</th>
+                                    <th class="px-5 py-3 text-start font-semibold">{{ __('messages.package_fulfillment_provider') }}</th>
                                     <th class="px-5 py-3 text-start font-semibold">{{ __('messages.requirements') }}</th>
                                     <th class="px-5 py-3 text-end font-semibold">{{ __('messages.actions') }}</th>
                                 </tr>
@@ -891,11 +903,6 @@ new class extends Component
                                                                 {{ $package->icon }}
                                                             </span>
                                                         @endif
-                                                        @if ($package->fulfillment_provider && $package->fulfillment_provider !== 'manual')
-                                                            <flux:badge size="sm" class="shrink-0">
-                                                                {{ $this->fulfillmentProviderLabel($package->fulfillment_provider) }}
-                                                            </flux:badge>
-                                                        @endif
                                                     </div>
                                                     <div class="text-xs text-zinc-500 dark:text-zinc-400">
                                                         @if ($package->category)
@@ -920,6 +927,38 @@ new class extends Component
                                                     wire:click="toggleStatus({{ $package->id }})"
                                                     aria-label="{{ __('messages.toggle_status_for', ['name' => $package->name]) }}"
                                                 />
+                                            </div>
+                                        </td>
+                                        <td class="px-5 py-4">
+                                            <div class="flex items-center justify-start">
+                                                @if ($this->canTogglePackageFulfillment())
+                                                    <button
+                                                        type="button"
+                                                        wire:click="toggleFulfillment({{ $package->id }})"
+                                                        wire:loading.attr="disabled"
+                                                        wire:target="toggleFulfillment({{ $package->id }})"
+                                                        @class([
+                                                            'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/70 disabled:cursor-not-allowed disabled:opacity-60',
+                                                            'border-cyan-300 bg-cyan-50 text-cyan-800 hover:bg-cyan-100 dark:border-cyan-700 dark:bg-cyan-950/60 dark:text-cyan-200 dark:hover:bg-cyan-950' => $package->isBrowserAutomated(),
+                                                            'border-zinc-200 bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700' => ! $package->isBrowserAutomated(),
+                                                        ])
+                                                        aria-label="{{ __('messages.toggle_fulfillment_for', ['name' => $package->name]) }}"
+                                                        aria-pressed="{{ $package->isBrowserAutomated() ? 'true' : 'false' }}"
+                                                    >
+                                                        @if ($package->isBrowserAutomated())
+                                                            <flux:icon icon="cpu-chip" class="size-3.5 shrink-0" />
+                                                            <span>{{ __('messages.package_fulfillment_automation_short') }}</span>
+                                                        @else
+                                                            <flux:icon icon="hand-raised" class="size-3.5 shrink-0" />
+                                                            <span>{{ __('messages.package_fulfillment_manual_short') }}</span>
+                                                        @endif
+                                                    </button>
+                                                @else
+                                                    <span class="inline-flex items-center gap-1.5 rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs font-semibold text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-400">
+                                                        <flux:icon icon="hand-raised" class="size-3.5 shrink-0" />
+                                                        <span>{{ __('messages.package_fulfillment_manual_short') }}</span>
+                                                    </span>
+                                                @endif
                                             </div>
                                         </td>
                                         <td class="px-5 py-4 text-zinc-600 dark:text-zinc-300">

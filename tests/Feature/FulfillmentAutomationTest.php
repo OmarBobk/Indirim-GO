@@ -11,6 +11,7 @@ use App\Enums\FulfillmentAutomationRunStatus;
 use App\Enums\FulfillmentStatus;
 use App\Enums\OrderItemStatus;
 use App\Enums\OrderStatus;
+use App\Enums\ProductAmountMode;
 use App\Jobs\DispatchFulfillmentAutomationJob;
 use App\Models\Fulfillment;
 use App\Models\FulfillmentAutomationRun;
@@ -264,6 +265,8 @@ test('dispatch job includes package and product api in worker payload', function
         'unit_price' => 25,
         'quantity' => 1,
         'line_total' => 25,
+        'amount_mode' => ProductAmountMode::Fixed,
+        'requirements_payload' => ['id' => '987654321'],
         'status' => OrderItemStatus::Pending,
     ]);
 
@@ -282,7 +285,74 @@ test('dispatch job includes package and product api in worker payload', function
 
         return is_array($body)
             && ($body['package_api'] ?? null) === '/Customer/Category/test-pack'
-            && ($body['product_api'] ?? null) === 'Customer/Home/ProductRequest?productId=99';
+            && ($body['product_api'] ?? null) === 'Customer/Home/ProductRequest?productId=99'
+            && ($body['product_amount_mode'] ?? null) === ProductAmountMode::Fixed->value
+            && ($body['requirements']['id'] ?? null) === '987654321'
+            && (float) ($body['unit_price'] ?? 0) === 25.0
+            && (float) ($body['line_total'] ?? 0) === 25.0;
+    });
+});
+
+test('dispatch job includes custom amount and line total for custom mode items', function () {
+    Http::fake([
+        'http://automation-worker.test/v1/runs' => Http::response(['accepted' => true], 202),
+    ]);
+
+    $user = User::factory()->create();
+    $package = Package::factory()->create([
+        'fulfillment_provider' => 'browser:acme',
+        'package_api' => '/Customer/Category/data-pack',
+    ]);
+    $product = Product::factory()->create([
+        'package_id' => $package->id,
+        'amount_mode' => ProductAmountMode::Custom,
+        'product_api' => 'Customer/Home/ProductRequest?productId=50',
+    ]);
+
+    $order = Order::create([
+        'user_id' => $user->id,
+        'order_number' => Order::temporaryOrderNumber(),
+        'currency' => 'USD',
+        'subtotal' => 48.88,
+        'fee' => 0,
+        'total' => 48.88,
+        'status' => OrderStatus::Paid,
+    ]);
+
+    OrderItem::create([
+        'order_id' => $order->id,
+        'product_id' => $product->id,
+        'package_id' => $package->id,
+        'name' => $product->name,
+        'unit_price' => 0.01,
+        'quantity' => 1,
+        'line_total' => 48.88,
+        'amount_mode' => ProductAmountMode::Custom,
+        'requested_amount' => 1000,
+        'amount_unit_label' => 'MB',
+        'requirements_payload' => ['id' => '555000111'],
+        'status' => OrderItemStatus::Pending,
+    ]);
+
+    (new CreateFulfillmentsForOrder)->handle($order);
+    $fulfillment = Fulfillment::query()->where('order_id', $order->id)->firstOrFail();
+
+    (new DispatchFulfillmentAutomationJob($fulfillment->id))->handle(
+        app(FulfillmentAutomationService::class),
+        app(ReserveFulfillmentAutomationRun::class),
+        app(\App\Actions\Fulfillments\StartFulfillment::class),
+        app(\App\Actions\Fulfillments\DispatchFulfillmentAutomationRun::class),
+    );
+
+    Http::assertSent(function ($request): bool {
+        $body = json_decode($request->body(), true);
+
+        return is_array($body)
+            && ($body['product_amount_mode'] ?? null) === ProductAmountMode::Custom->value
+            && ($body['custom_amount']['amount'] ?? null) === 1000
+            && ($body['custom_amount']['unit'] ?? null) === 'MB'
+            && (float) ($body['line_total'] ?? 0) === 48.88
+            && ($body['requirements']['id'] ?? null) === '555000111';
     });
 });
 

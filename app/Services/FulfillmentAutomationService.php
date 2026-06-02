@@ -12,6 +12,7 @@ use App\Models\Fulfillment;
 use App\Models\FulfillmentAutomationRun;
 use App\Models\Order;
 use App\Models\WalletTransaction;
+use App\Models\WebsiteSetting;
 use Illuminate\Support\Facades\URL;
 
 class FulfillmentAutomationService
@@ -19,6 +20,7 @@ class FulfillmentAutomationService
     public function isEnabled(): bool
     {
         return (bool) config('fulfillment_automation.enabled', false)
+            && WebsiteSetting::getAutomationEnabled()
             && config('fulfillment_automation.callback_secret') !== ''
             && config('fulfillment_automation.worker_url') !== '';
     }
@@ -161,6 +163,10 @@ class FulfillmentAutomationService
             'package_slug' => $orderItem?->package?->slug,
             'package_api' => $orderItem?->package?->package_api,
             'product_api' => $orderItem?->product?->product_api,
+            'product_amount_mode' => $orderItem?->amount_mode?->value
+                ?? $orderItem?->product?->amount_mode?->value,
+            'unit_price' => $orderItem !== null ? (float) $orderItem->unit_price : null,
+            'line_total' => $orderItem !== null ? (float) $orderItem->line_total : null,
             'credentials' => $supplier['credentials'] ?? [],
             'callback_urls' => [
                 'result' => URL::to('/internal/automation/runs/'.$run->uuid.'/result'),

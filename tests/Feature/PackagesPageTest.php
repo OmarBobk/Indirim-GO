@@ -208,6 +208,69 @@ test('editing package loads fulfillment provider into form', function () {
         ->assertSet('packageFulfillmentProvider', 'browser:acme');
 });
 
+test('package fulfillment can be toggled on from table', function () {
+    config([
+        'fulfillment_automation.suppliers' => [
+            'wasim' => ['driver' => 'wasim'],
+        ],
+    ]);
+
+    $user = User::factory()->create();
+    $user->assignRole('admin');
+    $package = Package::factory()->create([
+        'fulfillment_provider' => null,
+    ]);
+
+    $this->actingAs($user);
+
+    Livewire::test('pages::backend.packages.index')
+        ->call('toggleFulfillment', $package->id);
+
+    expect($package->refresh()->fulfillment_provider)->toBe('browser:wasim');
+});
+
+test('package fulfillment can be toggled off from table', function () {
+    config([
+        'fulfillment_automation.suppliers' => [
+            'wasim' => ['driver' => 'wasim'],
+        ],
+    ]);
+
+    $user = User::factory()->create();
+    $user->assignRole('admin');
+    $package = Package::factory()->create([
+        'fulfillment_provider' => 'browser:wasim',
+    ]);
+
+    $this->actingAs($user);
+
+    Livewire::test('pages::backend.packages.index')
+        ->call('toggleFulfillment', $package->id);
+
+    expect($package->refresh()->fulfillment_provider)->toBeNull();
+});
+
+test('packages table shows fulfillment pill toggle', function () {
+    config([
+        'fulfillment_automation.suppliers' => [
+            'wasim' => ['driver' => 'wasim'],
+        ],
+    ]);
+
+    $user = User::factory()->create();
+    $user->assignRole('admin');
+    $package = Package::factory()->create([
+        'name' => 'Toggle Fulfillment Pack',
+        'fulfillment_provider' => 'browser:wasim',
+    ]);
+
+    $this->actingAs($user)
+        ->get('/packages')
+        ->assertOk()
+        ->assertSee(__('messages.package_fulfillment_automation_short'))
+        ->assertSee('Toggle Fulfillment Pack');
+});
+
 test('package requirement can be added to selected package', function () {
     $user = User::factory()->create();
     $user->assignRole('admin');

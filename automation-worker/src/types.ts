@@ -13,6 +13,9 @@ export type RunPayload = {
   package_slug?: string | null;
   package_api?: string | null;
   product_api?: string | null;
+  product_amount_mode?: string | null;
+  unit_price?: number | null;
+  line_total?: number | null;
   credentials: Record<string, string | undefined>;
   callback_urls: {
     result: string;

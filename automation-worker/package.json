@@ -7,6 +7,7 @@
     "dev": "tsx watch src/server.ts",
     "start": "node dist/server.js",
     "build": "tsc",
+    "test:parse-money": "tsx src/utils/parseMoney.selfcheck.ts",
     "postinstall": "playwright install chromium"
   },
   "dependencies": {

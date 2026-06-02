@@ -6,8 +6,8 @@ use App\Actions\Fulfillments\ClaimFulfillment;
 use App\Actions\Fulfillments\FailFulfillment;
 use App\Actions\Fulfillments\GetFulfillments;
 use App\Actions\Fulfillments\RetryFulfillment;
+use App\Actions\Fulfillments\RetryFulfillmentAutomation;
 use App\Actions\Fulfillments\StartFulfillment;
-use App\Jobs\DispatchFulfillmentAutomationJob;
 use App\Models\FulfillmentAutomationRun;
 use App\Services\FulfillmentAutomationService;
 use App\Actions\Orders\RefundOrderItem;
@@ -358,16 +358,7 @@ new class extends Component
 
         $this->authorize('update', $fulfillment);
 
-        if ($fulfillment->status === FulfillmentStatus::Failed) {
-            app(RetryFulfillment::class)->handle($fulfillment, 'admin', auth()->id());
-            $fulfillment = $fulfillment->refresh();
-        } else {
-            app(CancelFulfillmentAutomationRun::class)->handle($fulfillment, 'manual_retry');
-        }
-
-        if (app(FulfillmentAutomationService::class)->isEligible($fulfillment->refresh())) {
-            DispatchFulfillmentAutomationJob::dispatch($fulfillment->id);
-        }
+        app(RetryFulfillmentAutomation::class)->handle($fulfillment, auth()->id());
 
         $this->success(__('messages.fulfillment_automation_retry_queued'));
     }

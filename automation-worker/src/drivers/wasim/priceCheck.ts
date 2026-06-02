@@ -1,0 +1,182 @@
+import type { Page } from 'playwright';
+import type { RunPayload } from '../../types.js';
+import type { RunLogger } from '../../logging/runLogger.js';
+import { parseMoneyString } from '../../utils/parseMoney.js';
+
+export function resolveUnitPrice(payload: RunPayload): number | null {
+  const value = payload.unit_price;
+
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  return Number.isFinite(value) ? value : null;
+}
+
+export function resolveLineTotal(payload: RunPayload): number | null {
+  const value = payload.line_total;
+
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  return Number.isFinite(value) ? value : null;
+}
+
+export async function readSupplierTotalFromPage(
+  page: Page,
+  screenshot: (label: string) => Promise<void>,
+): Promise<
+  | { ok: true; supplierTotal: number; displayedRaw: string }
+  | { ok: false; errorCode: string; message: string }
+> {
+  const totalPriceField = page.locator(
+    '#product-request-TotalPrice, input[name="TotalPrice"], input[placeholder="الاجمالي"]',
+  ).first();
+
+  try {
+    await totalPriceField.waitFor({ state: 'visible', timeout: 15_000 });
+  } catch {
+    await screenshot('supplier_total_field_missing');
+
+    return {
+      ok: false,
+      errorCode: 'supplier_total_field_missing',
+      message: 'Wasim product page did not show the supplier total price field.',
+    };
+  }
+
+  const displayedRaw = (await totalPriceField.inputValue()).trim()
+    || (await totalPriceField.getAttribute('value'))?.trim()
+    || '';
+
+  const supplierTotal = parseMoneyString(displayedRaw);
+
+  if (supplierTotal === null) {
+    await screenshot('supplier_total_unparseable');
+
+    return {
+      ok: false,
+      errorCode: 'supplier_total_unparseable',
+      message: `Could not parse supplier total price from Wasim field: "${displayedRaw}".`,
+    };
+  }
+
+  return {
+    ok: true,
+    supplierTotal,
+    displayedRaw,
+  };
+}
+
+async function assertOrderAmountCoversSupplierTotal(
+  page: Page,
+  orderAmount: number | null,
+  amountLabel: string,
+  missingErrorCode: string,
+  missingMessage: string,
+  logger: RunLogger,
+  screenshot: (label: string) => Promise<void>,
+): Promise<
+  | { ok: true; orderAmount: number; supplierTotal: number }
+  | { ok: false; errorCode: string; message: string }
+> {
+  if (orderAmount === null) {
+    return {
+      ok: false,
+      errorCode: missingErrorCode,
+      message: missingMessage,
+    };
+  }
+
+  const supplierResult = await readSupplierTotalFromPage(page, screenshot);
+
+  if (!supplierResult.ok) {
+    return supplierResult;
+  }
+
+  const { supplierTotal } = supplierResult;
+
+  logger.log(
+    'price_check',
+    `Comparing ${amountLabel} ${orderAmount} with Wasim total ${supplierTotal}`,
+  );
+
+  if (orderAmount <= supplierTotal) {
+    await screenshot('margin_insufficient');
+
+    return {
+      ok: false,
+      errorCode: 'margin_insufficient',
+      message: `Order ${amountLabel} (${orderAmount}) must be greater than Wasim total (${supplierTotal}).`,
+    };
+  }
+
+  await screenshot('price_check_ok');
+
+  return {
+    ok: true,
+    orderAmount,
+    supplierTotal,
+  };
+}
+
+export async function assertUnitPriceCoversSupplierTotal(
+  page: Page,
+  payload: RunPayload,
+  logger: RunLogger,
+  screenshot: (label: string) => Promise<void>,
+): Promise<
+  | { ok: true; unitPrice: number; supplierTotal: number }
+  | { ok: false; errorCode: string; message: string }
+> {
+  const result = await assertOrderAmountCoversSupplierTotal(
+    page,
+    resolveUnitPrice(payload),
+    'unit price',
+    'payload_missing_unit_price',
+    'Worker payload is missing order item unit_price for margin check.',
+    logger,
+    screenshot,
+  );
+
+  if (!result.ok) {
+    return result;
+  }
+
+  return {
+    ok: true,
+    unitPrice: result.orderAmount,
+    supplierTotal: result.supplierTotal,
+  };
+}
+
+export async function assertLineTotalCoversSupplierTotal(
+  page: Page,
+  payload: RunPayload,
+  logger: RunLogger,
+  screenshot: (label: string) => Promise<void>,
+): Promise<
+  | { ok: true; lineTotal: number; supplierTotal: number }
+  | { ok: false; errorCode: string; message: string }
+> {
+  const result = await assertOrderAmountCoversSupplierTotal(
+    page,
+    resolveLineTotal(payload),
+    'line total',
+    'payload_missing_line_total',
+    'Worker payload is missing order item line_total for margin check.',
+    logger,
+    screenshot,
+  );
+
+  if (!result.ok) {
+    return result;
+  }
+
+  return {
+    ok: true,
+    lineTotal: result.orderAmount,
+    supplierTotal: result.supplierTotal,
+  };
+}

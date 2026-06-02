@@ -96,6 +96,11 @@
                         </span>
                     </flux:sidebar.item>
                     @endcan
+                    @role('admin')
+                    <flux:sidebar.item icon="cpu-chip" :href="route('admin.automation.index')" :current="request()->routeIs('admin.automation.*')" wire:navigate>
+                        {{ __('messages.automation_admin') }}
+                    </flux:sidebar.item>
+                    @endrole
                     @can('view_orders')
                     <flux:sidebar.item icon="shopping-bag" :href="route('admin.orders.index')" :current="request()->routeIs('admin.orders.*')" wire:navigate>
                         {{ __('messages.orders') }}

@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\SearchPackagesController;
 use App\Http\Controllers\BugAttachmentController;
 use App\Http\Controllers\BuyNowCustomAmountQuoteController;
 use App\Http\Controllers\TopupProofController;
+use App\Livewire\Admin\AutomationMonitor;
 use App\Livewire\Admin\CommissionsTable;
 use App\Livewire\Admin\PayoutRequestsTable;
 use App\Models\User;
@@ -122,6 +123,7 @@ Route::middleware(['auth', 'verified', 'backend', 'can:manage_bugs'])->group(fun
 
 Route::middleware(['auth', 'verified', 'backend', 'admin'])->group(function () {
     Route::livewire('/admin/website-settings', 'pages::backend.website-settings.index')->name('admin.website-settings');
+    Route::livewire('/admin/automation', AutomationMonitor::class)->name('admin.automation.index');
 });
 
 require __DIR__.'/settings.php';

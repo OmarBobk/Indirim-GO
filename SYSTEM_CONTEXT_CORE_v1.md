@@ -11,6 +11,7 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - **Cart model:** cart state is client-side (`localStorage` key `karman.cart.v1`), but checkout always revalidates and recalculates on server.
 - **Access model:** backend routes are hidden by `backend` middleware and permission checks (404 on denial by design).
 - **Mutation safety:** financial writes must stay transactional and idempotent (`lockForUpdate`, idempotency keys, `DB::afterCommit` side effects).
+- **Agent rules:** follow `.cursor/rules/laravel-boost.mdc` for stack versions, conventions, and karman.store financial guardrails.
 
 ---
 
@@ -36,12 +37,14 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 
 ## 3. Architecture map (where to implement changes)
 
-- **Routes:** `routes/web.php`, `routes/channels.php`.
-- **Domain actions:** `app/Actions/*` (Orders, Fulfillments, Topups, Refunds, Pricing, Users, Commissions, etc).
+- **Routes:** `routes/web.php`, `routes/automation.php`, `routes/channels.php`, `routes/console.php`.
+- **Domain actions:** `app/Actions/*` (Orders, Fulfillments, Topups, Refunds, Pricing, Users, Commissions, Packages, …).
 - **Pricing domain:** `app/Domain/Pricing/PricingEngine.php`, `CustomAmountValidator.php`, `PriceQuoteDTO.php`.
 - **Financial services:** `SystemEventService`, `OperationalIntelligenceService`.
+- **Fulfillment automation:** `FulfillmentAutomationService`, `app/Actions/Fulfillments/*Automation*`, `app/Jobs/DispatchFulfillmentAutomationJob.php`, worker callbacks in `FulfillmentAutomationCallbackController`.
+- **Browser worker (Node/Playwright):** `automation-worker/` — executes supplier drivers; Laravel owns all business state.
 - **UI/state boundary:** Livewire for server state; Alpine for UI/cart state. Dashboard UI uses Blade components under `resources/views/components/dashboard/*` plus service-built payloads.
-- **Observability:** Spatie activity log + `system_events` + push logs.
+- **Observability:** Spatie activity log + `system_events` + push logs + fulfillment automation run records/artifacts.
 
 ---
 
@@ -74,7 +77,7 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - **Customer:** browse catalog, cart, buy-now/custom amount, wallet + topups, orders/details, loyalty, referral link page when allowed by `view_referrals`, notifications, locale switch.
 - **Supervisor/operations:** fulfillment queues and claim workflow, refunds, topups, customer funds, settlements, bugs inbox.
 - **Salesperson:** `view_referrals` dashboard, referral link, referral-driven order/commission analytics, eligible payout visibility.
-- **Admin:** all ops pages + system events + user management + commissions management + website settings.
+- **Admin:** all ops pages + system events + user management + commissions management + website settings + **fulfillment automation admin** (`/admin/automation`).
 
 ---
 
@@ -105,6 +108,18 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - **Task cap:** claim flow enforces max active processing tasks per actor.
 - **Ownership semantics:** non-admin updates tied to claim ownership; policies enforce boundaries.
 - **Custom amount fulfillment:** one fulfillment per custom amount order line.
+
+### Browser fulfillment automation
+
+- **Provider assignment:** packages store `fulfillment_provider` (`null` = manual, `browser:{supplier}` = automated). Packages admin table has a pill toggle (`TogglePackageFulfillment`); edit form selects supplier + optional `package_api`.
+- **Eligibility:** `FulfillmentAutomationService::isEligible()` — requires env config + `WebsiteSetting::automation_enabled` + queued unclaimed browser fulfillment on paid order, no active/succeeded run, no blocking refund.
+- **Run lifecycle:** `ReserveFulfillmentAutomationRun` → `DispatchFulfillmentAutomationRun` (HMAC-signed POST to worker) → worker callbacks → `IngestFulfillmentAutomationResult` (`success` / `failed` / `needs_review`).
+- **Run statuses:** `reserved`, `dispatched`, `running`, `succeeded`, `failed`, `needs_review`, `cancelled` (`FulfillmentAutomationRunStatus`).
+- **Scheduled dispatch:** `fulfillment:dispatch-automation` (every minute when enabled); stale sweep: `fulfillment:sweep-stale-automation-runs`.
+- **Admin UI:** `/admin/automation` (admin role) — runs inbox, needs-review queue, worker health, DB kill switch. Per-fulfillment panel on `/fulfillments` shows run status, artifacts, retry.
+- **Intervention actions:** `CancelFulfillmentAutomationRun`, `RetryFulfillmentAutomation`, admin claim cancels active runs (`ClaimFulfillment`).
+- **Worker:** `automation-worker/` Playwright service; suppliers/drivers configured in `config/fulfillment_automation.php` (credentials stay in env).
+- **Callbacks:** `POST /internal/automation/runs/{uuid}/result|artifacts` (CSRF exempt, HMAC middleware). Artifacts served at `admin/fulfillment-automation/runs/{run}/artifact`.
 
 ---
 
@@ -142,12 +157,14 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 
 ## 13. AI-safe implementation checklist
 
-- Read first: `routes/web.php`, target Action class, relevant Policy, and related tests before editing.
+- Read first: `routes/web.php`, `routes/automation.php`, target Action class, relevant Policy, and related tests before editing.
 - Preserve invariants in sections 4 and 8 for any money/order/fulfillment change.
 - For pricing changes, verify both fixed and custom-amount paths.
 - For permission changes, verify route middleware + policy + UI gating together.
 - For realtime changes, ensure no event is emitted before transaction commit.
-- Add/update tests in `tests/Feature` for regression-prone behavior.
+- For automation changes, preserve HMAC callback verification, idempotent run ingestion, and eligibility guards; do not move financial truth into worker callbacks.
+- Prefer Actions over new Services unless orchestration/IO warrants it; keep Livewire thin.
+- Add/update tests in `tests/Feature` for regression-prone behavior (`FulfillmentAutomationTest`, `AutomationAdminTest`, `PackagesPageTest`).
 
 ---
 
@@ -161,6 +178,7 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - **2026-04-24:** topup TRY->USD conversion behavior (`b4b5041`).
 - **2026-04-30:** referral + commissions system launch, commission rate management, and salesperson dashboard display upgrades (`70a5844`, `3ff1205`, `f8df282`).
 - **2026-05-02:** commission payout batching/wallet crediting and `view_sales` -> `view_referrals` permission migration (`f7d0d97`, `10cbfbb`).
+- **2026-05-28 to 2026-06-02:** browser fulfillment automation — worker service, run model, dispatch/sweep commands, HMAC callbacks, admin automation page, package fulfillment toggles, `WebsiteSetting::automation_enabled` kill switch.
 
 ---
 
@@ -168,19 +186,25 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 
 - **Public:** `/`, `/categories/{category:slug}`, `/cart`, `/contact`, `/404`, `language/{locale}`.
 - **Auth+verified (storefront):** `/profile`, `/wallet`, `/loyalty`, `/referral-link`, `/orders`, `/orders/{order_number}`, `/notifications`, `/topup-proofs/{proof}`, `/bug-attachments/{attachment}`, `POST /api/pricing/buy-now-custom-amount-quote`.
-- **Backend:** `/dashboard` (`can:view_dashboard`), `/salesperson-dashboard` (`can:view_referrals`), `/categories`, `/packages`, `/products`, `/product-entry-prices` (`can:update_product_prices`), `/pricing-rules`, `/loyalty-tiers`, `/admin/orders/*`, `/admin/users/*`, `/admin/users/{user}/audit`, `/fulfillments`, `/refunds`, `/topups`, `/customer-funds`, `/settlements`, `/admin/commissions` (`can:manage_settlements`), `/admin/notifications`, `/admin/bugs/*`, `/admin/website-settings` (admin only).
+- **Backend:** `/dashboard` (`can:view_dashboard`), `/salesperson-dashboard` (`can:view_referrals`), `/categories`, `/packages`, `/products`, `/product-entry-prices` (`can:update_product_prices`), `/pricing-rules`, `/loyalty-tiers`, `/admin/orders/*`, `/admin/users/*`, `/admin/users/{user}/audit`, `/fulfillments`, `/refunds`, `/topups`, `/customer-funds`, `/settlements`, `/admin/commissions` (`can:manage_settlements`), `/admin/notifications`, `/admin/bugs/*`, `/admin/website-settings` (admin only), **`/admin/automation`** (admin only).
+- **Automation (internal):** `POST /internal/automation/runs/{uuid}/result`, `POST /internal/automation/runs/{uuid}/artifacts` (HMAC-signed, CSRF exempt).
 
 ---
 
 ## 16. Primary source files for AI prompts
 
-- `routes/web.php`, `routes/channels.php`
-- `config/permission.php`, `config/fortify.php`, `config/referral.php`
+- `routes/web.php`, `routes/automation.php`, `routes/channels.php`, `routes/console.php`
+- `config/permission.php`, `config/fortify.php`, `config/referral.php`, **`config/fulfillment_automation.php`**
 - `app/Actions/Orders/CheckoutFromPayload.php`, `CreateOrderFromCartPayload.php`, `PayOrderWithWallet.php`
 - `app/Actions/Commissions/CreatePayoutBatch.php`
 - `app/Actions/Refunds/ApproveRefundRequest.php`
-- `app/Actions/Fulfillments/ClaimFulfillment.php`, `CreateFulfillmentsForOrder.php`
-- `app/Services/SystemEventService.php`, `OperationalIntelligenceService.php`
+- `app/Actions/Fulfillments/ClaimFulfillment.php`, `CreateFulfillmentsForOrder.php`, **`DispatchFulfillmentAutomationRun.php`**, **`IngestFulfillmentAutomationResult.php`**, **`RetryFulfillmentAutomation.php`**
+- `app/Actions/Packages/TogglePackageFulfillment.php`, `UpsertPackage.php`
+- `app/Services/FulfillmentAutomationService.php`, `SystemEventService.php`, `OperationalIntelligenceService.php`
 - `app/Services/SalespersonDashboardService.php`, `resources/views/components/dashboard/*`
 - `app/Domain/Pricing/*`
+- `app/Models/FulfillmentAutomationRun.php`, `WebsiteSetting.php` (`automation_enabled`)
+- `resources/views/pages/backend/automation/⚡index.blade.php`, `resources/views/pages/backend/fulfillments/⚡index.blade.php`
+- `automation-worker/README.md`, `automation-worker/src/drivers/*`
 - `resources/js/app.js`
+- **Agent rules:** `.cursor/rules/laravel-boost.mdc` (stack versions, financial guardrails, testing/Pint/Livewire conventions)

@@ -1,6 +1,6 @@
 # karman.store — Project Structure
 
-> Generated from workspace inspection (May 2026).  
+> Generated from workspace inspection (June 2026).  
 > Product: **İndirimGo** — Laravel 12 e-commerce and wallet platform (storefront + operations backend).
 
 ---
@@ -10,8 +10,9 @@
 | Area | Purpose |
 |------|---------|
 | **Storefront** | Categories, packages, products, cart, buy-now, orders, wallet, loyalty, referrals |
-| **Backend** | Fulfillments, topups, refunds, settlements, commissions, users, catalog admin |
+| **Backend** | Fulfillments, topups, refunds, settlements, commissions, users, catalog admin, **automation admin** |
 | **Financial core** | `wallets` + `wallet_transactions` as source of truth; `system_events` for audit |
+| **Fulfillment automation** | Browser-driven supplier fulfillment via Node/Playwright worker + Laravel run orchestration |
 | **Realtime** | Laravel Reverb + Echo; Firebase FCM for push |
 
 **Locales:** English (`en`) and Arabic (`ar`) — RTL-aware UI.
@@ -27,6 +28,7 @@ This project uses Laravel 11+ streamlined layout (no `app/Http/Kernel.php`, no `
 | `bootstrap/app.php` | Application factory: routes, middleware aliases, exceptions |
 | `bootstrap/providers.php` | Service providers (`AppServiceProvider`, `FortifyServiceProvider`, optional Telescope) |
 | `routes/web.php` | Primary HTTP + Livewire full-page routes |
+| `routes/automation.php` | Worker callbacks + admin artifact routes (loaded from `bootstrap/app.php` `then`) |
 | `routes/settings.php` | Fortify-adjacent user settings (profile, password, 2FA, appearance) |
 | `routes/channels.php` | Private broadcast channel auth |
 | `routes/console.php` | Artisan schedule / closure commands |
@@ -35,7 +37,8 @@ This project uses Laravel 11+ streamlined layout (no `app/Http/Kernel.php`, no `
 **Registered middleware** (`bootstrap/app.php`):
 
 - Web stack append: `SetLocale`, `CaptureReferralFromQuery`, `EnsureAccountCanUseSession`
-- Aliases: `admin`, `backend`, Spatie `role`, `permission`, `role_or_permission`
+- CSRF exempt: `internal/automation/*` (HMAC-verified worker callbacks)
+- Aliases: `admin`, `backend`, `automation.signature`, Spatie `role`, `permission`, `role_or_permission`
 
 **Providers** (`bootstrap/providers.php`): app bindings, Fortify views/responses, Telescope when installed.
 
@@ -163,7 +166,16 @@ flowchart LR
 | Path | Component | Gate |
 |------|-----------|------|
 | `/admin/website-settings` | `pages::backend.website-settings.index` | `admin` middleware |
+| `/admin/automation` | `pages::backend.automation.index` | `admin` middleware — runs inbox, needs-review, settings |
 | `/admin/bugs`, `/admin/bugs/{bug}` | bug Livewire pages | `can:manage_bugs` |
+
+### Automation routes (`routes/automation.php`)
+
+| Path | Handler | Notes |
+|------|---------|--------|
+| `POST /internal/automation/runs/{uuid}/result` | `FulfillmentAutomationCallbackController@result` | HMAC middleware |
+| `POST /internal/automation/runs/{uuid}/artifacts` | `FulfillmentAutomationCallbackController@artifacts` | HMAC middleware |
+| `GET /admin/fulfillment-automation/runs/{run}/artifact` | `FulfillmentAutomationArtifactController@show` | Auth + backend; signed artifact access |
 
 Fortify handles login, register, password reset, and email verification (configured in `config/fortify.php` + `FortifyServiceProvider`).
 
@@ -189,12 +201,14 @@ Run: `php artisan db:seed`.
 | Command | Purpose |
 |---------|---------|
 | `ProcessFulfillments` | Process pending fulfillment queue/workflow |
+| `fulfillment:dispatch-automation` | Dispatch browser automation jobs for eligible queued fulfillments |
+| `fulfillment:sweep-stale-automation-runs` | Mark stale active runs failed/cancelled |
 | `WalletReconcile` | Reconcile wallet balances vs transactions |
 | `ProfitSettleCommand` | Settlement / profit batch processing |
 | `EvaluateLoyaltyCommand` | Loyalty tier evaluation |
 | `PushHealthCheckCommand` / `PushCleanupCommand` | FCM push maintenance |
 
-Scheduled tasks (if any) live in `routes/console.php`.
+Scheduled tasks live in `routes/console.php` (automation dispatch/sweep gated on `config('fulfillment_automation.enabled')`).
 
 ---
 
@@ -203,8 +217,9 @@ Scheduled tasks (if any) live in `routes/console.php`.
 ```
 karman.store/
 ├── app/                 # Application code (Actions, Models, Livewire, Services, …)
+├── automation-worker/   # Node/Playwright fulfillment execution runtime (supplier drivers)
 ├── bootstrap/           # Laravel 12 app bootstrap (middleware, routing)
-├── config/              # App, auth, permissions, PWA, Reverb, loyalty, referral, …
+├── config/              # App, auth, permissions, fulfillment_automation, PWA, Reverb, …
 ├── database/
 │   ├── factories/
 │   ├── migrations/      # ~100 migration files
@@ -216,10 +231,10 @@ karman.store/
 │   ├── css/             # Tailwind v4 entry
 │   ├── js/              # Vite bundle (Alpine, Echo, Firebase)
 │   └── views/           # Blade, Flux, Livewire full-page components
-├── routes/              # web.php, settings.php, channels.php, console.php, ai.php
-├── storage/             # Logs, framework cache, Livewire temp uploads
-├── tests/               # Pest feature + unit tests (~120 files)
-├── .cursor/             # Agent rules and project skills
+├── routes/              # web.php, automation.php, settings.php, channels.php, console.php, ai.php
+├── storage/             # Logs, framework cache, Livewire temp uploads, automation artifacts
+├── tests/               # Pest feature + unit tests (~125 files)
+├── .cursor/             # Agent rules (laravel-boost.mdc) and project skills
 ├── vendor/              # Composer dependencies
 └── node_modules/        # Frontend dependencies
 ```
@@ -242,6 +257,37 @@ karman.store/
 | Testing | Pest 3, PHPUnit 11 |
 | Dev | Laravel Telescope, Debugbar, Pint, Boost MCP |
 
+**Agent conventions** (`.cursor/rules/laravel-boost.mdc`): PHP 8.4, Laravel 12, Livewire 4, Flux free, Tailwind v4; Actions-first mutations; Pest tests for changes; Pint before commit; financial guardrails in section below.
+
+---
+
+## Fulfillment automation (browser providers)
+
+Laravel orchestrates; the worker only runs browsers and reports results.
+
+```text
+Paid order → CreateFulfillmentsForOrder (provider from package)
+          → DispatchFulfillmentAutomationJob (if eligible)
+          → ReserveFulfillmentAutomationRun
+          → DispatchFulfillmentAutomationRun (POST /v1/runs to worker, HMAC)
+          → Worker executes driver (wasim, acme, …)
+          → POST callback result/artifacts to Laravel
+          → IngestFulfillmentAutomationResult → CompleteFulfillment | FailFulfillment
+```
+
+| Piece | Location |
+|-------|----------|
+| Config | `config/fulfillment_automation.php` (env: enabled, worker URL, secret, suppliers, timeouts) |
+| DB kill switch | `website_settings.automation_enabled` via `WebsiteSetting::getAutomationEnabled()` |
+| Package provider | `packages.fulfillment_provider` — `null` manual, `browser:{key}` automated |
+| Run model | `FulfillmentAutomationRun` + `FulfillmentAutomationRunStatus` enum |
+| Service | `FulfillmentAutomationService` (eligibility, payload, HMAC sign/verify) |
+| Job | `DispatchFulfillmentAutomationJob` |
+| Worker | `automation-worker/` — `npm start`, drivers under `src/drivers/` |
+| Admin UI | `/admin/automation` — tabs: runs, needs review, settings |
+| Ops UI | `/fulfillments` detail panel — status, artifacts, retry |
+| Catalog UI | `/packages` table — status switch + fulfillment pill toggle |
+
 ---
 
 ## `app/` — Backend Architecture
@@ -262,11 +308,11 @@ app/
 ├── Http/
 │   ├── Controllers/   # Thin HTTP: proofs, bugs, API quotes, push tokens
 │   └── Middleware/    # Locale, referral capture, backend/admin gates
-├── Jobs/              # Queued work (e.g. SendPushNotificationJob)
+├── Jobs/              # Queued work (SendPushNotificationJob, DispatchFulfillmentAutomationJob, …)
 ├── Livewire/          # Reusable widgets (sidebar badges, settings, admin tables)
-├── Models/            # Eloquent models (~35 entities)
+├── Models/            # Eloquent models (~36 entities)
 ├── Notifications/     # Laravel notifications (orders, topups, commissions, …)
-├── Policies/          # Authorization (orders, fulfillments, users, …)
+├── Policies/          # Authorization (orders, fulfillments, FulfillmentAutomationRun, …)
 ├── Providers/         # App, Fortify, Telescope service providers
 ├── Services/          # Cross-cutting services (pricing, loyalty, push, settlements)
 ├── Support/           # Helpers (money formatting, locales, registration source)
@@ -278,11 +324,11 @@ app/
 | Folder | Responsibility |
 |--------|----------------|
 | `Actions/Orders/` | Checkout, wallet payment, refunds, admin order queries |
-| `Actions/Fulfillments/` | Create, claim, start, complete, fail, retry fulfillments |
+| `Actions/Fulfillments/` | Create, claim, start, complete, fail, retry; **automation**: reserve, dispatch, ingest, cancel, artifact storage, retry automation |
 | `Actions/Topups/` | Create/approve/reject topup requests |
 | `Actions/Refunds/` | Approve/reject refund requests |
 | `Actions/Commissions/` | Payout batches, salesperson payout requests |
-| `Actions/Products/`, `Packages/`, `Categories/` | Catalog CRUD and toggles |
+| `Actions/Products/`, `Packages/`, `Categories/` | Catalog CRUD; package status + **fulfillment toggles** |
 | `Actions/PricingRules/`, `Pricing/` | Rules and buy-now custom amount quotes |
 | `Actions/Users/` | CRUD, block/unblock, referred users |
 | `Actions/UserProductPrices/` | Per-user price overrides |
@@ -297,17 +343,18 @@ app/
 | Model | Role |
 |-------|------|
 | `User` | Customers, staff, salespeople; roles, referral, locale, loyalty |
-| `Category`, `Package`, `Product` | Catalog hierarchy |
+| `Category`, `Package`, `Product` | Catalog hierarchy; package `fulfillment_provider`, `package_api` |
 | `PackageRequirement` | Dynamic fields required at checkout |
 | `Order`, `OrderItem` | Purchases; custom amount via `requested_amount` |
 | `Wallet`, `WalletTransaction` | **Financial source of truth** |
 | `TopupRequest`, `TopupProof` | Wallet funding with optional proof upload |
 | `Fulfillment`, `FulfillmentLog` | Post-payment delivery workflow |
+| `FulfillmentAutomationRun` | Browser automation attempt (status, artifacts, supplier, errors) |
 | `SystemEvent` | Audited system/financial events |
 | `Commission`, `PayoutRequest`, `PayoutBatch` | Referral commissions and payouts |
 | `Settlement` | Profit/settlement accounting |
 | `PricingRule`, `UserProductPrice` | Default and per-user pricing |
-| `WebsiteSetting`, `PaymentMethod` | Site config and payment display |
+| `WebsiteSetting`, `PaymentMethod` | Site config (incl. `automation_enabled`), payment display |
 | `LoyaltySetting`, `LoyaltyTierConfig` | Loyalty program |
 | `Bug`, `BugAttachment`, `BugLink` | Internal bug reporting |
 | `AdminDevice`, `PushLog` | Admin push registration and logs |
@@ -323,6 +370,7 @@ app/
 | `LoyaltySpendService` | Loyalty spend tracking |
 | `SalespersonDashboardService` | Referral dashboard metrics |
 | `OperationalIntelligenceService` | Ops analytics |
+| `FulfillmentAutomationService` | Automation eligibility, worker payload, HMAC signatures |
 | `FirebasePushService`, `PushRateLimiter` | FCM delivery |
 | `NotificationRecipientService` | Who receives which notifications |
 | `UserAuditTimelineService` | User audit timeline |
@@ -330,7 +378,7 @@ app/
 
 ### Enums
 
-`OrderStatus`, `OrderItemStatus`, `FulfillmentStatus`, `FulfillmentLogLevel`, `TopupRequestStatus`, `TopupMethod`, `WalletType`, `WalletTransactionType`, `WalletTransactionDirection`, `CommissionStatus`, `PayoutRequestStatus`, `ProductAmountMode`, `LoyaltyTier`, `SystemEventSeverity`, `Timezone`
+`OrderStatus`, `OrderItemStatus`, `FulfillmentStatus`, `FulfillmentAutomationRunStatus`, `FulfillmentLogLevel`, `TopupRequestStatus`, `TopupMethod`, `WalletType`, `WalletTransactionType`, `WalletTransactionDirection`, `CommissionStatus`, `PayoutRequestStatus`, `ProductAmountMode`, `LoyaltyTier`, `SystemEventSeverity`, `Timezone`
 
 ---
 
@@ -344,7 +392,7 @@ app/
 | `auth`, `verified` | Profile, wallet, orders, loyalty, referrals, notifications |
 | `auth`, `verified`, `backend` | Dashboard, catalog admin, fulfillments, topups, refunds, settlements, users |
 | `backend` + `can:manage_bugs` | Bug admin |
-| `backend` + `admin` | Website settings (payment methods, rates) |
+| `backend` + `admin` | Website settings, **automation admin** |
 
 **Aliases:** `admin`, `backend`, Spatie `role` / `permission` / `role_or_permission`.
 
@@ -383,6 +431,7 @@ resources/views/
 | File | Purpose |
 |------|---------|
 | `web.php` | All primary HTTP + Livewire routes |
+| `automation.php` | Worker callbacks + fulfillment automation artifact routes |
 | `settings.php` | User settings (profile, password, 2FA, appearance) |
 | `channels.php` | Broadcast channel authorization |
 | `console.php` | Scheduled Artisan commands |
@@ -402,6 +451,7 @@ resources/views/
 | `firebase.php`, `notifications.php` | Push and notification routing |
 | `filesystems.php`, `livewire.php` | Upload disks (payment methods, Livewire temp) |
 | `operational_intelligence.php` | Ops metrics config |
+| `fulfillment_automation.php` | Browser worker URL, suppliers, dispatch/timeouts, queue name |
 | `telescope.php`, `boost.php` | Dev tooling |
 
 ---
@@ -418,17 +468,17 @@ See also: `Docs/DB.md`, `Docs/system_events_map.md`.
 
 ## `tests/`
 
-Pest-based suite under `tests/Feature` and `tests/Unit` (~120 files).
+Pest-based suite under `tests/Feature` and `tests/Unit` (~125 files).
 
 | Coverage areas (examples) |
 |---------------------------|
 | Auth, registration, 2FA, blocked sessions |
 | Cart, checkout, buy-now, custom amount pricing |
 | Wallet, topups, proofs, transactions |
-| Orders, fulfillments, refunds |
+| Orders, fulfillments, refunds, **fulfillment automation**, **automation admin** |
 | Referrals, commissions, payouts, settlements |
 | Admin pages, permissions, notifications, PWA |
-| Catalog (categories, packages, products, pricing rules) |
+| Catalog (categories, packages incl. fulfillment toggle, products, pricing rules) |
 
 Run: `php artisan test --compact` or filter: `php artisan test --compact --filter=WalletTopupRequestTest`.
 
@@ -464,13 +514,13 @@ Dev: `composer run dev` (serve + queue + Vite) or `npm run dev` / `npm run build
 | `doc.md` | Feature/backlog notes |
 | `ManualTestingPlaybook.md` | Manual QA flows |
 
-Root: `README.md` (quick start), `NOTIFICATIONS.md`, `CLAUDE.md` / `.cursor/rules` (agent guidelines).
+Root: `README.md`, `NOTIFICATIONS.md`, **`SYSTEM_CONTEXT_CORE_v1.md`**, `CLAUDE.md`, `.cursor/rules/laravel-boost.mdc`.
 
 ---
 
 ## Financial & Domain Guardrails
 
-From project rules (`CLAUDE.md`, workspace rules):
+From project rules (`.cursor/rules/laravel-boost.mdc`, `CLAUDE.md`):
 
 1. **`wallet_transactions` + `wallets.balance`** are the only financial source of truth — not `system_events` alone.
 2. Balance mutations must be **transactional**, **idempotent**, and mirrored by financial `system_events`.
@@ -490,6 +540,8 @@ From project rules (`CLAUDE.md`, workspace rules):
 | Pay with wallet | `PayOrderWithWallet` |
 | Topup wallet | `⚡wallet`, `CreateTopupRequestAction`, `TopupProofController` |
 | Fulfillment ops | `pages/backend/fulfillments`, `Actions/Fulfillments/*` |
+| **Browser automation** | `pages/backend/automation`, `FulfillmentAutomationService`, `automation-worker/` |
+| **Package automation toggle** | `pages/backend/packages`, `TogglePackageFulfillment` |
 | Refunds | `pages/backend/refunds`, `ApproveRefundRequest` / `RejectRefundRequest` |
 | Salesperson referrals | `⚡referral-link`, `salesperson-dashboard`, commission actions |
 | Payment methods (admin) | `website-settings`, `UpsertPaymentMethod` |
@@ -500,15 +552,17 @@ From project rules (`CLAUDE.md`, workspace rules):
 
 | Path | Purpose |
 |------|---------|
-| `.cursor/rules/` | Laravel Boost, performance, Laravel backend conventions |
+| `.cursor/rules/` | Laravel Boost (`laravel-boost.mdc`), performance, Laravel backend conventions |
 | `.cursor/skills/` | build-feature-slice, debug-laravel, livewire-refactor, ui-flux-polish |
 | Laravel Boost MCP | Artisan, tinker, schema, docs search, browser logs |
+
+Root companion: `SYSTEM_CONTEXT_CORE_v1.md` — condensed AI delivery context (invariants, routes, automation, source files).
 
 ---
 
 ## Workspace Notes (current branch)
 
-Untracked/in-progress areas visible in git status include payment method uploads, Livewire temp storage config, wallet/payment-method UI, and related language strings. Treat `storage/debugbar/` and compiled views as local/runtime artifacts — not part of the canonical structure.
+Active/in-progress areas include fulfillment browser automation (`automation-worker/`, run orchestration, admin automation page), package fulfillment toggles, payment method uploads, and website settings extensions. Treat `storage/debugbar/`, worker screenshots/sessions, and compiled views as local/runtime artifacts — not part of the canonical structure.
 
 ---
 

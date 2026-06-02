@@ -74,4 +74,10 @@ class Package extends Model
     {
         return $this->hasMany(Product::class);
     }
+
+    public function isBrowserAutomated(): bool
+    {
+        return is_string($this->fulfillment_provider)
+            && str_starts_with($this->fulfillment_provider, 'browser:');
+    }
 }
