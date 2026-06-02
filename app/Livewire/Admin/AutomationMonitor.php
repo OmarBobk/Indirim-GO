@@ -300,12 +300,9 @@ final class AutomationMonitor extends Component
     {
         $items = [];
 
-        foreach ($run->artifactPaths() as $path) {
+        foreach ($run->artifactPaths() as $index => $path) {
             $items[] = [
-                'src' => route('admin.fulfillment-automation.artifacts.show', [
-                    'run' => $run->id,
-                    'path' => $path,
-                ]),
+                'src' => $run->artifactShowUrl($index, absolute: false),
                 'alt' => basename($path),
                 'label' => Str::of(basename($path))->beforeLast('.')->replace(['-', '_'], ' ')->title()->toString(),
             ];

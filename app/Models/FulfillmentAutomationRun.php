@@ -104,4 +104,12 @@ class FulfillmentAutomationRun extends Model
 
         return is_array($paths) ? array_values(array_filter($paths, fn (mixed $path): bool => is_string($path))) : [];
     }
+
+    public function artifactShowUrl(int $index, bool $absolute = false): string
+    {
+        return route('admin.fulfillment-automation.artifacts.show', [
+            'run' => $this->id,
+            'index' => $index,
+        ], $absolute);
+    }
 }

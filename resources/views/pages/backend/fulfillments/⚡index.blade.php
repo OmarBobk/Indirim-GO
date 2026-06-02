@@ -1698,11 +1698,11 @@ new class extends Component
                                     @endif
                                     @if ($automationRun && $automationRun->artifactPaths() !== [])
                                         <div class="mt-2 flex flex-wrap gap-2">
-                                            @foreach ($automationRun->artifactPaths() as $artifactPath)
+                                            @foreach ($automationRun->artifactPaths() as $artifactIndex => $artifactPath)
                                                 <flux:button
                                                     size="sm"
                                                     variant="ghost"
-                                                    href="{{ route('admin.fulfillment-automation.artifacts.show', ['run' => $automationRun->id, 'path' => $artifactPath]) }}"
+                                                    href="{{ $automationRun->artifactShowUrl($artifactIndex) }}"
                                                     target="_blank"
                                                 >
                                                     {{ basename($artifactPath) }}

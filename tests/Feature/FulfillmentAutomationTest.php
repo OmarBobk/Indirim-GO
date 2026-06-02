@@ -499,6 +499,49 @@ test('artifact upload stores screenshot path on automation run', function () {
     Storage::disk('local')->assertExists($path);
 });
 
+test('admin can view stored automation artifact by index', function () {
+    Storage::fake('local');
+
+    $admin = User::factory()->create();
+    $adminRole = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+    $permissions = collect(config('permission.backend_permissions', []))
+        ->map(fn (string $name): Permission => Permission::firstOrCreate([
+            'name' => $name,
+            'guard_name' => 'web',
+        ]));
+    $adminRole->syncPermissions($permissions);
+    $admin->assignRole($adminRole);
+
+    $fulfillment = makeBrowserFulfillmentOrder();
+
+    $run = FulfillmentAutomationRun::query()->create([
+        'uuid' => (string) Str::uuid(),
+        'fulfillment_id' => $fulfillment->id,
+        'supplier_key' => 'acme',
+        'status' => FulfillmentAutomationRunStatus::NeedsReview,
+        'attempt' => 1,
+        'idempotency_key' => 'automation:fulfillment:'.$fulfillment->id.':attempt:artifact-view',
+        'started_at' => now(),
+        'dispatched_at' => now(),
+    ]);
+
+    $path = app(\App\Actions\Fulfillments\StoreFulfillmentAutomationArtifact::class)->handle(
+        $run,
+        UploadedFile::fake()->image('login.png'),
+        'login',
+    );
+
+    $artifactUrl = $run->refresh()->artifactShowUrl(0, absolute: false);
+
+    expect($artifactUrl)->toStartWith('/admin/fulfillment-automation/runs/')
+        ->and($artifactUrl)->toContain('index=0');
+
+    $this->actingAs($admin)
+        ->get($artifactUrl)
+        ->assertSuccessful()
+        ->assertHeader('Content-Type', 'image/png');
+});
+
 test('process fulfillments command skips browser providers', function () {
     $fulfillment = makeBrowserFulfillmentOrder();
 
