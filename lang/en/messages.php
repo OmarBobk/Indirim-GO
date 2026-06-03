@@ -283,6 +283,8 @@ return [
     'automation_disabled_banner' => 'Automation is disabled — no new runs will be dispatched.',
     'automation_kill_switch' => 'Automation',
     'automation_live_poll' => 'Live · 5s',
+    'automation_live_badge' => 'Live updates',
+    'automation_live_fallback' => 'Reverb · 30s fallback when tab visible',
     'automation_screenshots' => 'Screenshots',
     'automation_no_screenshots' => 'No screenshots uploaded for this run.',
     'automation_mark_review_succeeded' => 'Mark reviewed → succeeded',

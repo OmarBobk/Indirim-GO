@@ -76,6 +76,12 @@ class DispatchFulfillmentAutomationRun
                     'error_message' => $exception->getMessage(),
                 ])->save();
 
+                app(BroadcastAutomationRunChanged::class)->handle(
+                    $lockedRun->uuid,
+                    'dispatch_failed',
+                    FulfillmentAutomationRunStatus::Failed->value,
+                );
+
                 app(AppendFulfillmentLog::class)->handle(
                     $lockedFulfillment,
                     FulfillmentLogLevel::Error,
@@ -133,6 +139,12 @@ class DispatchFulfillmentAutomationRun
                 if ($run === null) {
                     return;
                 }
+
+                app(BroadcastAutomationRunChanged::class)->handle(
+                    $run->uuid,
+                    'dispatched',
+                    $run->status->value,
+                );
 
                 app(SystemEventService::class)->record(
                     'fulfillment.automation.dispatched',

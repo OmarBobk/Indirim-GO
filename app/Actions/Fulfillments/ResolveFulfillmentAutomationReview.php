@@ -77,6 +77,12 @@ class ResolveFulfillmentAutomationReview
                     $actorId,
                 );
 
+                app(BroadcastAutomationRunChanged::class)->handle(
+                    $lockedRun->uuid,
+                    'review_succeeded',
+                    FulfillmentAutomationRunStatus::Succeeded->value,
+                );
+
                 return $lockedRun->refresh();
             }
 
@@ -95,6 +101,12 @@ class ResolveFulfillmentAutomationReview
                     'action' => 'automation_review_failed',
                     'run_uuid' => $lockedRun->uuid,
                 ],
+            );
+
+            app(BroadcastAutomationRunChanged::class)->handle(
+                $lockedRun->uuid,
+                'review_failed',
+                FulfillmentAutomationRunStatus::Failed->value,
             );
 
             return $lockedRun->refresh();

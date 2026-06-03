@@ -285,6 +285,8 @@ return [
     'automation_disabled_banner' => 'الأتمتة متوقفة — لن يُرسل أي تشغيل جديد.',
     'automation_kill_switch' => 'الأتمتة',
     'automation_live_poll' => 'مباشر · 5 ث',
+    'automation_live_badge' => 'تحديثات مباشرة',
+    'automation_live_fallback' => 'Reverb · احتياطي كل 30 ث عند ظهور التبويب',
     'automation_screenshots' => 'لقطات الشاشة',
     'automation_no_screenshots' => 'لا توجد لقطات لهذا التشغيل.',
     'automation_mark_review_succeeded' => 'تمت المراجعة → نجح',

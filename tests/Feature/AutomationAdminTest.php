@@ -2,10 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Actions\Fulfillments\CancelFulfillmentAutomationRun;
 use App\Actions\Fulfillments\CreateFulfillmentsForOrder;
 use App\Enums\FulfillmentAutomationRunStatus;
 use App\Enums\OrderItemStatus;
 use App\Enums\OrderStatus;
+use App\Events\AutomationRunChanged;
 use App\Jobs\DispatchFulfillmentAutomationJob;
 use App\Livewire\Admin\AutomationMonitor;
 use App\Models\Fulfillment;
@@ -18,6 +20,7 @@ use App\Models\User;
 use App\Models\WebsiteSetting;
 use App\Services\FulfillmentAutomationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
@@ -243,4 +246,58 @@ test('automation service stays disabled when env flag is off even if db toggle i
     WebsiteSetting::instance()->update(['automation_enabled' => true]);
 
     expect(app(FulfillmentAutomationService::class)->isEnabled())->toBeFalse();
+});
+
+test('cancelling an automation run broadcasts AutomationRunChanged', function () {
+    Event::fake([AutomationRunChanged::class]);
+
+    $fulfillment = makeAutomationAdminFulfillment();
+
+    $run = FulfillmentAutomationRun::query()->create([
+        'uuid' => (string) Str::uuid(),
+        'fulfillment_id' => $fulfillment->id,
+        'supplier_key' => 'acme',
+        'status' => FulfillmentAutomationRunStatus::Running,
+        'attempt' => 1,
+        'idempotency_key' => 'automation:fulfillment:'.$fulfillment->id.':attempt:cancel-broadcast',
+        'started_at' => now(),
+    ]);
+
+    app(CancelFulfillmentAutomationRun::class)->handle($fulfillment, 'admin_cancel');
+
+    Event::assertDispatched(AutomationRunChanged::class, function (AutomationRunChanged $event) use ($run): bool {
+        return $event->runUuid === $run->uuid
+            && $event->type === 'cancelled'
+            && $event->status === FulfillmentAutomationRunStatus::Cancelled->value;
+    });
+});
+
+test('automation monitor refreshes when automation-run-updated is dispatched', function () {
+    $fulfillment = makeAutomationAdminFulfillment();
+
+    FulfillmentAutomationRun::query()->create([
+        'uuid' => (string) Str::uuid(),
+        'fulfillment_id' => $fulfillment->id,
+        'supplier_key' => 'acme',
+        'status' => FulfillmentAutomationRunStatus::NeedsReview,
+        'attempt' => 1,
+        'idempotency_key' => 'automation:fulfillment:'.$fulfillment->id.':attempt:refresh-test',
+    ]);
+
+    $component = Livewire::actingAs(adminUser())->test(AutomationMonitor::class);
+
+    expect($component->instance()->stats['needs_review_count'])->toBe(1);
+
+    FulfillmentAutomationRun::query()->create([
+        'uuid' => (string) Str::uuid(),
+        'fulfillment_id' => $fulfillment->id,
+        'supplier_key' => 'acme',
+        'status' => FulfillmentAutomationRunStatus::NeedsReview,
+        'attempt' => 2,
+        'idempotency_key' => 'automation:fulfillment:'.$fulfillment->id.':attempt:refresh-test-2',
+    ]);
+
+    $component->dispatch('automation-run-updated', ['type' => 'needs_review']);
+
+    expect($component->instance()->stats['needs_review_count'])->toBe(2);
 });

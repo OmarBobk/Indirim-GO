@@ -34,6 +34,15 @@ if (import.meta.env.VITE_REVERB_APP_KEY && window.Laravel?.canViewFulfillments) 
 }
 
 if (import.meta.env.VITE_REVERB_APP_KEY && window.Laravel?.isAdmin) {
+    window.Echo.private('admin.automation').listen('.AutomationRunChanged', (payload) => {
+        if (window.Livewire?.dispatch) {
+            window.Livewire.dispatch('automation-run-updated', payload ?? {});
+            return;
+        }
+
+        window.dispatchEvent(new CustomEvent('automation-run-updated', { detail: payload || {} }));
+    });
+
     window.Echo.private('admin.topups').listen('.TopupRequestsChanged', (payload) => {
         if (window.Livewire?.dispatch) {
             window.Livewire.dispatch('topup-list-updated', payload ?? {});

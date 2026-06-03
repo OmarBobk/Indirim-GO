@@ -42,6 +42,14 @@ class CancelFulfillmentAutomationRun
             }
 
             if ($cancelled > 0) {
+                foreach ($runs as $run) {
+                    app(BroadcastAutomationRunChanged::class)->handle(
+                        $run->uuid,
+                        'cancelled',
+                        FulfillmentAutomationRunStatus::Cancelled->value,
+                    );
+                }
+
                 app(AppendFulfillmentLog::class)->handle(
                     $locked,
                     FulfillmentLogLevel::Info,

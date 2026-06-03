@@ -57,6 +57,12 @@ class ReserveFulfillmentAutomationRun
                 ],
             );
 
+            app(BroadcastAutomationRunChanged::class)->handle(
+                $run->uuid,
+                'reserved',
+                $run->status->value,
+            );
+
             return $run;
         });
     }

@@ -51,7 +51,7 @@
     x-on:keydown.escape.window="lightbox.open ? closeLightbox() : (panelOpen ? (closePanel(), $wire.closePanel()) : null)"
     x-on:keydown.arrow-right.window="lightbox.open && nextImage()"
     x-on:keydown.arrow-left.window="lightbox.open && prevImage()"
-    wire:poll.5s
+    wire:poll.30s.visible
 >
     {{-- Zone 1: KPI status bar --}}
     <section class="sticky top-0 z-10 rounded-2xl border border-zinc-200 bg-white/95 p-4 shadow-sm backdrop-blur-md dark:border-zinc-700 dark:bg-zinc-900/95">
@@ -64,9 +64,12 @@
                     {{ __('messages.automation_admin_intro') }}
                 </flux:text>
             </div>
-            <span class="inline-flex items-center gap-1 self-start rounded-full bg-zinc-100 px-2 py-1 text-[11px] font-medium text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
-                <span class="size-1.5 animate-pulse rounded-full bg-cyan-500"></span>
-                {{ __('messages.automation_live_poll') }}
+            <span class="inline-flex flex-col items-end gap-0.5 self-start">
+                <span class="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-medium text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
+                    <span class="size-1.5 rounded-full bg-emerald-500"></span>
+                    {{ __('messages.automation_live_badge') }}
+                </span>
+                <span class="text-[10px] text-zinc-400 dark:text-zinc-500">{{ __('messages.automation_live_fallback') }}</span>
             </span>
         </div>
 
@@ -181,7 +184,11 @@
 
     {{-- Zone 2: Runs table --}}
     <section class="relative overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
-        <div wire:loading.delay class="absolute inset-0 z-10 bg-white/60 dark:bg-zinc-900/60">
+        <div
+            wire:loading.delay
+            wire:target="toggleAutomation, retryRun, cancelRun, markReviewSucceeded, markReviewFailed"
+            class="absolute inset-0 z-10 bg-white/60 dark:bg-zinc-900/60"
+        >
             <div class="p-6 space-y-2">
                 @for ($i = 0; $i < 6; $i++)
                     <flux:skeleton class="h-12 w-full" />
@@ -189,7 +196,11 @@
             </div>
         </div>
 
-        <div class="overflow-x-auto" wire:loading.remove.delay>
+        <div
+            class="overflow-x-auto"
+            wire:loading.remove.delay
+            wire:target="toggleAutomation, retryRun, cancelRun, markReviewSucceeded, markReviewFailed"
+        >
             @if ($this->runs->count() === 0)
                 <div class="flex flex-col items-center gap-3 p-12 text-center">
                     <div class="flex size-14 items-center justify-center rounded-full bg-zinc-100 text-zinc-500 dark:bg-zinc-800">

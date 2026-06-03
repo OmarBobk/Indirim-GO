@@ -18,6 +18,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\On;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 use Livewire\WithPagination;
@@ -55,6 +56,12 @@ final class AutomationMonitor extends Component
     public function updatedSearch(): void
     {
         $this->resetPage();
+    }
+
+    #[On('automation-run-updated')]
+    public function refreshFromBroadcast(array $payload = []): void
+    {
+        unset($this->stats, $this->runs, $this->selectedRun);
     }
 
     public function selectRun(string $uuid, bool $focusScreenshots = false): void

@@ -32,6 +32,12 @@ class StoreFulfillmentAutomationArtifact
 
         $run->update(['meta' => $meta]);
 
+        app(BroadcastAutomationRunChanged::class)->handle(
+            $run->uuid,
+            'artifact',
+            $run->status->value,
+        );
+
         return $path;
     }
 
@@ -51,6 +57,12 @@ class StoreFulfillmentAutomationArtifact
         $meta['artifact_paths'] = $artifactPaths;
 
         $run->update(['meta' => $meta]);
+
+        app(BroadcastAutomationRunChanged::class)->handle(
+            $run->uuid,
+            'artifact',
+            $run->status->value,
+        );
 
         return $path;
     }

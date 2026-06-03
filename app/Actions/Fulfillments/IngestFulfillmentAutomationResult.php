@@ -169,6 +169,12 @@ class IngestFulfillmentAutomationResult
                 return;
             }
 
+            app(BroadcastAutomationRunChanged::class)->handle(
+                $run->uuid,
+                str_replace('fulfillment.automation.', '', $eventType),
+                $run->status->value,
+            );
+
             app(SystemEventService::class)->record(
                 $eventType,
                 $run,
