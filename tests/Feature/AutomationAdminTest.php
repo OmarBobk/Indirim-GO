@@ -3,19 +3,11 @@
 declare(strict_types=1);
 
 use App\Actions\Fulfillments\CancelFulfillmentAutomationRun;
-use App\Actions\Fulfillments\CreateFulfillmentsForOrder;
 use App\Enums\FulfillmentAutomationRunStatus;
-use App\Enums\OrderItemStatus;
-use App\Enums\OrderStatus;
 use App\Events\AutomationRunChanged;
 use App\Jobs\DispatchFulfillmentAutomationJob;
 use App\Livewire\Admin\AutomationMonitor;
-use App\Models\Fulfillment;
 use App\Models\FulfillmentAutomationRun;
-use App\Models\Order;
-use App\Models\OrderItem;
-use App\Models\Package;
-use App\Models\Product;
 use App\Models\User;
 use App\Models\WebsiteSetting;
 use App\Services\FulfillmentAutomationService;
@@ -28,40 +20,6 @@ use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
-
-function makeAutomationAdminFulfillment(): Fulfillment
-{
-    $user = User::factory()->create();
-    $package = Package::factory()->create([
-        'fulfillment_provider' => 'browser:acme',
-    ]);
-    $product = Product::factory()->create(['package_id' => $package->id, 'entry_price' => 25]);
-
-    $order = Order::create([
-        'user_id' => $user->id,
-        'order_number' => Order::temporaryOrderNumber(),
-        'currency' => 'USD',
-        'subtotal' => 25,
-        'fee' => 0,
-        'total' => 25,
-        'status' => OrderStatus::Paid,
-    ]);
-
-    OrderItem::create([
-        'order_id' => $order->id,
-        'product_id' => $product->id,
-        'package_id' => $package->id,
-        'name' => $product->name,
-        'unit_price' => 25,
-        'quantity' => 1,
-        'line_total' => 25,
-        'status' => OrderItemStatus::Pending,
-    ]);
-
-    (new CreateFulfillmentsForOrder)->handle($order);
-
-    return Fulfillment::query()->where('order_id', $order->id)->firstOrFail();
-}
 
 beforeEach(function (): void {
     config([
@@ -270,6 +228,51 @@ test('cancelling an automation run broadcasts AutomationRunChanged', function ()
             && $event->type === 'cancelled'
             && $event->status === FulfillmentAutomationRunStatus::Cancelled->value;
     });
+});
+
+test('only the global latest failed run is marked as retriable', function () {
+    $fulfillment = makeAutomationAdminFulfillment();
+
+    FulfillmentAutomationRun::query()
+        ->where('fulfillment_id', $fulfillment->id)
+        ->delete();
+
+    $older = FulfillmentAutomationRun::query()->create([
+        'uuid' => (string) Str::uuid(),
+        'fulfillment_id' => $fulfillment->id,
+        'supplier_key' => 'wasim',
+        'status' => FulfillmentAutomationRunStatus::Failed,
+        'attempt' => 1,
+        'idempotency_key' => 'automation:fulfillment:'.$fulfillment->id.':attempt:older',
+        'finished_at' => now()->subHour(),
+    ]);
+    $older->forceFill(['created_at' => now()->subHours(2)])->save();
+
+    $latest = FulfillmentAutomationRun::query()->create([
+        'uuid' => (string) Str::uuid(),
+        'fulfillment_id' => $fulfillment->id,
+        'supplier_key' => 'wasim',
+        'status' => FulfillmentAutomationRunStatus::Failed,
+        'attempt' => 2,
+        'idempotency_key' => 'automation:fulfillment:'.$fulfillment->id.':attempt:latest',
+        'finished_at' => now(),
+    ]);
+
+    $component = Livewire::actingAs(adminUser())->test(AutomationMonitor::class);
+    $instance = $component->instance();
+
+    $latestUuid = $instance->latestRunUuidForFulfillment($fulfillment->id);
+
+    expect($latestUuid)->toBe($latest->uuid)
+        ->and($instance->isGlobalLatestRun($older, $latestUuid))->toBeFalse()
+        ->and($instance->isGlobalLatestRun($latest, $latestUuid))->toBeTrue();
+
+    $group = $instance->runGroups->firstWhere('fulfillment_id', $fulfillment->id);
+
+    expect($group)->not->toBeNull()
+        ->and($group->count)->toBe(2)
+        ->and($group->primary->uuid)->toBe($latest->uuid)
+        ->and($group->others->first()->uuid)->toBe($older->uuid);
 });
 
 test('automation monitor refreshes when automation-run-updated is dispatched', function () {

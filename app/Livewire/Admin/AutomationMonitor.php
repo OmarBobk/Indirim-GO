@@ -15,6 +15,7 @@ use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
@@ -61,7 +62,7 @@ final class AutomationMonitor extends Component
     #[On('automation-run-updated')]
     public function refreshFromBroadcast(array $payload = []): void
     {
-        unset($this->stats, $this->runs, $this->selectedRun);
+        unset($this->stats, $this->runs, $this->runGroups, $this->selectedRun, $this->selectedRunIsGlobalLatest);
     }
 
     public function selectRun(string $uuid, bool $focusScreenshots = false): void
@@ -223,6 +224,78 @@ final class AutomationMonitor extends Component
             ->paginate(25);
     }
 
+    /**
+     * Runs on the current page grouped by fulfillment (newest attempt shown first).
+     *
+     * @return Collection<int, object{
+     *     fulfillment_id: int,
+     *     primary: FulfillmentAutomationRun,
+     *     others: Collection<int, FulfillmentAutomationRun>,
+     *     count: int,
+     *     global_latest_uuid: string|null
+     * }>
+     */
+    #[Computed]
+    public function runGroups(): Collection
+    {
+        $runs = $this->runs->getCollection();
+
+        if ($runs->isEmpty()) {
+            return collect();
+        }
+
+        /** @var list<int> $fulfillmentIds */
+        $fulfillmentIds = $runs->pluck('fulfillment_id')
+            ->unique()
+            ->filter()
+            ->map(fn ($id): int => (int) $id)
+            ->values()
+            ->all();
+
+        $latestUuidByFulfillment = $this->latestRunUuidByFulfillmentIds($fulfillmentIds);
+
+        return $runs->groupBy('fulfillment_id')
+            ->map(function (Collection $groupRuns, int|string $fulfillmentId) use ($latestUuidByFulfillment): object {
+                $sorted = $groupRuns
+                    ->sortByDesc(fn (FulfillmentAutomationRun $run): CarbonInterface => $run->created_at)
+                    ->values();
+
+                $fulfillmentId = (int) $fulfillmentId;
+
+                return (object) [
+                    'fulfillment_id' => $fulfillmentId,
+                    'primary' => $sorted->first(),
+                    'others' => $sorted->slice(1)->values(),
+                    'count' => $sorted->count(),
+                    'global_latest_uuid' => $latestUuidByFulfillment[$fulfillmentId] ?? null,
+                ];
+            })
+            ->sortByDesc(fn (object $group): CarbonInterface => $group->primary->created_at)
+            ->values();
+    }
+
+    #[Computed]
+    public function selectedRunIsGlobalLatest(): bool
+    {
+        $run = $this->selectedRun;
+
+        if ($run === null) {
+            return false;
+        }
+
+        return $this->isGlobalLatestRun($run, $this->latestRunUuidForFulfillment($run->fulfillment_id));
+    }
+
+    public function isGlobalLatestRun(FulfillmentAutomationRun $run, ?string $globalLatestUuid): bool
+    {
+        return $globalLatestUuid !== null && $run->uuid === $globalLatestUuid;
+    }
+
+    public function latestRunUuidForFulfillment(int $fulfillmentId): ?string
+    {
+        return $this->latestRunUuidByFulfillmentIds([$fulfillmentId])[$fulfillmentId] ?? null;
+    }
+
     #[Computed]
     public function selectedRun(): ?FulfillmentAutomationRun
     {
@@ -321,6 +394,26 @@ final class AutomationMonitor extends Component
     public function render(): View
     {
         return view('livewire.admin.automation-monitor');
+    }
+
+    /**
+     * @param  list<int>  $fulfillmentIds
+     * @return array<int, string>
+     */
+    private function latestRunUuidByFulfillmentIds(array $fulfillmentIds): array
+    {
+        if ($fulfillmentIds === []) {
+            return [];
+        }
+
+        return FulfillmentAutomationRun::query()
+            ->whereIn('fulfillment_id', $fulfillmentIds)
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->get(['fulfillment_id', 'uuid'])
+            ->unique('fulfillment_id')
+            ->mapWithKeys(fn (FulfillmentAutomationRun $run): array => [(int) $run->fulfillment_id => $run->uuid])
+            ->all();
     }
 
     private function findAuthorizedRun(string $uuid): FulfillmentAutomationRun

@@ -11,9 +11,15 @@ export function workerStoragePath(...segments: string[]): string {
   return target;
 }
 
-export function workerScreenshotsDir(runUuid: string): string {
-  const dir = workerStoragePath('screenshots', runUuid);
-  fs.mkdirSync(dir, { recursive: true });
+/**
+ * Remove on-disk screenshots from older worker versions (Laravel is the only store now).
+ */
+export function removeLegacyWorkerScreenshotsDir(runUuid: string): void {
+  const dir = path.join(workerRoot, 'storage', 'screenshots', runUuid);
 
-  return dir;
+  if (!fs.existsSync(dir)) {
+    return;
+  }
+
+  fs.rmSync(dir, { recursive: true, force: true });
 }

@@ -17,7 +17,7 @@ app.use(
 );
 
 app.get('/health', (_req, res) => {
-  res.json({ status: 'ok' });
+  res.json({ status: 'ok' } );
 });
 
 app.post('/v1/runs', (req, res) => {

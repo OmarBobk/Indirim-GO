@@ -66,7 +66,7 @@ npm run build
 npm start
 ```
 
-Screenshots are saved under `automation-worker/storage/screenshots/{run_uuid}/` and uploaded to Laravel after each run. View them in the fulfillment modal when artifact upload succeeds.
+Screenshots are captured in memory, uploaded to Laravel immediately (`storage/app/private/fulfillment-automation/{run_uuid}/`), and are not kept on the worker disk. Legacy folders under `automation-worker/storage/screenshots/` are removed when a run starts. Prune old Laravel copies with `php artisan fulfillment:prune-automation-artifacts`.
 
 ## Drivers
 

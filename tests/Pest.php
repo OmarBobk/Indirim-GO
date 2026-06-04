@@ -41,7 +41,46 @@ expect()->extend('toBeOne', function () {
 |
 */
 
-function something()
+use App\Actions\Fulfillments\CreateFulfillmentsForOrder;
+use App\Enums\OrderItemStatus;
+use App\Enums\OrderStatus;
+use App\Models\Fulfillment;
+use App\Models\Order;
+use App\Models\OrderItem;
+use App\Models\Package;
+use App\Models\Product;
+use App\Models\User;
+
+function makeAutomationAdminFulfillment(): Fulfillment
 {
-    // ..
+    $user = User::factory()->create();
+    $package = Package::factory()->create([
+        'fulfillment_provider' => 'browser:acme',
+    ]);
+    $product = Product::factory()->create(['package_id' => $package->id, 'entry_price' => 25]);
+
+    $order = Order::create([
+        'user_id' => $user->id,
+        'order_number' => Order::temporaryOrderNumber(),
+        'currency' => 'USD',
+        'subtotal' => 25,
+        'fee' => 0,
+        'total' => 25,
+        'status' => OrderStatus::Paid,
+    ]);
+
+    OrderItem::create([
+        'order_id' => $order->id,
+        'product_id' => $product->id,
+        'package_id' => $package->id,
+        'name' => $product->name,
+        'unit_price' => 25,
+        'quantity' => 1,
+        'line_total' => 25,
+        'status' => OrderItemStatus::Pending,
+    ]);
+
+    (new CreateFulfillmentsForOrder)->handle($order);
+
+    return Fulfillment::query()->where('order_id', $order->id)->firstOrFail();
 }

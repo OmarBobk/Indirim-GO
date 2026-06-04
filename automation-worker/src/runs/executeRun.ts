@@ -1,11 +1,9 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import { withBrowserContext } from '../browser/pool.js';
+import { uploadArtifactBytes } from '../callbacks/uploadArtifact.js';
 import { postResult } from '../callbacks/postResult.js';
-import { uploadArtifact } from '../callbacks/uploadArtifact.js';
 import { resolveDriver } from '../drivers/index.js';
 import { RunLogger } from '../logging/runLogger.js';
-import { workerScreenshotsDir } from '../storage/workerPaths.js';
+import { removeLegacyWorkerScreenshotsDir } from '../storage/workerPaths.js';
 import type { RunPayload } from '../types.js';
 
 const callbackSecret = process.env.FULFILLMENT_AUTOMATION_CALLBACK_SECRET ?? '';
@@ -13,6 +11,8 @@ const callbackSecret = process.env.FULFILLMENT_AUTOMATION_CALLBACK_SECRET ?? '';
 export async function executeRun(payload: RunPayload): Promise<void> {
   const logger = new RunLogger(payload.run_uuid, payload.fulfillment_id);
   const driver = resolveDriver(payload.driver);
+
+  removeLegacyWorkerScreenshotsDir(payload.run_uuid);
 
   if (driver === null) {
     await postResult(
@@ -29,18 +29,30 @@ export async function executeRun(payload: RunPayload): Promise<void> {
     return;
   }
 
-  const screenshotsDir = workerScreenshotsDir(payload.run_uuid);
-  const capturedScreenshots: Array<{ label: string; path: string }> = [];
+  const capturedScreenshotLabels: string[] = [];
+  const artifactsUrl = payload.callback_urls.artifacts;
+  const canUploadArtifacts = callbackSecret !== '' && artifactsUrl !== '';
 
   try {
     const result = await withBrowserContext(payload.session_key, async (context) => {
       const page = await context.newPage();
 
       const screenshot = async (label: string): Promise<void> => {
-        const filePath = path.join(screenshotsDir, `${label}.png`);
-        await page.screenshot({ path: filePath, fullPage: true });
-        capturedScreenshots.push({ label, path: filePath });
-        logger.log('screenshot', `Saved ${filePath}`);
+        const fileData = await page.screenshot({ type: 'png', fullPage: true });
+        capturedScreenshotLabels.push(label);
+        logger.log('screenshot', `Captured ${label}.png (${fileData.byteLength} bytes)`);
+
+        if (!canUploadArtifacts) {
+          return;
+        }
+
+        try {
+          await uploadArtifactBytes(artifactsUrl, callbackSecret, fileData, label);
+          logger.log('screenshot', `Uploaded ${label}.png to Laravel`);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Artifact upload failed';
+          logger.log('screenshot', message, 'warn');
+        }
       };
 
       return driver.execute({
@@ -51,14 +63,9 @@ export async function executeRun(payload: RunPayload): Promise<void> {
       });
     });
 
-    await uploadCapturedScreenshots(payload, capturedScreenshots, logger);
-
     const deliveredPayload = {
       ...(result.deliveredPayload ?? {}),
-      screenshots: capturedScreenshots.map((shot) => ({
-        label: shot.label,
-        path: shot.path,
-      })),
+      screenshots: capturedScreenshotLabels.map((label) => ({ label })),
     };
 
     await postResult(
@@ -72,10 +79,6 @@ export async function executeRun(payload: RunPayload): Promise<void> {
 
     logger.log('fatal', message, 'error');
 
-    await uploadCapturedScreenshots(payload, capturedScreenshots, logger).catch(() => {
-      // Best-effort artifact upload on failure.
-    });
-
     await postResult(
       payload.callback_urls.result,
       callbackSecret,
@@ -84,41 +87,10 @@ export async function executeRun(payload: RunPayload): Promise<void> {
         errorCode: 'browser_crash',
         message,
         deliveredPayload: {
-          screenshots: capturedScreenshots.map((shot) => ({
-            label: shot.label,
-            path: shot.path,
-          })),
+          screenshots: capturedScreenshotLabels.map((label) => ({ label })),
         },
       },
       logger.excerpt(),
     );
-  }
-}
-
-async function uploadCapturedScreenshots(
-  payload: RunPayload,
-  screenshots: Array<{ label: string; path: string }>,
-  logger: RunLogger,
-): Promise<void> {
-  if (screenshots.length === 0 || callbackSecret === '') {
-    return;
-  }
-
-  const artifactsUrl = payload.callback_urls.artifacts;
-
-  for (const shot of screenshots) {
-    if (!fs.existsSync(shot.path)) {
-      logger.log('screenshot', `Skipping missing file ${shot.path}`, 'warn');
-
-      continue;
-    }
-
-    try {
-      await uploadArtifact(artifactsUrl, callbackSecret, shot.path, shot.label);
-      logger.log('screenshot', `Uploaded ${shot.label}.png to Laravel`);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Artifact upload failed';
-      logger.log('screenshot', message, 'warn');
-    }
   }
 }

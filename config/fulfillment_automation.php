@@ -23,6 +23,10 @@ return [
         'signature_skew_seconds' => (int) env('FULFILLMENT_AUTOMATION_SIGNATURE_SKEW', 300),
     ],
 
+    'artifacts' => [
+        'retention_days' => (int) env('FULFILLMENT_AUTOMATION_ARTIFACT_RETENTION_DAYS', 30),
+    ],
+
     'queue' => env('FULFILLMENT_AUTOMATION_QUEUE', 'fulfillment-automation'),
 
     'suppliers' => [

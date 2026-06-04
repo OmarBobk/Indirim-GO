@@ -69,6 +69,7 @@
   - ###TODO: Automation manager:
     - ###TODO: in the record details the Raw log excerpt json array should be sorted 
     - ###TODO: the screenshots are repeated twice in "automation-worker/storage" and in "storage/app/public"
+  
 - Frontend:
   - ###DONE wallet transaction in /wallets should be more described
   - ###DONE Wallet /wallet Request topups form borders remove the ring
