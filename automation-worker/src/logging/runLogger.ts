@@ -10,11 +10,13 @@ export class RunLogger {
 
   log(step: string, message: string, level: LogLine['level'] = 'info', ms?: number): void {
     const line: LogLine = {
-      runUuid: this.runUuid,
-      fulfillmentId: this.fulfillmentId,
+      id: this.lines.length + 1,
       step,
       level,
       message,
+      at: new Date().toISOString(),
+      runUuid: this.runUuid,
+      fulfillmentId: this.fulfillmentId,
       ms,
     };
 

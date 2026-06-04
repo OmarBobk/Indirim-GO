@@ -374,6 +374,79 @@ final class AutomationMonitor extends Component
     }
 
     /**
+     * Normalize automation log lines for the detail panel: sequential ids first, sorted by step order.
+     *
+     * @return list<array{id: int, step: string, level: string, message: string, at: string|null, ms: int|null}>
+     */
+    public function formattedLogExcerpt(FulfillmentAutomationRun $run): array
+    {
+        $raw = $run->log_excerpt;
+
+        if (! is_array($raw) || $raw === []) {
+            return [];
+        }
+
+        $lines = [];
+
+        foreach (array_values($raw) as $index => $line) {
+            if (! is_array($line)) {
+                continue;
+            }
+
+            $lines[] = [
+                'line' => $line,
+                'fallback_order' => $index,
+            ];
+        }
+
+        usort($lines, function (array $a, array $b): int {
+            $lineA = $a['line'];
+            $lineB = $b['line'];
+
+            $idA = isset($lineA['id']) && is_numeric($lineA['id']) ? (int) $lineA['id'] : null;
+            $idB = isset($lineB['id']) && is_numeric($lineB['id']) ? (int) $lineB['id'] : null;
+
+            if ($idA !== null && $idB !== null && $idA !== $idB) {
+                return $idA <=> $idB;
+            }
+
+            if ($idA !== null && $idB === null) {
+                return -1;
+            }
+
+            if ($idA === null && $idB !== null) {
+                return 1;
+            }
+
+            $atA = is_string($lineA['at'] ?? null) ? strtotime($lineA['at']) : false;
+            $atB = is_string($lineB['at'] ?? null) ? strtotime($lineB['at']) : false;
+
+            if ($atA !== false && $atB !== false && $atA !== $atB) {
+                return $atA <=> $atB;
+            }
+
+            return $a['fallback_order'] <=> $b['fallback_order'];
+        });
+
+        $formatted = [];
+
+        foreach ($lines as $position => $entry) {
+            $line = $entry['line'];
+
+            $formatted[] = [
+                'id' => $position + 1,
+                'step' => (string) ($line['step'] ?? 'unknown'),
+                'level' => (string) ($line['level'] ?? 'info'),
+                'message' => (string) ($line['message'] ?? ''),
+                'at' => is_string($line['at'] ?? null) ? $line['at'] : null,
+                'ms' => isset($line['ms']) && is_numeric($line['ms']) ? (int) $line['ms'] : null,
+            ];
+        }
+
+        return $formatted;
+    }
+
+    /**
      * @return list<array{src: string, alt: string, label: string}>
      */
     public function artifactItemsForRun(FulfillmentAutomationRun $run): array

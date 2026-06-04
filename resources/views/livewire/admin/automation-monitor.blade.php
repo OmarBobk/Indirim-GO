@@ -409,10 +409,11 @@
                         </flux:callout>
                     @endif
 
-                    @if (is_array($panelRun->log_excerpt) && $panelRun->log_excerpt !== [])
+                    @php($logExcerpt = $this->formattedLogExcerpt($panelRun))
+                    @if ($logExcerpt !== [])
                         <details class="rounded-lg border border-zinc-200 dark:border-zinc-700">
                             <summary class="cursor-pointer px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">{{ __('messages.automation_raw_log') }}</summary>
-                            <pre class="max-h-48 overflow-auto p-3 font-mono text-[11px] text-zinc-600 dark:text-zinc-400">{{ json_encode($panelRun->log_excerpt, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) }}</pre>
+                            <pre class="max-h-48 overflow-auto p-3 font-mono text-[11px] text-zinc-600 dark:text-zinc-400">{{ json_encode($logExcerpt, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) }}</pre>
                         </details>
                     @endif
                 </div>

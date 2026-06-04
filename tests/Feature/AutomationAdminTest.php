@@ -230,6 +230,37 @@ test('cancelling an automation run broadcasts AutomationRunChanged', function ()
     });
 });
 
+test('formatted log excerpt adds sequential ids and sorts by step order', function () {
+    $fulfillment = makeAutomationAdminFulfillment();
+
+    $run = FulfillmentAutomationRun::query()->create([
+        'uuid' => (string) Str::uuid(),
+        'fulfillment_id' => $fulfillment->id,
+        'supplier_key' => 'acme',
+        'status' => FulfillmentAutomationRunStatus::Failed,
+        'attempt' => 1,
+        'idempotency_key' => 'automation:fulfillment:'.$fulfillment->id.':attempt:log-format',
+        'log_excerpt' => [
+            ['step' => 'submit', 'level' => 'info', 'message' => 'Submitted', 'id' => 3],
+            ['step' => 'login', 'level' => 'info', 'message' => 'Logged in', 'id' => 1],
+            ['step' => 'product', 'level' => 'info', 'message' => 'Opened product', 'id' => 2],
+        ],
+    ]);
+
+    $formatted = Livewire::actingAs(adminUser())
+        ->test(AutomationMonitor::class)
+        ->instance()
+        ->formattedLogExcerpt($run);
+
+    expect($formatted)->toHaveCount(3)
+        ->and($formatted[0]['id'])->toBe(1)
+        ->and($formatted[0]['step'])->toBe('login')
+        ->and($formatted[1]['id'])->toBe(2)
+        ->and($formatted[1]['step'])->toBe('product')
+        ->and($formatted[2]['id'])->toBe(3)
+        ->and($formatted[2]['step'])->toBe('submit');
+});
+
 test('only the global latest failed run is marked as retriable', function () {
     $fulfillment = makeAutomationAdminFulfillment();
 

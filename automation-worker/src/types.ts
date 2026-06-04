@@ -33,10 +33,12 @@ export type DriverResult = {
 };
 
 export type LogLine = {
-  runUuid: string;
-  fulfillmentId: number;
+  id: number;
   step: string;
   level: 'info' | 'warn' | 'error';
   message: string;
+  at: string;
+  runUuid: string;
+  fulfillmentId: number;
   ms?: number;
 };
