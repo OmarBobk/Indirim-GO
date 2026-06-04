@@ -8,6 +8,7 @@
     "start": "node dist/server.js",
     "build": "tsc",
     "test:parse-money": "tsx src/utils/parseMoney.selfcheck.ts",
+    "test:parse-swal": "tsx src/drivers/wasim/parseSwalPurchase.selfcheck.ts",
     "postinstall": "playwright install chromium"
   },
   "dependencies": {

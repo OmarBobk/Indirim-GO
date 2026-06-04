@@ -12,6 +12,7 @@ use App\Enums\FulfillmentStatus;
 use App\Enums\OrderItemStatus;
 use App\Enums\OrderStatus;
 use App\Enums\ProductAmountMode;
+use App\Enums\WalletTransactionType;
 use App\Jobs\DispatchFulfillmentAutomationJob;
 use App\Models\Fulfillment;
 use App\Models\FulfillmentAutomationRun;
@@ -20,6 +21,8 @@ use App\Models\OrderItem;
 use App\Models\Package;
 use App\Models\Product;
 use App\Models\User;
+use App\Models\Wallet;
+use App\Models\WalletTransaction;
 use App\Services\FulfillmentAutomationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -154,6 +157,80 @@ test('ingest success completes fulfillment and is idempotent', function () {
     app(IngestFulfillmentAutomationResult::class)->handle($run->refresh(), $payload);
 
     expect($fulfillment->logs()->where('message', 'Fulfillment completed')->count())->toBe(1);
+});
+
+test('ingest supplier rejection fails fulfillment and requests refund', function () {
+    $fulfillment = makeBrowserFulfillmentOrder();
+    $order = Order::query()->findOrFail($fulfillment->order_id);
+    Wallet::forUser(User::query()->findOrFail($order->user_id));
+
+    $run = FulfillmentAutomationRun::query()->create([
+        'uuid' => (string) Str::uuid(),
+        'fulfillment_id' => $fulfillment->id,
+        'supplier_key' => 'wasim',
+        'status' => FulfillmentAutomationRunStatus::Running,
+        'attempt' => 1,
+        'idempotency_key' => 'automation:fulfillment:'.$fulfillment->id.':attempt:1',
+        'dispatched_at' => now(),
+        'started_at' => now(),
+    ]);
+
+    $fulfillment->update(['status' => FulfillmentStatus::Processing]);
+
+    app(IngestFulfillmentAutomationResult::class)->handle($run, [
+        'outcome' => 'failed',
+        'error_code' => 'supplier_order_rejected',
+        'message' => '{"replay":["invalid player id"]}',
+        'delivered_payload' => [
+            'supplier_order_id' => '12336',
+            'supplier_entry_price' => 1.07,
+            'supplier_status' => 'pending',
+            'supplier_reply' => '{"replay":["invalid player id"]}',
+        ],
+    ]);
+
+    $fulfillment->refresh();
+    $run->refresh();
+
+    expect($fulfillment->status)->toBe(FulfillmentStatus::Failed);
+    expect($run->status)->toBe(FulfillmentAutomationRunStatus::Failed);
+    expect($run->error_code)->toBe('supplier_order_rejected');
+
+    expect(WalletTransaction::query()
+        ->where('reference_type', Fulfillment::class)
+        ->where('reference_id', $fulfillment->id)
+        ->where('type', WalletTransactionType::Refund->value)
+        ->exists())->toBeTrue();
+});
+
+test('ingest success stores supplier entry price on order item', function () {
+    $fulfillment = makeBrowserFulfillmentOrder();
+    $item = OrderItem::query()->findOrFail($fulfillment->order_item_id);
+    $item->update(['entry_price' => 99]);
+
+    $run = FulfillmentAutomationRun::query()->create([
+        'uuid' => (string) Str::uuid(),
+        'fulfillment_id' => $fulfillment->id,
+        'supplier_key' => 'wasim',
+        'status' => FulfillmentAutomationRunStatus::Running,
+        'attempt' => 1,
+        'idempotency_key' => 'automation:fulfillment:'.$fulfillment->id.':attempt:1',
+        'dispatched_at' => now(),
+        'started_at' => now(),
+    ]);
+
+    $fulfillment->update(['status' => FulfillmentStatus::Processing]);
+
+    app(IngestFulfillmentAutomationResult::class)->handle($run, [
+        'outcome' => 'success',
+        'external_order_id' => '12336',
+        'delivered_payload' => [
+            'supplier_entry_price' => 1.07692159,
+            'supplier_status' => 'Completed',
+        ],
+    ]);
+
+    expect((float) $item->refresh()->entry_price)->toBe(1.07692159);
 });
 
 test('callback endpoint accepts signed automation result', function () {

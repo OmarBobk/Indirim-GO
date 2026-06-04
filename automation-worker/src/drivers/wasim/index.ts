@@ -3,6 +3,7 @@ import { runCustomAmountProductSteps } from './customAmountForm.js';
 import { openWasimProductPage } from './login.js';
 import { assertUnitPriceCoversSupplierTotal } from './priceCheck.js';
 import { fillPlayerId, isFixedQuantityMode } from './productForm.js';
+import { submitWasimPurchase } from './submitPurchase.js';
 
 export const wasimDriver: RunDriver = {
   supplierKey: 'wasim',
@@ -73,7 +74,6 @@ export const wasimDriver: RunDriver = {
       }
 
       playerId = fillResult.playerId;
-      logger.log('checkpoint', 'Player id filled on Wasim fixed product form; order submit not implemented yet');
     } else {
       const customResult = await runCustomAmountProductSteps(page, payload, logger, ctx.screenshot);
 
@@ -99,27 +99,17 @@ export const wasimDriver: RunDriver = {
       lineTotal = customResult.lineTotal;
       supplierTotal = customResult.supplierTotal;
       playerId = customResult.playerId;
-      logger.log('checkpoint', 'Custom amount, margin check, and player id filled; order submit not implemented yet');
     }
 
-    return {
-      outcome: 'needs_review',
-      errorCode: 'flow_incomplete',
-      message: playerId !== null
-        ? 'Wasim product form filled (quantity/price/player). Next step: submit order.'
-        : 'Opened Wasim product page. Next step: complete form and submit order.',
-      deliveredPayload: {
-        checkpoint: playerId !== null ? 'player_id_filled' : 'product',
-        url: page.url(),
-        product_api: productResult.productApi,
-        product_url: productResult.productUrl,
-        player_id: playerId,
-        unit_price: unitPrice,
-        line_total: lineTotal,
-        custom_quantity: customQuantity,
-        supplier_total: supplierTotal,
-        product_amount_mode: payload.product_amount_mode ?? 'fixed',
-      },
-    };
+    return submitWasimPurchase(page, payload, logger, ctx.screenshot, {
+      productApi: productResult.productApi,
+      productUrl: productResult.productUrl,
+      playerId,
+      unitPrice,
+      lineTotal,
+      customQuantity,
+      supplierTotal,
+      productAmountMode: payload.product_amount_mode ?? 'fixed',
+    });
   },
 };

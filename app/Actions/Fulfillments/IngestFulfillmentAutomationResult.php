@@ -4,13 +4,18 @@ declare(strict_types=1);
 
 namespace App\Actions\Fulfillments;
 
+use App\Actions\Orders\RefundOrderItem;
 use App\Enums\FulfillmentAutomationRunStatus;
 use App\Enums\FulfillmentLogLevel;
+use App\Enums\FulfillmentStatus;
 use App\Models\Fulfillment;
 use App\Models\FulfillmentAutomationRun;
+use App\Models\Order;
+use App\Models\OrderItem;
 use App\Services\FulfillmentAutomationService;
 use App\Services\SystemEventService;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 
 class IngestFulfillmentAutomationResult
@@ -68,6 +73,8 @@ class IngestFulfillmentAutomationResult
                 $deliveredPayload['supplier_order_id'] = $externalOrderId;
                 $deliveredPayload['automation_run_uuid'] = $lockedRun->uuid;
                 $deliveredPayload['automation'] = true;
+
+                $this->applySupplierEntryPriceToOrderItem($lockedFulfillment, $deliveredPayload);
 
                 $lockedRun->fill([
                     'status' => FulfillmentAutomationRunStatus::Succeeded,
@@ -145,6 +152,10 @@ class IngestFulfillmentAutomationResult
                 null,
             );
 
+            if ($outcome === 'failed' && $errorCode === 'supplier_order_rejected') {
+                $this->queueSupplierRejectionRefund($lockedFulfillment);
+            }
+
             $eventType = $outcome === 'needs_review'
                 ? 'fulfillment.automation.needs_review'
                 : 'fulfillment.automation.failed';
@@ -152,6 +163,55 @@ class IngestFulfillmentAutomationResult
             $this->recordTerminalEvent($lockedRun, $lockedFulfillment, $eventType);
 
             return $lockedRun->refresh();
+        });
+    }
+
+    /**
+     * @param  array<string, mixed>  $deliveredPayload
+     */
+    private function applySupplierEntryPriceToOrderItem(Fulfillment $fulfillment, array $deliveredPayload): void
+    {
+        $supplierEntryPrice = data_get($deliveredPayload, 'supplier_entry_price');
+
+        if (! is_numeric($supplierEntryPrice)) {
+            return;
+        }
+
+        OrderItem::query()
+            ->whereKey($fulfillment->order_item_id)
+            ->update(['entry_price' => (float) $supplierEntryPrice]);
+    }
+
+    private function queueSupplierRejectionRefund(Fulfillment $fulfillment): void
+    {
+        $fulfillmentId = $fulfillment->id;
+        $orderUserId = Order::query()->whereKey($fulfillment->order_id)->value('user_id');
+
+        if ($orderUserId === null) {
+            return;
+        }
+
+        DB::afterCommit(function () use ($fulfillmentId, $orderUserId): void {
+            $fulfillment = Fulfillment::query()->find($fulfillmentId);
+
+            if ($fulfillment === null || $fulfillment->status !== FulfillmentStatus::Failed) {
+                return;
+            }
+
+            try {
+                app(RefundOrderItem::class)->handle(
+                    $fulfillment,
+                    (int) $orderUserId,
+                    'Supplier rejected order (automation)',
+                );
+            } catch (ValidationException) {
+                app(AppendFulfillmentLog::class)->handle(
+                    $fulfillment,
+                    FulfillmentLogLevel::Warn,
+                    'Automatic refund after supplier rejection was not allowed',
+                    ['action' => 'automation_refund_skipped'],
+                );
+            }
         });
     }
 

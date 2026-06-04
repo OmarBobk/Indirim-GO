@@ -56,7 +56,7 @@
     - ###DONE: Salesperson should be able to create new user under him, see users under him and update there information (phone, username, password, email, name)
     - ###DONE: Admin should be able to set the commission percent for every salesperson
     - ###DONE: Salesperson should see only the dashboard there is no need to access the fulfillments
-    - ###DONE: if admin hit the salesperson dashboard[playwright.config.js](../../../../../Users/karma/OneDrive/Desktop/playwright/playwright.config.js) he should be able to select some salesperson to see his states
+    - ###DONE: if admin hit the salesperson dashboard he should be able to select some salesperson to see his states
     - ###DONE: add the default commission rate to the website settings
     - ###DONE: salesperson dashboard light mode isn't matched
   - ###TODO: admin/users/{user}: customer price needs to be fixed
@@ -67,7 +67,7 @@
   - ###DONE: orders/{order}: "Delivered payload" should not be hashed like this "••••••••••••••••klds"
   - ###DONE: Add the payments ways like iban, sham cash wallet barcode, usdt wallt ...etc
   - ###TODO: Automation manager:
-    - ###TODO: in the record details the Raw log excerpt json array should be sorted 
+    - ###DONE: in the record details the Raw log excerpt json array should be sorted 
     - ###DONE: the screenshots are repeated twice in "automation-worker/storage" and in "storage/app/public"
   
 - Frontend:

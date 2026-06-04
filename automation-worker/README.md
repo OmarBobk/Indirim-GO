@@ -72,7 +72,7 @@ Screenshots are captured in memory, uploaded to Laravel immediately (`storage/ap
 
 | Driver | Supplier | Status |
 |--------|----------|--------|
-| `wasim` | Wasim Store | Open product URL first → login only if redirected → order TBD |
+| `wasim` | Wasim Store | Product page → form fill → margin check → purchase → parse Swal result |
 | `acme` | Test placeholder | Simulated success for automated tests |
 
 Add `src/drivers/{name}/index.ts` and register in `src/drivers/index.ts`.
