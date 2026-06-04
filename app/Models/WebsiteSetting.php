@@ -19,6 +19,8 @@ class WebsiteSetting extends Model
         'commission_payout_min_amount',
         'default_commission_rate_percent',
         'automation_enabled',
+        'wasim_automation_username',
+        'wasim_automation_password',
     ];
 
     /**
@@ -34,6 +36,25 @@ class WebsiteSetting extends Model
             'commission_payout_min_amount' => 'decimal:2',
             'default_commission_rate_percent' => 'decimal:2',
             'automation_enabled' => 'boolean',
+            'wasim_automation_password' => 'encrypted',
+        ];
+    }
+
+    public function hasWasimAutomationPassword(): bool
+    {
+        return filled($this->wasim_automation_password);
+    }
+
+    /**
+     * @return array{username: ?string, password: ?string}
+     */
+    public function wasimAutomationCredentialsFromDatabase(): array
+    {
+        $username = $this->wasim_automation_username;
+
+        return [
+            'username' => is_string($username) && $username !== '' ? $username : null,
+            'password' => $this->hasWasimAutomationPassword() ? $this->wasim_automation_password : null,
         ];
     }
 

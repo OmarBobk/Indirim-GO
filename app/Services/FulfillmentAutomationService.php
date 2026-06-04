@@ -110,7 +110,42 @@ class FulfillmentAutomationService
     {
         $config = config('fulfillment_automation.suppliers.'.$supplierKey);
 
-        return is_array($config) ? $config : null;
+        if (! is_array($config)) {
+            return null;
+        }
+
+        if ($supplierKey === 'wasim') {
+            $config = $this->mergeWasimCredentials($config);
+        }
+
+        return $config;
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     * @return array<string, mixed>
+     */
+    private function mergeWasimCredentials(array $config): array
+    {
+        $defaults = is_array($config['credentials'] ?? null) ? $config['credentials'] : [];
+        $fromDatabase = WebsiteSetting::instance()->wasimAutomationCredentialsFromDatabase();
+
+        $username = $fromDatabase['username'] ?? $defaults['username'] ?? null;
+        $password = $fromDatabase['password'] ?? $defaults['password'] ?? null;
+
+        $credentials = [];
+
+        if (is_string($username) && $username !== '') {
+            $credentials['username'] = $username;
+        }
+
+        if (is_string($password) && $password !== '') {
+            $credentials['password'] = $password;
+        }
+
+        $config['credentials'] = $credentials;
+
+        return $config;
     }
 
     public function nextAttemptNumber(Fulfillment $fulfillment): int

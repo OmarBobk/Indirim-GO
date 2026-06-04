@@ -42,11 +42,51 @@ final class AutomationMonitor extends Component
 
     public bool $automationEnabled = true;
 
+    public string $wasimUsername = '';
+
+    public string $wasimPassword = '';
+
+    public bool $wasimPasswordConfigured = false;
+
+    public bool $wasimCredentialsFromEnv = false;
+
     public function mount(): void
     {
         abort_unless(auth()->user()?->hasRole('admin'), 403);
 
+        $settings = WebsiteSetting::instance();
+
         $this->automationEnabled = WebsiteSetting::getAutomationEnabled();
+        $this->wasimUsername = (string) ($settings->wasim_automation_username ?? '');
+        $this->wasimPasswordConfigured = $settings->hasWasimAutomationPassword();
+        $this->wasimCredentialsFromEnv = $this->envWasimCredentialsConfigured();
+    }
+
+    public function saveWasimCredentials(): void
+    {
+        abort_unless(auth()->user()?->hasRole('admin'), 403);
+
+        $this->validate([
+            'wasimUsername' => ['required', 'string', 'max:255'],
+            'wasimPassword' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $payload = [
+            'wasim_automation_username' => trim($this->wasimUsername),
+        ];
+
+        if ($this->wasimPassword !== '') {
+            $payload['wasim_automation_password'] = $this->wasimPassword;
+        }
+
+        WebsiteSetting::instance()->update($payload);
+
+        $this->wasimPassword = '';
+        $settings = WebsiteSetting::instance()->refresh();
+        $this->wasimPasswordConfigured = $settings->hasWasimAutomationPassword();
+        $this->wasimCredentialsFromEnv = $this->envWasimCredentialsConfigured();
+
+        $this->success(__('messages.automation_wasim_credentials_saved'));
     }
 
     public function updatedStatusFilter(): void
@@ -506,6 +546,12 @@ final class AutomationMonitor extends Component
     /**
      * @return array{state: string, label: string}
      */
+    private function envWasimCredentialsConfigured(): bool
+    {
+        return filled(config('fulfillment_automation.suppliers.wasim.credentials.username'))
+            && filled(config('fulfillment_automation.suppliers.wasim.credentials.password'));
+    }
+
     private function resolveWorkerHealth(): array
     {
         $hasRunsToday = FulfillmentAutomationRun::query()

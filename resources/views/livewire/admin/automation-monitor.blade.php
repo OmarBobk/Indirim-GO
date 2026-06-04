@@ -187,13 +187,56 @@
                 />
             </div>
         </div>
+
+        <div class="mt-4 border-t border-zinc-200 pt-4 dark:border-zinc-700">
+            <flux:heading size="sm" class="text-zinc-900 dark:text-zinc-100">
+                {{ __('messages.automation_wasim_credentials_heading') }}
+            </flux:heading>
+            <flux:text class="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+                {{ __('messages.automation_wasim_credentials_hint') }}
+            </flux:text>
+
+            <form wire:submit="saveWasimCredentials" class="mt-4 grid max-w-xl gap-4">
+                <flux:field>
+                    <flux:label>{{ __('messages.automation_wasim_username') }}</flux:label>
+                    <flux:input wire:model="wasimUsername" autocomplete="off" />
+                    <flux:error name="wasimUsername" />
+                </flux:field>
+
+                <flux:field>
+                    <flux:label>{{ __('messages.automation_wasim_password') }}</flux:label>
+                    <flux:input
+                        type="password"
+                        wire:model="wasimPassword"
+                        placeholder="{{ __('messages.automation_wasim_password_placeholder') }}"
+                        autocomplete="new-password"
+                    />
+                    <flux:error name="wasimPassword" />
+                    <flux:description>
+                        @if ($wasimPasswordConfigured)
+                            {{ __('messages.automation_wasim_password_configured') }}
+                        @elseif ($wasimCredentialsFromEnv)
+                            {{ __('messages.automation_wasim_password_from_env') }}
+                        @else
+                            {{ __('messages.automation_wasim_password_missing') }}
+                        @endif
+                    </flux:description>
+                </flux:field>
+
+                <div>
+                    <flux:button type="submit" variant="primary" wire:loading.attr="disabled" wire:target="saveWasimCredentials">
+                        {{ __('messages.save') }}
+                    </flux:button>
+                </div>
+            </form>
+        </div>
     </section>
 
     {{-- Zone 2: Runs table --}}
     <section class="relative overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
         <div
             wire:loading.delay
-            wire:target="toggleAutomation, retryRun, cancelRun, markReviewSucceeded, markReviewFailed"
+            wire:target="toggleAutomation, saveWasimCredentials, retryRun, cancelRun, markReviewSucceeded, markReviewFailed"
             class="absolute inset-0 z-10 bg-white/60 dark:bg-zinc-900/60"
         >
             <div class="p-6 space-y-2">
@@ -206,7 +249,7 @@
         <div
             class="overflow-x-auto"
             wire:loading.remove.delay
-            wire:target="toggleAutomation, retryRun, cancelRun, markReviewSucceeded, markReviewFailed"
+            wire:target="toggleAutomation, saveWasimCredentials, retryRun, cancelRun, markReviewSucceeded, markReviewFailed"
         >
             @if ($this->runs->count() === 0)
                 <div class="flex flex-col items-center gap-3 p-12 text-center">

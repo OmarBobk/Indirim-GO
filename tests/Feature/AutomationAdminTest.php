@@ -108,6 +108,47 @@ test('stats counts are correct on automation monitor', function () {
         ->and($stats['failed_today_count'])->toBe(1);
 });
 
+test('admin can save wasim credentials and payload uses database values', function () {
+    config([
+        'fulfillment_automation.suppliers.wasim.credentials.username' => 'env-user',
+        'fulfillment_automation.suppliers.wasim.credentials.password' => 'env-pass',
+    ]);
+
+    Livewire::actingAs(adminUser())
+        ->test(AutomationMonitor::class)
+        ->set('wasimUsername', 'admin-wasim@example.com')
+        ->set('wasimPassword', 'secret-from-admin')
+        ->call('saveWasimCredentials')
+        ->assertHasNoErrors();
+
+    $settings = WebsiteSetting::instance()->refresh();
+
+    expect($settings->wasim_automation_username)->toBe('admin-wasim@example.com')
+        ->and($settings->hasWasimAutomationPassword())->toBeTrue()
+        ->and($settings->wasim_automation_password)->toBe('secret-from-admin');
+
+    $credentials = app(FulfillmentAutomationService::class)->supplierConfig('wasim')['credentials'] ?? [];
+
+    expect($credentials)->toBe([
+        'username' => 'admin-wasim@example.com',
+        'password' => 'secret-from-admin',
+    ]);
+});
+
+test('wasim credentials fall back to env when not set in database', function () {
+    config([
+        'fulfillment_automation.suppliers.wasim.credentials.username' => 'env-only-user',
+        'fulfillment_automation.suppliers.wasim.credentials.password' => 'env-only-pass',
+    ]);
+
+    $credentials = app(FulfillmentAutomationService::class)->supplierConfig('wasim')['credentials'] ?? [];
+
+    expect($credentials)->toBe([
+        'username' => 'env-only-user',
+        'password' => 'env-only-pass',
+    ]);
+});
+
 test('kill switch toggle changes website setting', function () {
     Livewire::actingAs(adminUser())
         ->test(AutomationMonitor::class)
