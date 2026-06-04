@@ -16,6 +16,7 @@ use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
@@ -228,6 +229,7 @@ final class AutomationMonitor extends Component
             'needs_review_count' => $needsReviewCount,
             'failed_today_count' => $failedTodayCount,
             'worker_health' => $this->resolveWorkerHealth(),
+            'worker_build' => $this->resolveWorkerBuild(),
         ];
     }
 
@@ -550,6 +552,57 @@ final class AutomationMonitor extends Component
     {
         return filled(config('fulfillment_automation.suppliers.wasim.credentials.username'))
             && filled(config('fulfillment_automation.suppliers.wasim.credentials.password'));
+    }
+
+    /**
+     * @return array{label: string, state: string, supports_submit: bool}
+     */
+    private function resolveWorkerBuild(): array
+    {
+        $workerUrl = rtrim((string) config('fulfillment_automation.worker_url'), '/');
+
+        if ($workerUrl === '') {
+            return [
+                'label' => __('messages.automation_worker_build_unknown'),
+                'state' => 'unknown',
+                'supports_submit' => false,
+            ];
+        }
+
+        try {
+            $response = Http::timeout(3)->get($workerUrl.'/health');
+
+            if (! $response->successful()) {
+                return [
+                    'label' => __('messages.automation_worker_build_unreachable'),
+                    'state' => 'unreachable',
+                    'supports_submit' => false,
+                ];
+            }
+
+            $build = (string) ($response->json('build') ?? '');
+            $supportsSubmit = (bool) ($response->json('wasim_submit_purchase') ?? false);
+
+            if ($build === '' || ! $supportsSubmit) {
+                return [
+                    'label' => __('messages.automation_worker_build_outdated'),
+                    'state' => 'outdated',
+                    'supports_submit' => false,
+                ];
+            }
+
+            return [
+                'label' => __('messages.automation_worker_build_ok', ['build' => $build]),
+                'state' => 'ok',
+                'supports_submit' => true,
+            ];
+        } catch (Throwable) {
+            return [
+                'label' => __('messages.automation_worker_build_unreachable'),
+                'state' => 'unreachable',
+                'supports_submit' => false,
+            ];
+        }
     }
 
     private function resolveWorkerHealth(): array

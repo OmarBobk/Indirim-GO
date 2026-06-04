@@ -1,5 +1,6 @@
 import express from 'express';
 import { verifyLaravelRequest } from './auth/verifyLaravel.js';
+import { WORKER_BUILD } from './build.js';
 import { executeRun } from './runs/executeRun.js';
 import { shutdownBrowserPool } from './browser/pool.js';
 import type { RunPayload } from './types.js';
@@ -17,7 +18,11 @@ app.use(
 );
 
 app.get('/health', (_req, res) => {
-  res.json({ status: 'ok' } );
+  res.json({
+    status: 'ok',
+    build: WORKER_BUILD,
+    wasim_submit_purchase: true,
+  });
 });
 
 app.post('/v1/runs', (req, res) => {
@@ -39,7 +44,7 @@ app.post('/v1/runs', (req, res) => {
 });
 
 const server = app.listen(port, () => {
-  console.log(JSON.stringify({ event: 'worker_started', port }));
+  console.log(JSON.stringify({ event: 'worker_started', port, build: WORKER_BUILD }));
 });
 
 process.on('SIGTERM', async () => {

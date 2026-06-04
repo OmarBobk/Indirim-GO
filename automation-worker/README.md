@@ -66,6 +66,22 @@ npm run build
 npm start
 ```
 
+## Production deploy (required for driver changes)
+
+Laravel deploy alone is not enough. After pulling code:
+
+```bash
+cd automation-worker
+npm ci
+npm run build
+# restart the process (pm2/systemd) — NOT only Laravel queue
+npm start
+```
+
+Verify: `curl http://127.0.0.1:3100/health` must return `"build":"2026-06-04-wasim-submit"` and `"wasim_submit_purchase":true`.
+
+If runs still show `flow_incomplete`, the worker was not restarted or you are viewing an old run — **retry** the fulfillment after redeploy.
+
 Screenshots are captured in memory, uploaded to Laravel immediately (`storage/app/private/fulfillment-automation/{run_uuid}/`), and are not kept on the worker disk. Legacy folders under `automation-worker/storage/screenshots/` are removed when a run starts. Prune old Laravel copies with `php artisan fulfillment:prune-automation-artifacts`.
 
 ## Drivers

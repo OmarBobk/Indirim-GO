@@ -1,3 +1,4 @@
+import { WORKER_BUILD } from '../build.js';
 import { withBrowserContext } from '../browser/pool.js';
 import { uploadArtifactBytes } from '../callbacks/uploadArtifact.js';
 import { postResult } from '../callbacks/postResult.js';
@@ -28,6 +29,8 @@ export async function executeRun(payload: RunPayload): Promise<void> {
 
     return;
   }
+
+  logger.log('worker', `build=${WORKER_BUILD} driver=${payload.driver}`);
 
   const capturedScreenshotLabels: string[] = [];
   const artifactsUrl = payload.callback_urls.artifacts;

@@ -70,6 +70,15 @@
                 <flux:text class="text-sm text-zinc-600 dark:text-zinc-400">
                     {{ __('messages.automation_admin_intro') }}
                 </flux:text>
+                @php($workerBuild = $this->stats['worker_build'])
+                <p @class([
+                    'text-xs font-medium',
+                    'text-emerald-600 dark:text-emerald-400' => $workerBuild['state'] === 'ok',
+                    'text-amber-600 dark:text-amber-400' => $workerBuild['state'] === 'outdated',
+                    'text-red-600 dark:text-red-400' => in_array($workerBuild['state'], ['unreachable', 'unknown'], true),
+                ])>
+                    {{ $workerBuild['label'] }}
+                </p>
             </div>
             <span class="inline-flex flex-col items-end gap-0.5 self-start">
                 <span class="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-medium text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
