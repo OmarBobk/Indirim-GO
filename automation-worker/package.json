@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "start": "node dist/server.js",
-    "build": "tsc",
+    "build": "tsc && node --input-type=module -e \"import fs from 'fs'; const s = fs.readFileSync('dist/server.js','utf8'); if (!s.includes('wasim_submit_purchase')) { console.error('Build verify failed: dist/server.js is outdated. Run git pull then npm run build again.'); process.exit(1); } const b = fs.readFileSync('dist/build.js','utf8'); const m = b.match(/WORKER_BUILD = '([^']+)'/); console.log('Build OK:', m?.[1] ?? 'wasim-submit');\"",
     "test:parse-money": "tsx src/utils/parseMoney.selfcheck.ts",
     "test:parse-swal": "tsx src/drivers/wasim/parseSwalPurchase.selfcheck.ts",
     "postinstall": "playwright install chromium"

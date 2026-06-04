@@ -1,6 +1,7 @@
 import {
-  isSupplierOrderCompleted,
   isSupplierOrderRejected,
+  isSupplierOrderSuccessful,
+  isSupplierRateLimitedReply,
   parseSwalPurchaseContent,
 } from './parseSwalPurchase.js';
 
@@ -27,8 +28,27 @@ if (success.supplierOrderId !== '12336' || success.supplierEntryPrice !== 1.0769
   throw new Error(`success parse failed: ${JSON.stringify(success)}`);
 }
 
-if (! isSupplierOrderCompleted(success.supplierStatus)) {
+if (! isSupplierOrderSuccessful(success.supplierStatus)) {
   throw new Error('expected completed status');
+}
+
+const processingHtml = `
+<p> معرف الطلب: <b>55501</b></p>
+<p> السعر الإجمالي: <b>1.5</b></p>
+<p> الرد: <b></b></p>
+<p> حالة الطلب: <b>Processing_OK_wait</b></p>
+`;
+
+const processing = parseSwalPurchaseContent(processingHtml);
+
+if (! isSupplierOrderSuccessful(processing.supplierStatus) || processing.supplierOrderId !== '55501') {
+  throw new Error(`processing_ok_wait parse failed: ${JSON.stringify(processing)}`);
+}
+
+const rateLimitReply = 'لا يمكن الشراء اكثر من 1 طلب في نفس الدقيقة لنفس الايدي.';
+
+if (! isSupplierRateLimitedReply(rateLimitReply)) {
+  throw new Error('expected rate limit reply');
 }
 
 const rejected = parseSwalPurchaseContent(rejectedHtml);

@@ -2,8 +2,10 @@ import type { Page } from 'playwright';
 import type { DriverResult, RunPayload } from '../../types.js';
 import type { RunLogger } from '../../logging/runLogger.js';
 import {
-  isSupplierOrderCompleted,
   isSupplierOrderRejected,
+  isSupplierOrderSuccessful,
+  isSupplierRateLimitedReply,
+  normalizeSupplierOrderStatus,
   parseSwalPurchaseContent,
 } from './parseSwalPurchase.js';
 
@@ -90,7 +92,7 @@ export async function submitWasimPurchase(
     supplier_reply: parsed.supplierReply,
   };
 
-  if (isSupplierOrderCompleted(parsed.supplierStatus)) {
+  if (isSupplierOrderSuccessful(parsed.supplierStatus)) {
     if (parsed.supplierOrderId === null) {
       return {
         outcome: 'failed',
@@ -100,13 +102,32 @@ export async function submitWasimPurchase(
       };
     }
 
+    const processingAsync = normalizeSupplierOrderStatus(parsed.supplierStatus) !== 'completed';
+
     return {
       outcome: 'success',
       externalOrderId: parsed.supplierOrderId,
-      message: 'Wasim order completed successfully.',
+      message: processingAsync
+        ? 'Wasim order accepted (processing).'
+        : 'Wasim order completed successfully.',
       deliveredPayload: {
         ...deliveredBase,
-        checkpoint: 'purchase_completed',
+        checkpoint: processingAsync ? 'purchase_accepted' : 'purchase_completed',
+      },
+    };
+  }
+
+  if (
+    parsed.supplierReply !== null
+    && isSupplierRateLimitedReply(parsed.supplierReply)
+  ) {
+    return {
+      outcome: 'failed',
+      errorCode: 'supplier_rate_limited',
+      message: parsed.supplierReply,
+      deliveredPayload: {
+        ...deliveredBase,
+        checkpoint: 'purchase_rate_limited',
       },
     };
   }

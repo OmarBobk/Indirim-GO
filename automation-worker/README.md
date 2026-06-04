@@ -78,9 +78,31 @@ npm run build
 npm start
 ```
 
-Verify: `curl http://127.0.0.1:3100/health` must return `"build":"2026-06-04-wasim-submit"` and `"wasim_submit_purchase":true`.
+Verify the **compiled files** (build can succeed while an old Node process keeps running):
 
-If runs still show `flow_incomplete`, the worker was not restarted or you are viewing an old run — **retry** the fulfillment after redeploy.
+```bash
+grep wasim_submit_purchase dist/server.js   # must print a match
+npm run build                                # prints "Build OK: 2026-06-04-wasim-submit"
+```
+
+Restart the worker, then verify the **live process**:
+
+```bash
+curl -s http://127.0.0.1:3100/health
+# must include: "build":"2026-06-04-wasim-submit","wasim_submit_purchase":true
+```
+
+If `dist/server.js` has `wasim_submit_purchase` but `curl` still returns only `{"status":"ok"}`, the old process was **not restarted** (pm2/systemd/manual `node` still running).
+
+```bash
+# example with pm2
+pm2 list
+pm2 restart <automation-worker-app-name>
+```
+
+If `grep wasim_submit_purchase dist/server.js` finds nothing, run `git pull` in the repo root first — the server checkout is behind.
+
+If runs still show `flow_incomplete`, you are viewing an old run — **retry** the fulfillment after redeploy.
 
 Screenshots are captured in memory, uploaded to Laravel immediately (`storage/app/private/fulfillment-automation/{run_uuid}/`), and are not kept on the worker disk. Legacy folders under `automation-worker/storage/screenshots/` are removed when a run starts. Prune old Laravel copies with `php artisan fulfillment:prune-automation-artifacts`.
 

@@ -85,16 +85,54 @@ export function parseSwalPurchaseContent(htmlOrText: string): ParsedPurchaseResp
   };
 }
 
-export function isSupplierOrderCompleted(status: string | null): boolean {
-  return status?.trim().toLowerCase() === 'completed';
+export function normalizeSupplierOrderStatus(status: string | null): string {
+  if (status === null || status.trim() === '') {
+    return '';
+  }
+
+  return status.trim().toLowerCase().replace(/\s+/g, '_');
 }
 
-export function isSupplierOrderRejected(status: string | null, reply: string | null): boolean {
-  if (isSupplierOrderCompleted(status)) {
+/**
+ * Wasim success statuses: immediate complete or accepted and processing asynchronously.
+ */
+export function isSupplierOrderSuccessful(status: string | null): boolean {
+  const normalized = normalizeSupplierOrderStatus(status);
+
+  if (normalized === '') {
     return false;
   }
 
-  const normalized = status?.trim().toLowerCase() ?? '';
+  if (normalized === 'completed' || normalized === 'processing_ok_wait') {
+    return true;
+  }
 
-  return normalized === 'pending' && reply !== null && reply !== '';
+  return normalized.includes('processing_ok');
+}
+
+/** @deprecated Use isSupplierOrderSuccessful — kept as alias for callers */
+export function isSupplierOrderCompleted(status: string | null): boolean {
+  return isSupplierOrderSuccessful(status);
+}
+
+export function isSupplierOrderRejected(status: string | null, reply: string | null): boolean {
+  if (isSupplierOrderSuccessful(status)) {
+    return false;
+  }
+
+  const normalized = normalizeSupplierOrderStatus(status);
+
+  if (normalized !== 'pending' || reply === null || reply === '') {
+    return false;
+  }
+
+  return ! isSupplierRateLimitedReply(reply);
+}
+
+export function isSupplierRateLimitedReply(reply: string): boolean {
+  const text = reply.toLowerCase();
+
+  return text.includes('نفس الدقيقة')
+    || text.includes('اكثر من 1 طلب')
+    || text.includes('أكثر من 1 طلب');
 }
