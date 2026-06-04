@@ -416,6 +416,65 @@ final class AutomationMonitor extends Component
     }
 
     /**
+     * One-line purchase summary for the runs table, e.g. order=12399 status=Processing_OK_wait price=1.11…
+     */
+    public function runLogSummary(FulfillmentAutomationRun $run): ?string
+    {
+        $fromLog = $this->purchaseParsedMessageFromLog($run);
+
+        if ($fromLog !== null) {
+            return $fromLog;
+        }
+
+        return $this->purchaseSummaryFromPayload($run);
+    }
+
+    public function runHasExpandableDetails(FulfillmentAutomationRun $run): bool
+    {
+        if ($this->formattedLogExcerpt($run) !== []) {
+            return true;
+        }
+
+        $payload = $run->result_payload;
+
+        if (is_array($payload) && $payload !== []) {
+            return true;
+        }
+
+        return filled($run->error_message) || filled($run->error_code);
+    }
+
+    /**
+     * Structured supplier purchase fields for the details toggle panel.
+     *
+     * @return array{order: string, status: string, price: string}|null
+     */
+    public function runPurchaseDetails(FulfillmentAutomationRun $run): ?array
+    {
+        $parsed = $this->parsePurchaseSummaryString($this->purchaseParsedMessageFromLog($run));
+
+        if ($parsed !== null) {
+            return $parsed;
+        }
+
+        $payload = is_array($run->result_payload) ? $run->result_payload : [];
+
+        $order = $payload['supplier_order_id'] ?? $run->external_order_id;
+        $status = $payload['supplier_status'] ?? null;
+        $price = $payload['supplier_entry_price'] ?? null;
+
+        if ($order === null && $status === null && $price === null) {
+            return null;
+        }
+
+        return [
+            'order' => (string) ($order ?? 'n/a'),
+            'status' => (string) ($status ?? 'n/a'),
+            'price' => $price !== null ? (string) $price : 'n/a',
+        ];
+    }
+
+    /**
      * Normalize automation log lines for the detail panel: sequential ids first, sorted by step order.
      *
      * @return list<array{id: int, step: string, level: string, message: string, at: string|null, ms: int|null}>
@@ -529,6 +588,73 @@ final class AutomationMonitor extends Component
             ->unique('fulfillment_id')
             ->mapWithKeys(fn (FulfillmentAutomationRun $run): array => [(int) $run->fulfillment_id => $run->uuid])
             ->all();
+    }
+
+    private function purchaseParsedMessageFromLog(FulfillmentAutomationRun $run): ?string
+    {
+        $raw = $run->log_excerpt;
+
+        if (! is_array($raw)) {
+            return null;
+        }
+
+        foreach ($raw as $line) {
+            if (! is_array($line)) {
+                continue;
+            }
+
+            if (($line['step'] ?? '') !== 'purchase_parsed') {
+                continue;
+            }
+
+            $message = trim((string) ($line['message'] ?? ''));
+
+            if ($message !== '') {
+                return $message;
+            }
+        }
+
+        return null;
+    }
+
+    private function purchaseSummaryFromPayload(FulfillmentAutomationRun $run): ?string
+    {
+        $details = $this->runPurchaseDetails($run);
+
+        if ($details === null) {
+            if (filled($run->error_code) || filled($run->error_message)) {
+                return trim(($run->error_code ?? '').': '.($run->error_message ?? ''));
+            }
+
+            return null;
+        }
+
+        return sprintf(
+            'order=%s status=%s price=%s',
+            $details['order'],
+            $details['status'],
+            $details['price'],
+        );
+    }
+
+    /**
+     * @return array{order: string, status: string, price: string}|null
+     */
+    private function parsePurchaseSummaryString(?string $summary): ?array
+    {
+        if ($summary === null || $summary === '') {
+            return null;
+        }
+
+        if (! preg_match('/order=(\S+)\s+status=(\S+)\s+price=(\S+)/u', $summary, $matches)) {
+            return null;
+        }
+
+        return [
+            'order' => $matches[1],
+            'status' => $matches[2],
+            'price' => $matches[3],
+        ];
     }
 
     private function findAuthorizedRun(string $uuid): FulfillmentAutomationRun

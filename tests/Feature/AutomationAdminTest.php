@@ -271,6 +271,45 @@ test('cancelling an automation run broadcasts AutomationRunChanged', function ()
     });
 });
 
+test('automation monitor shows purchase parsed summary on runs table', function () {
+    $fulfillment = makeAutomationAdminFulfillment();
+
+    $run = FulfillmentAutomationRun::query()->create([
+        'uuid' => (string) Str::uuid(),
+        'fulfillment_id' => $fulfillment->id,
+        'supplier_key' => 'wasim',
+        'status' => FulfillmentAutomationRunStatus::Succeeded,
+        'attempt' => 1,
+        'idempotency_key' => 'automation:fulfillment:'.$fulfillment->id.':attempt:purchase-summary',
+        'external_order_id' => '12399',
+        'log_excerpt' => [
+            ['step' => 'purchase_parsed', 'level' => 'info', 'message' => 'order=12399 status=Processing_OK_wait price=1.1198680372596153'],
+        ],
+        'result_payload' => [
+            'supplier_order_id' => '12399',
+            'supplier_status' => 'Processing_OK_wait',
+            'supplier_entry_price' => 1.1198680372596153,
+        ],
+    ]);
+
+    $instance = Livewire::actingAs(adminUser())
+        ->test(AutomationMonitor::class)
+        ->instance();
+
+    expect($instance->runLogSummary($run))->toBe('order=12399 status=Processing_OK_wait price=1.1198680372596153')
+        ->and($instance->runHasExpandableDetails($run))->toBeTrue()
+        ->and($instance->runPurchaseDetails($run))->toMatchArray([
+            'order' => '12399',
+            'status' => 'Processing_OK_wait',
+            'price' => '1.1198680372596153',
+        ]);
+
+    Livewire::actingAs(adminUser())
+        ->test(AutomationMonitor::class)
+        ->assertSee('order=12399 status=Processing_OK_wait price=1.1198680372596153')
+        ->assertSee(__('messages.automation_toggle_details'));
+});
+
 test('formatted log excerpt adds sequential ids and sorts by step order', function () {
     $fulfillment = makeAutomationAdminFulfillment();
 

@@ -58,7 +58,6 @@
     x-on:keydown.escape.window="lightbox.open ? closeLightbox() : (panelOpen ? (closePanel(), $wire.closePanel()) : null)"
     x-on:keydown.arrow-right.window="lightbox.open && nextImage()"
     x-on:keydown.arrow-left.window="lightbox.open && prevImage()"
-    wire:poll.30s.visible
 >
     {{-- Zone 1: KPI status bar --}}
     <section class="sticky top-0 z-10 rounded-2xl border border-zinc-200 bg-white/95 p-4 shadow-sm backdrop-blur-md dark:border-zinc-700 dark:bg-zinc-900/95">
@@ -85,7 +84,7 @@
                     <span class="size-1.5 rounded-full bg-emerald-500"></span>
                     {{ __('messages.automation_live_badge') }}
                 </span>
-                <span class="text-[10px] text-zinc-400 dark:text-zinc-500">{{ __('messages.automation_live_fallback') }}</span>
+                <span class="text-[10px] text-zinc-400 dark:text-zinc-500">{{ __('messages.automation_live_reverb') }}</span>
             </span>
         </div>
 
@@ -278,6 +277,7 @@
                             <th class="px-4 py-3 text-start font-semibold">{{ __('messages.automation_supplier') }}</th>
                             <th class="px-4 py-3 text-start font-semibold">{{ __('messages.started') }}</th>
                             <th class="px-4 py-3 text-start font-semibold">{{ __('messages.duration') }}</th>
+                            <th class="px-4 py-3 text-start font-semibold">{{ __('messages.automation_run_details') }}</th>
                             <th class="px-4 py-3 text-end font-semibold">{{ __('messages.actions') }}</th>
                         </tr>
                     </thead>
@@ -289,7 +289,7 @@
                                     wire:key="automation-group-{{ $group->fulfillment_id }}"
                                     class="bg-zinc-50/80 dark:bg-zinc-800/40"
                                 >
-                                    <td colspan="8" class="px-4 py-2">
+                                    <td colspan="9" class="px-4 py-2">
                                         <button
                                             type="button"
                                             class="inline-flex w-full items-center gap-2 text-start text-xs font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200"
