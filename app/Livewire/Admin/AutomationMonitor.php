@@ -17,7 +17,9 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\On;
@@ -67,9 +69,22 @@ final class AutomationMonitor extends Component
     {
         abort_unless(auth()->user()?->hasRole('admin'), 403);
 
+        if (! Schema::hasColumn('website_settings', 'wasim_automation_username')) {
+            $this->error(__('messages.automation_wasim_credentials_migration_required'));
+
+            return;
+        }
+
+        $settings = WebsiteSetting::instance();
+
         $this->validate([
             'wasimUsername' => ['required', 'string', 'max:255'],
-            'wasimPassword' => ['nullable', 'string', 'max:255'],
+            'wasimPassword' => [
+                'nullable',
+                'string',
+                'max:255',
+                Rule::requiredIf(fn (): bool => ! $settings->hasWasimAutomationPassword() && ! $this->envWasimCredentialsConfigured()),
+            ],
         ]);
 
         $payload = [
@@ -80,10 +95,17 @@ final class AutomationMonitor extends Component
             $payload['wasim_automation_password'] = $this->wasimPassword;
         }
 
-        WebsiteSetting::instance()->update($payload);
+        try {
+            $settings->update($payload);
+        } catch (Throwable $exception) {
+            report($exception);
+            $this->error(__('messages.automation_wasim_credentials_save_failed'));
+
+            return;
+        }
 
         $this->wasimPassword = '';
-        $settings = WebsiteSetting::instance()->refresh();
+        $settings->refresh();
         $this->wasimPasswordConfigured = $settings->hasWasimAutomationPassword();
         $this->wasimCredentialsFromEnv = $this->envWasimCredentialsConfigured();
 
@@ -251,14 +273,20 @@ final class AutomationMonitor extends Component
             ->when($search !== '', function (Builder $query) use ($search): void {
                 $like = '%'.$search.'%';
 
-                $query->where(function (Builder $sub) use ($like): void {
-                    $sub->where('uuid', 'like', $like)
+                $query->where(function (Builder $sub) use ($like, $search): void {
+                    $sub->where('external_order_id', 'like', $like)
+                        ->orWhere('result_payload->supplier_order_id', 'like', $like)
+                        ->orWhere('uuid', 'like', $like)
                         ->orWhere('supplier_key', 'like', $like)
                         ->orWhere('error_code', 'like', $like)
-                        ->orWhereHas('fulfillment', function (Builder $fulfillmentQuery) use ($like): void {
+                        ->orWhereHas('fulfillment', function (Builder $fulfillmentQuery) use ($like, $search): void {
                             $fulfillmentQuery
                                 ->where('id', 'like', $like)
                                 ->orWhereHas('order', fn (Builder $orderQuery): Builder => $orderQuery->where('order_number', 'like', $like));
+
+                            if (ctype_digit($search)) {
+                                $fulfillmentQuery->orWhere('order_id', (int) $search);
+                            }
                         });
                 });
             })

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Database\Eloquent\Model;
 
 class WebsiteSetting extends Model
@@ -42,7 +43,24 @@ class WebsiteSetting extends Model
 
     public function hasWasimAutomationPassword(): bool
     {
-        return filled($this->wasim_automation_password);
+        $ciphertext = $this->getAttributes()['wasim_automation_password'] ?? null;
+
+        return is_string($ciphertext) && $ciphertext !== '';
+    }
+
+    public function getWasimAutomationPassword(): ?string
+    {
+        if (! $this->hasWasimAutomationPassword()) {
+            return null;
+        }
+
+        try {
+            $password = $this->wasim_automation_password;
+
+            return is_string($password) && $password !== '' ? $password : null;
+        } catch (DecryptException) {
+            return null;
+        }
     }
 
     /**
@@ -54,7 +72,7 @@ class WebsiteSetting extends Model
 
         return [
             'username' => is_string($username) && $username !== '' ? $username : null,
-            'password' => $this->hasWasimAutomationPassword() ? $this->wasim_automation_password : null,
+            'password' => $this->getWasimAutomationPassword(),
         ];
     }
 

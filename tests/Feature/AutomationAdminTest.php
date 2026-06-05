@@ -125,7 +125,7 @@ test('admin can save wasim credentials and payload uses database values', functi
 
     expect($settings->wasim_automation_username)->toBe('admin-wasim@example.com')
         ->and($settings->hasWasimAutomationPassword())->toBeTrue()
-        ->and($settings->wasim_automation_password)->toBe('secret-from-admin');
+        ->and($settings->getWasimAutomationPassword())->toBe('secret-from-admin');
 
     $credentials = app(FulfillmentAutomationService::class)->supplierConfig('wasim')['credentials'] ?? [];
 
@@ -147,6 +147,38 @@ test('wasim credentials fall back to env when not set in database', function () 
         'username' => 'env-only-user',
         'password' => 'env-only-pass',
     ]);
+});
+
+test('automation search finds runs by wasim external order id', function () {
+    $fulfillment = makeAutomationAdminFulfillment();
+
+    $matching = FulfillmentAutomationRun::query()->create([
+        'uuid' => (string) Str::uuid(),
+        'fulfillment_id' => $fulfillment->id,
+        'supplier_key' => 'wasim',
+        'status' => FulfillmentAutomationRunStatus::Succeeded,
+        'attempt' => 1,
+        'idempotency_key' => 'automation:fulfillment:'.$fulfillment->id.':attempt:wasim-order-search',
+        'external_order_id' => 'WASIM-ORDER-99123',
+        'finished_at' => now(),
+    ]);
+
+    FulfillmentAutomationRun::query()->create([
+        'uuid' => (string) Str::uuid(),
+        'fulfillment_id' => $fulfillment->id,
+        'supplier_key' => 'wasim',
+        'status' => FulfillmentAutomationRunStatus::Failed,
+        'attempt' => 2,
+        'idempotency_key' => 'automation:fulfillment:'.$fulfillment->id.':attempt:wasim-order-search-other',
+        'external_order_id' => 'WASIM-ORDER-00001',
+        'finished_at' => now(),
+    ]);
+
+    $component = Livewire::actingAs(adminUser())
+        ->test(AutomationMonitor::class)
+        ->set('search', '99123');
+
+    expect($component->instance()->runs->pluck('id')->all())->toBe([$matching->id]);
 });
 
 test('kill switch toggle changes website setting', function () {

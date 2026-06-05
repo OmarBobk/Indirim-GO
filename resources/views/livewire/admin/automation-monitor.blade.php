@@ -196,11 +196,15 @@
             </div>
         </div>
 
-        <div class="mt-4 border-t border-zinc-200 pt-4 dark:border-zinc-700">
-            <flux:heading size="sm" class="text-zinc-900 dark:text-zinc-100">
-                {{ __('messages.automation_wasim_credentials_heading') }}
-            </flux:heading>
-            <flux:text class="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+        <details class="group mt-4 border-t border-zinc-200 pt-4 dark:border-zinc-700">
+            <summary class="cursor-pointer list-none text-sm font-semibold text-zinc-900 marker:content-none dark:text-zinc-100 [&::-webkit-details-marker]:hidden">
+                <span class="inline-flex items-center gap-2">
+                    <flux:icon icon="chevron-down" class="size-4 text-zinc-500 transition-transform group-open:rotate-180" />
+                    {{ __('messages.automation_wasim_credentials_heading') }}
+                </span>
+            </summary>
+
+            <flux:text class="mt-3 text-sm text-zinc-600 dark:text-zinc-400">
                 {{ __('messages.automation_wasim_credentials_hint') }}
             </flux:text>
 
@@ -237,7 +241,7 @@
                     </flux:button>
                 </div>
             </form>
-        </div>
+        </details>
     </section>
 
     {{-- Zone 2: Runs table --}}
