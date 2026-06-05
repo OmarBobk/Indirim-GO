@@ -65,7 +65,8 @@ test('admin can view automation monitor page', function () {
     $this->actingAs(adminUser())
         ->get(route('admin.automation.index'))
         ->assertSuccessful()
-        ->assertSeeLivewire(AutomationMonitor::class);
+        ->assertSeeLivewire(AutomationMonitor::class)
+        ->assertSee(__('messages.automation_flow_title'));
 });
 
 test('stats counts are correct on automation monitor', function () {

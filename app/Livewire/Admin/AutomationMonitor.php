@@ -736,8 +736,9 @@ final class AutomationMonitor extends Component
 
             $build = (string) ($response->json('build') ?? '');
             $supportsSubmit = (bool) ($response->json('wasim_submit_purchase') ?? false);
+            $supportsReconcile = (bool) ($response->json('wasim_reconcile') ?? false);
 
-            if ($build === '' || ! $supportsSubmit) {
+            if ($build === '' || ! $supportsSubmit || ! $supportsReconcile) {
                 return [
                     'label' => __('messages.automation_worker_build_outdated'),
                     'state' => 'outdated',

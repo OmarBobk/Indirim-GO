@@ -138,6 +138,8 @@
         </div>
     </section>
 
+    @include('livewire.admin.partials.automation-flow-guide')
+
     @if (! $automationEnabled)
         <flux:callout variant="danger" icon="exclamation-triangle">
             {{ __('messages.automation_disabled_banner') }}
