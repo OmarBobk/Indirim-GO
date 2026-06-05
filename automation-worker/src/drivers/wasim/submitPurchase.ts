@@ -5,7 +5,6 @@ import {
   isSupplierOrderRejected,
   isSupplierOrderSuccessful,
   isSupplierRateLimitedReply,
-  normalizeSupplierOrderStatus,
   parseSwalPurchaseContent,
 } from './parseSwalPurchase.js';
 
@@ -102,17 +101,14 @@ export async function submitWasimPurchase(
       };
     }
 
-    const processingAsync = normalizeSupplierOrderStatus(parsed.supplierStatus) !== 'completed';
-
     return {
-      outcome: 'success',
+      outcome: 'submitted',
       externalOrderId: parsed.supplierOrderId,
-      message: processingAsync
-        ? 'Wasim order accepted (processing).'
-        : 'Wasim order completed successfully.',
+      message: 'Wasim order submitted; awaiting supplier completion.',
       deliveredPayload: {
         ...deliveredBase,
-        checkpoint: processingAsync ? 'purchase_accepted' : 'purchase_completed',
+        checkpoint: 'purchase_submitted',
+        phase: 'purchase',
       },
     };
   }

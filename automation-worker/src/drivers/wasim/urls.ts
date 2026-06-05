@@ -1,6 +1,8 @@
 const WASIM_ORIGIN = 'https://www.wasim-store.com';
 const WASIM_PRODUCT_ORIGIN = 'https://wasim-store.com';
 
+export const WASIM_ORDERS_URL = `${WASIM_ORIGIN}/Customer/Order`;
+
 export function resolveWasimUrl(pathOrUrl: string): string {
   const trimmed = pathOrUrl.trim();
 

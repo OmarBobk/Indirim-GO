@@ -14,6 +14,7 @@ use App\Enums\OrderStatus;
 use App\Enums\ProductAmountMode;
 use App\Enums\WalletTransactionType;
 use App\Jobs\DispatchFulfillmentAutomationJob;
+use App\Jobs\DispatchWasimReconcileJob;
 use App\Models\Fulfillment;
 use App\Models\FulfillmentAutomationRun;
 use App\Models\Order;
@@ -643,4 +644,204 @@ test('cancel automation run marks active runs cancelled', function () {
 
     expect($count)->toBe(1);
     expect(FulfillmentAutomationRun::query()->first()?->status)->toBe(FulfillmentAutomationRunStatus::Cancelled);
+});
+
+test('ingest submitted keeps fulfillment processing and queues wasim reconcile', function () {
+    $fulfillment = makeBrowserFulfillmentOrder();
+    $fulfillment->update(['provider' => 'browser:wasim']);
+
+    $run = FulfillmentAutomationRun::query()->create([
+        'uuid' => (string) Str::uuid(),
+        'fulfillment_id' => $fulfillment->id,
+        'supplier_key' => 'wasim',
+        'status' => FulfillmentAutomationRunStatus::Running,
+        'attempt' => 1,
+        'idempotency_key' => 'automation:fulfillment:'.$fulfillment->id.':attempt:1',
+        'dispatched_at' => now(),
+        'started_at' => now(),
+    ]);
+
+    $fulfillment->update(['status' => FulfillmentStatus::Processing]);
+
+    app(IngestFulfillmentAutomationResult::class)->handle($run, [
+        'outcome' => 'submitted',
+        'external_order_id' => '12399',
+        'delivered_payload' => [
+            'supplier_entry_price' => 1.1198680372596153,
+            'supplier_status' => 'Processing_OK_wait',
+            'phase' => 'purchase',
+        ],
+    ]);
+
+    $fulfillment->refresh();
+    $run->refresh();
+
+    expect($fulfillment->status)->toBe(FulfillmentStatus::Processing)
+        ->and($run->status)->toBe(FulfillmentAutomationRunStatus::Succeeded)
+        ->and(data_get($fulfillment->meta, 'automation.awaiting_wasim_reconcile'))->toBeTrue()
+        ->and(data_get($fulfillment->meta, 'automation.supplier_order_id'))->toBe('12399');
+
+    Queue::assertPushed(DispatchWasimReconcileJob::class);
+});
+
+test('ingest reconcile success completes fulfillment after wasim submission', function () {
+    $fulfillment = makeBrowserFulfillmentOrder();
+    $fulfillment->update([
+        'provider' => 'browser:wasim',
+        'status' => FulfillmentStatus::Processing,
+        'meta' => [
+            'automation' => [
+                'awaiting_wasim_reconcile' => true,
+                'supplier_order_id' => '12399',
+                'reconcile_attempts' => 1,
+            ],
+        ],
+    ]);
+
+    $run = FulfillmentAutomationRun::query()->create([
+        'uuid' => (string) Str::uuid(),
+        'fulfillment_id' => $fulfillment->id,
+        'supplier_key' => 'wasim',
+        'status' => FulfillmentAutomationRunStatus::Running,
+        'attempt' => 1,
+        'idempotency_key' => 'automation:fulfillment:'.$fulfillment->id.':reconcile:1',
+        'dispatched_at' => now(),
+        'started_at' => now(),
+    ]);
+
+    app(IngestFulfillmentAutomationResult::class)->handle($run, [
+        'outcome' => 'success',
+        'external_order_id' => '12399',
+        'delivered_payload' => [
+            'phase' => 'reconcile',
+            'supplier_status' => 'Completed',
+            'supplier_description' => 'proof-url',
+        ],
+    ]);
+
+    $fulfillment->refresh();
+
+    expect($fulfillment->status)->toBe(FulfillmentStatus::Completed)
+        ->and(data_get($fulfillment->meta, 'automation.awaiting_wasim_reconcile'))->toBeFalse()
+        ->and(data_get($fulfillment->meta, 'delivered_payload.supplier_description'))->toBe('proof-url');
+});
+
+test('ingest supplier order cancelled fails fulfillment and requests refund', function () {
+    $fulfillment = makeBrowserFulfillmentOrder();
+    $order = Order::query()->findOrFail($fulfillment->order_id);
+    Wallet::forUser(User::query()->findOrFail($order->user_id));
+
+    $fulfillment->update([
+        'provider' => 'browser:wasim',
+        'status' => FulfillmentStatus::Processing,
+        'meta' => [
+            'automation' => [
+                'awaiting_wasim_reconcile' => true,
+                'supplier_order_id' => '12399',
+            ],
+        ],
+    ]);
+
+    $run = FulfillmentAutomationRun::query()->create([
+        'uuid' => (string) Str::uuid(),
+        'fulfillment_id' => $fulfillment->id,
+        'supplier_key' => 'wasim',
+        'status' => FulfillmentAutomationRunStatus::Running,
+        'attempt' => 1,
+        'idempotency_key' => 'automation:fulfillment:'.$fulfillment->id.':reconcile:1',
+        'dispatched_at' => now(),
+        'started_at' => now(),
+    ]);
+
+    app(IngestFulfillmentAutomationResult::class)->handle($run, [
+        'outcome' => 'failed',
+        'error_code' => 'supplier_order_cancelled',
+        'message' => 'يرجى تكرار الطلب',
+        'delivered_payload' => [
+            'phase' => 'reconcile',
+            'supplier_status' => 'Cancelled',
+            'supplier_description' => 'يرجى تكرار الطلب',
+        ],
+    ]);
+
+    $fulfillment->refresh();
+
+    expect($fulfillment->status)->toBe(FulfillmentStatus::Failed)
+        ->and(WalletTransaction::query()
+            ->where('reference_type', Fulfillment::class)
+            ->where('reference_id', $fulfillment->id)
+            ->where('type', WalletTransactionType::Refund->value)
+            ->exists())->toBeTrue();
+});
+
+test('ingest pending reconcile schedules another wasim reconcile attempt', function () {
+    config(['fulfillment_automation.reconcile.max_attempts' => 10]);
+
+    $fulfillment = makeBrowserFulfillmentOrder();
+    $fulfillment->update([
+        'provider' => 'browser:wasim',
+        'status' => FulfillmentStatus::Processing,
+        'meta' => [
+            'automation' => [
+                'awaiting_wasim_reconcile' => true,
+                'supplier_order_id' => '12399',
+                'reconcile_attempts' => 0,
+            ],
+        ],
+    ]);
+
+    $run = FulfillmentAutomationRun::query()->create([
+        'uuid' => (string) Str::uuid(),
+        'fulfillment_id' => $fulfillment->id,
+        'supplier_key' => 'wasim',
+        'status' => FulfillmentAutomationRunStatus::Running,
+        'attempt' => 1,
+        'idempotency_key' => 'automation:fulfillment:'.$fulfillment->id.':reconcile:1',
+        'dispatched_at' => now(),
+        'started_at' => now(),
+    ]);
+
+    app(IngestFulfillmentAutomationResult::class)->handle($run, [
+        'outcome' => 'pending_reconcile',
+        'external_order_id' => '12399',
+        'delivered_payload' => [
+            'phase' => 'reconcile',
+            'checkpoint' => 'reconcile_in_progress',
+        ],
+    ]);
+
+    $fulfillment->refresh();
+
+    expect($fulfillment->status)->toBe(FulfillmentStatus::Processing)
+        ->and(data_get($fulfillment->meta, 'automation.reconcile_attempts'))->toBe(1);
+
+    Queue::assertPushed(DispatchWasimReconcileJob::class);
+});
+
+test('reconcile worker payload includes supplier order id and reconcile phase', function () {
+    $fulfillment = makeBrowserFulfillmentOrder();
+    $fulfillment->update([
+        'provider' => 'browser:wasim',
+        'status' => FulfillmentStatus::Processing,
+        'meta' => [
+            'automation' => [
+                'awaiting_wasim_reconcile' => true,
+                'supplier_order_id' => '12399',
+            ],
+        ],
+    ]);
+
+    $run = FulfillmentAutomationRun::query()->create([
+        'uuid' => (string) Str::uuid(),
+        'fulfillment_id' => $fulfillment->id,
+        'supplier_key' => 'wasim',
+        'status' => FulfillmentAutomationRunStatus::Reserved,
+        'attempt' => 1,
+        'idempotency_key' => 'automation:fulfillment:'.$fulfillment->id.':reconcile:1',
+    ]);
+
+    $payload = app(FulfillmentAutomationService::class)->buildWorkerPayload($run, $fulfillment);
+
+    expect($payload['automation_phase'])->toBe('reconcile')
+        ->and($payload['supplier_order_id'])->toBe('12399');
 });

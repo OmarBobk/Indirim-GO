@@ -3,6 +3,7 @@ import { runCustomAmountProductSteps } from './customAmountForm.js';
 import { openWasimProductPage } from './login.js';
 import { assertUnitPriceCoversSupplierTotal } from './priceCheck.js';
 import { fillPlayerId, isFixedQuantityMode } from './productForm.js';
+import { reconcileWasimOrder } from './reconcileOrder.js';
 import { submitWasimPurchase } from './submitPurchase.js';
 
 export const wasimDriver: RunDriver = {
@@ -10,6 +11,10 @@ export const wasimDriver: RunDriver = {
 
   async execute(ctx) {
     const { page, payload, logger } = ctx;
+
+    if (payload.automation_phase === 'reconcile') {
+      return reconcileWasimOrder(page, payload, logger, ctx.screenshot);
+    }
 
     const productResult = await openWasimProductPage(page, payload, logger, ctx.screenshot);
 

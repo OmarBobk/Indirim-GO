@@ -22,6 +22,7 @@ app.get('/health', (_req, res) => {
     status: 'ok',
     build: WORKER_BUILD,
     wasim_submit_purchase: true,
+    wasim_reconcile: true,
   });
 });
 

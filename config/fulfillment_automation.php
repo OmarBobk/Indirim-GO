@@ -27,6 +27,12 @@ return [
         'retention_days' => (int) env('FULFILLMENT_AUTOMATION_ARTIFACT_RETENTION_DAYS', 30),
     ],
 
+    'reconcile' => [
+        'initial_delay_seconds' => (int) env('FULFILLMENT_AUTOMATION_RECONCILE_INITIAL_DELAY', 60),
+        'max_attempts' => (int) env('FULFILLMENT_AUTOMATION_RECONCILE_MAX_ATTEMPTS', 48),
+        'delays_seconds' => [60, 120, 300, 600, 900, 1800, 3600],
+    ],
+
     'queue' => env('FULFILLMENT_AUTOMATION_QUEUE', 'fulfillment-automation'),
 
     'suppliers' => [

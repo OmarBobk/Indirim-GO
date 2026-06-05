@@ -162,6 +162,99 @@ class FulfillmentAutomationService
         return 'automation:fulfillment:'.$fulfillmentId.':attempt:'.$attempt;
     }
 
+    public function buildReconcileIdempotencyKey(int $fulfillmentId, int $attempt): string
+    {
+        return 'automation:fulfillment:'.$fulfillmentId.':reconcile:'.$attempt;
+    }
+
+    public function isReconcileRun(FulfillmentAutomationRun $run): bool
+    {
+        return str_contains($run->idempotency_key, ':reconcile:');
+    }
+
+    public function nextReconcileAttemptNumber(Fulfillment $fulfillment): int
+    {
+        $latest = FulfillmentAutomationRun::query()
+            ->where('fulfillment_id', $fulfillment->id)
+            ->where('idempotency_key', 'like', 'automation:fulfillment:'.$fulfillment->id.':reconcile:%')
+            ->max('attempt');
+
+        return max(1, (int) $latest + 1);
+    }
+
+    public function reconcileAttempts(Fulfillment $fulfillment): int
+    {
+        return (int) data_get($fulfillment->meta, 'automation.reconcile_attempts', 0);
+    }
+
+    public function isEligibleForReconcile(Fulfillment $fulfillment): bool
+    {
+        if (! $this->isEnabled()) {
+            return false;
+        }
+
+        if ($fulfillment->browserSupplierKey() !== 'wasim') {
+            return false;
+        }
+
+        if ($fulfillment->status !== FulfillmentStatus::Processing) {
+            return false;
+        }
+
+        if (! (bool) data_get($fulfillment->meta, 'automation.awaiting_wasim_reconcile', false)) {
+            return false;
+        }
+
+        $supplierOrderId = data_get($fulfillment->meta, 'automation.supplier_order_id');
+
+        if (! is_string($supplierOrderId) || trim($supplierOrderId) === '') {
+            return false;
+        }
+
+        if ($this->hasActiveRun($fulfillment)) {
+            return false;
+        }
+
+        if ($this->hasBlockingRefund($fulfillment)) {
+            return false;
+        }
+
+        return true;
+    }
+
+    public function shouldScheduleReconcile(Fulfillment $fulfillment, ?int $attemptNumber = null): bool
+    {
+        if (! (bool) data_get($fulfillment->meta, 'automation.awaiting_wasim_reconcile', false)) {
+            return false;
+        }
+
+        if ($fulfillment->status !== FulfillmentStatus::Processing) {
+            return false;
+        }
+
+        $attemptNumber ??= $this->reconcileAttempts($fulfillment);
+        $maxAttempts = (int) config('fulfillment_automation.reconcile.max_attempts', 48);
+
+        return $attemptNumber < $maxAttempts;
+    }
+
+    public function reconcileDelaySeconds(?int $attemptNumber = null): int
+    {
+        $delays = config('fulfillment_automation.reconcile.delays_seconds', [60, 120, 300, 600, 900, 1800, 3600]);
+
+        if (! is_array($delays) || $delays === []) {
+            return (int) config('fulfillment_automation.reconcile.initial_delay_seconds', 60);
+        }
+
+        $index = max(0, ($attemptNumber ?? 0));
+
+        if ($index >= count($delays)) {
+            return (int) end($delays);
+        }
+
+        return (int) $delays[$index];
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -172,6 +265,8 @@ class FulfillmentAutomationService
         $orderItem = $fulfillment->orderItem;
         $supplierKey = $run->supplier_key;
         $supplier = $this->supplierConfig($supplierKey) ?? [];
+        $phase = $this->isReconcileRun($run) ? 'reconcile' : 'purchase';
+        $supplierOrderId = data_get($fulfillment->meta, 'automation.supplier_order_id');
 
         $requirements = data_get($fulfillment->meta, 'requirements_payload')
             ?? $orderItem?->requirements_payload
@@ -191,6 +286,8 @@ class FulfillmentAutomationService
             'supplier_key' => $supplierKey,
             'driver' => $supplier['driver'] ?? $supplierKey,
             'session_key' => $supplier['session_key'] ?? $supplierKey.'-main',
+            'automation_phase' => $phase,
+            'supplier_order_id' => is_string($supplierOrderId) ? $supplierOrderId : null,
             'idempotency_reference' => 'fulfillment:'.$fulfillment->id,
             'requirements' => $requirements,
             'custom_amount' => $customAmount,

@@ -1,4 +1,4 @@
-export type DriverOutcome = 'success' | 'failed' | 'needs_review';
+export type DriverOutcome = 'success' | 'failed' | 'needs_review' | 'submitted' | 'pending_reconcile';
 
 export type RunPayload = {
   run_uuid: string;
@@ -7,6 +7,9 @@ export type RunPayload = {
   driver: string;
   session_key: string;
   idempotency_reference: string;
+  automation_phase?: 'purchase' | 'reconcile';
+  supplier_order_id?: string | null;
+  external_order_id?: string | null;
   requirements: Record<string, unknown>;
   custom_amount: { amount?: number; unit?: string } | null;
   product_slug?: string | null;

@@ -1,2 +1,2 @@
 /** Bump when deploying worker changes so /health confirms the running build. */
-export const WORKER_BUILD = '2026-06-04-wasim-submit';
+export const WORKER_BUILD = '2026-05-28-wasim-reconcile';

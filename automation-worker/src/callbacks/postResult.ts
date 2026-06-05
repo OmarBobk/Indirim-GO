@@ -8,7 +8,7 @@ export async function postResult(
   logExcerpt: LogLine[],
 ): Promise<void> {
   const body = JSON.stringify({
-    outcome: result.outcome === 'success' ? 'success' : result.outcome,
+    outcome: result.outcome,
     external_order_id: result.externalOrderId ?? null,
     delivered_payload: result.deliveredPayload ?? null,
     error_code: result.errorCode ?? null,
