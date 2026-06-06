@@ -45,6 +45,8 @@ export async function openWasimOrdersPage(
     };
   }
 
+  await page.setViewportSize({ width: 1920, height: 1080 });
+
   logger.log('navigate', `Opening Wasim orders page ${WASIM_ORDERS_URL}`);
 
   await page.goto(WASIM_ORDERS_URL, {
