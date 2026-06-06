@@ -10,6 +10,7 @@ use App\Actions\Fulfillments\RetryFulfillmentAutomation;
 use App\Enums\FulfillmentAutomationRunStatus;
 use App\Models\FulfillmentAutomationRun;
 use App\Models\WebsiteSetting;
+use App\Services\FulfillmentAutomationService;
 use Carbon\CarbonInterface;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Contracts\View\View;
@@ -53,6 +54,8 @@ final class AutomationMonitor extends Component
 
     public bool $wasimCredentialsFromEnv = false;
 
+    public bool $wasimPasswordDecryptFailed = false;
+
     public function mount(): void
     {
         abort_unless(auth()->user()?->hasRole('admin'), 403);
@@ -63,6 +66,22 @@ final class AutomationMonitor extends Component
         $this->wasimUsername = (string) ($settings->wasim_automation_username ?? '');
         $this->wasimPasswordConfigured = $settings->hasWasimAutomationPassword();
         $this->wasimCredentialsFromEnv = $this->envWasimCredentialsConfigured();
+        $this->wasimPasswordDecryptFailed = $this->wasimPasswordConfigured && ! $settings->isWasimAutomationPasswordUsable();
+    }
+
+    public function clearWasimBrowserSession(): void
+    {
+        abort_unless(auth()->user()?->hasRole('admin'), 403);
+
+        $sessionKey = (string) (config('fulfillment_automation.suppliers.wasim.session_key') ?? 'wasim-main');
+
+        if (! app(FulfillmentAutomationService::class)->clearWorkerBrowserSession($sessionKey)) {
+            $this->error(__('messages.automation_wasim_session_clear_failed'));
+
+            return;
+        }
+
+        $this->success(__('messages.automation_wasim_session_cleared'));
     }
 
     public function saveWasimCredentials(): void
@@ -108,8 +127,16 @@ final class AutomationMonitor extends Component
         $settings->refresh();
         $this->wasimPasswordConfigured = $settings->hasWasimAutomationPassword();
         $this->wasimCredentialsFromEnv = $this->envWasimCredentialsConfigured();
+        $this->wasimPasswordDecryptFailed = $this->wasimPasswordConfigured && ! $settings->isWasimAutomationPasswordUsable();
 
-        $this->success(__('messages.automation_wasim_credentials_saved'));
+        $sessionKey = (string) (config('fulfillment_automation.suppliers.wasim.session_key') ?? 'wasim-main');
+        $sessionCleared = app(FulfillmentAutomationService::class)->clearWorkerBrowserSession($sessionKey);
+
+        if ($sessionCleared) {
+            $this->success(__('messages.automation_wasim_credentials_saved_session_cleared'));
+        } else {
+            $this->success(__('messages.automation_wasim_credentials_saved'));
+        }
     }
 
     public function updatedStatusFilter(): void

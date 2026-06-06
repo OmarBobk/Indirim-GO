@@ -13,6 +13,7 @@ use App\Models\WebsiteSetting;
 use App\Services\FulfillmentAutomationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
@@ -110,6 +111,13 @@ test('stats counts are correct on automation monitor', function () {
 });
 
 test('admin can save wasim credentials and payload uses database values', function () {
+    Http::fake([
+        'automation-worker.test/v1/sessions/clear' => Http::response([
+            'cleared' => true,
+            'session_key' => 'wasim-main',
+        ], 200),
+    ]);
+
     config([
         'fulfillment_automation.suppliers.wasim.credentials.username' => 'env-user',
         'fulfillment_automation.suppliers.wasim.credentials.password' => 'env-pass',
@@ -134,6 +142,38 @@ test('admin can save wasim credentials and payload uses database values', functi
         'username' => 'admin-wasim@example.com',
         'password' => 'secret-from-admin',
     ]);
+
+    Http::assertSent(function ($request): bool {
+        return $request->url() === 'http://automation-worker.test/v1/sessions/clear'
+            && ($request->data()['session_key'] ?? null) === 'wasim-main';
+    });
+});
+
+test('admin can clear wasim browser session manually', function () {
+    Http::fake([
+        'automation-worker.test/v1/sessions/clear' => Http::response([
+            'cleared' => true,
+            'session_key' => 'wasim-main',
+        ], 200),
+    ]);
+
+    Livewire::actingAs(adminUser())
+        ->test(AutomationMonitor::class)
+        ->call('clearWasimBrowserSession')
+        ->assertHasNoErrors();
+
+    Http::assertSent(function ($request): bool {
+        return $request->url() === 'http://automation-worker.test/v1/sessions/clear'
+            && ($request->data()['session_key'] ?? null) === 'wasim-main';
+    });
+});
+
+test('clearWorkerBrowserSession returns false when worker rejects request', function () {
+    Http::fake([
+        'automation-worker.test/v1/sessions/clear' => Http::response([], 500),
+    ]);
+
+    expect(app(FulfillmentAutomationService::class)->clearWorkerBrowserSession('wasim-main'))->toBeFalse();
 });
 
 test('wasim credentials fall back to env when not set in database', function () {

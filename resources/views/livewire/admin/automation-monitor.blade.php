@@ -227,7 +227,9 @@
                     />
                     <flux:error name="wasimPassword" />
                     <flux:description>
-                        @if ($wasimPasswordConfigured)
+                        @if ($wasimPasswordDecryptFailed)
+                            {{ __('messages.automation_wasim_password_decrypt_failed') }}
+                        @elseif ($wasimPasswordConfigured)
                             {{ __('messages.automation_wasim_password_configured') }}
                         @elseif ($wasimCredentialsFromEnv)
                             {{ __('messages.automation_wasim_password_from_env') }}
@@ -237,11 +239,23 @@
                     </flux:description>
                 </flux:field>
 
-                <div>
+                <div class="flex flex-wrap gap-3">
                     <flux:button type="submit" variant="primary" wire:loading.attr="disabled" wire:target="saveWasimCredentials">
                         {{ __('messages.save') }}
                     </flux:button>
+                    <flux:button
+                        type="button"
+                        variant="ghost"
+                        wire:click="clearWasimBrowserSession"
+                        wire:loading.attr="disabled"
+                        wire:target="clearWasimBrowserSession"
+                    >
+                        {{ __('messages.automation_wasim_clear_session') }}
+                    </flux:button>
                 </div>
+                <flux:text class="text-xs text-zinc-500 dark:text-zinc-400">
+                    {{ __('messages.automation_wasim_clear_session_hint') }}
+                </flux:text>
             </form>
         </details>
     </section>
@@ -250,7 +264,7 @@
     <section class="relative overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
         <div
             wire:loading.delay
-            wire:target="toggleAutomation, saveWasimCredentials, retryRun, cancelRun, markReviewSucceeded, markReviewFailed"
+            wire:target="toggleAutomation, saveWasimCredentials, clearWasimBrowserSession, retryRun, cancelRun, markReviewSucceeded, markReviewFailed"
             class="absolute inset-0 z-10 bg-white/60 dark:bg-zinc-900/60"
         >
             <div class="p-6 space-y-2">
@@ -263,7 +277,7 @@
         <div
             class="overflow-x-auto"
             wire:loading.remove.delay
-            wire:target="toggleAutomation, saveWasimCredentials, retryRun, cancelRun, markReviewSucceeded, markReviewFailed"
+            wire:target="toggleAutomation, saveWasimCredentials, clearWasimBrowserSession, retryRun, cancelRun, markReviewSucceeded, markReviewFailed"
         >
             @if ($this->runs->count() === 0)
                 <div class="flex flex-col items-center gap-3 p-12 text-center">

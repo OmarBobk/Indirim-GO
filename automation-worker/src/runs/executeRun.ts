@@ -37,34 +37,38 @@ export async function executeRun(payload: RunPayload): Promise<void> {
   const canUploadArtifacts = callbackSecret !== '' && artifactsUrl !== '';
 
   try {
-    const result = await withBrowserContext(payload.session_key, async (context) => {
-      const page = await context.newPage();
+    const result = await withBrowserContext(
+      payload.session_key,
+      payload.credentials,
+      async (context) => {
+        const page = await context.newPage();
 
-      const screenshot = async (label: string): Promise<void> => {
-        const fileData = await page.screenshot({ type: 'png', fullPage: true });
-        capturedScreenshotLabels.push(label);
-        logger.log('screenshot', `Captured ${label}.png (${fileData.byteLength} bytes)`);
+        const screenshot = async (label: string): Promise<void> => {
+          const fileData = await page.screenshot({ type: 'png', fullPage: true });
+          capturedScreenshotLabels.push(label);
+          logger.log('screenshot', `Captured ${label}.png (${fileData.byteLength} bytes)`);
 
-        if (!canUploadArtifacts) {
-          return;
-        }
+          if (!canUploadArtifacts) {
+            return;
+          }
 
-        try {
-          await uploadArtifactBytes(artifactsUrl, callbackSecret, fileData, label);
-          logger.log('screenshot', `Uploaded ${label}.png to Laravel`);
-        } catch (error) {
-          const message = error instanceof Error ? error.message : 'Artifact upload failed';
-          logger.log('screenshot', message, 'warn');
-        }
-      };
+          try {
+            await uploadArtifactBytes(artifactsUrl, callbackSecret, fileData, label);
+            logger.log('screenshot', `Uploaded ${label}.png to Laravel`);
+          } catch (error) {
+            const message = error instanceof Error ? error.message : 'Artifact upload failed';
+            logger.log('screenshot', message, 'warn');
+          }
+        };
 
-      return driver.execute({
-        page,
-        payload,
-        logger,
-        screenshot,
-      });
-    });
+        return driver.execute({
+          page,
+          payload,
+          logger,
+          screenshot,
+        });
+      },
+    );
 
     const deliveredPayload = {
       ...(result.deliveredPayload ?? {}),

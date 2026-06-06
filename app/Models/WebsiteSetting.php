@@ -63,6 +63,11 @@ class WebsiteSetting extends Model
         }
     }
 
+    public function isWasimAutomationPasswordUsable(): bool
+    {
+        return $this->getWasimAutomationPassword() !== null;
+    }
+
     /**
      * @return array{username: ?string, password: ?string}
      */

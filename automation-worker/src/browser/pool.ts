@@ -1,5 +1,16 @@
 import { chromium, type Browser, type BrowserContext } from 'playwright';
-import { ensureSessionDir, hasSessionState, sessionStatePath } from './sessionStore.js';
+import {
+  ensureSessionDir,
+  ensureSessionMatchesCredentials,
+  hasSessionState,
+  sessionStatePath,
+  writeSessionCredentialFingerprint,
+} from './sessionStore.js';
+
+type SessionCredentials = {
+  username?: string;
+  password?: string;
+};
 
 const sessionLocks = new Map<string, Promise<void>>();
 
@@ -41,9 +52,11 @@ export async function withSessionLock<T>(
 
 export async function withBrowserContext<T>(
   sessionKey: string,
+  credentials: SessionCredentials | undefined,
   callback: (context: BrowserContext) => Promise<T>,
 ): Promise<T> {
   return withSessionLock(sessionKey, async () => {
+    ensureSessionMatchesCredentials(sessionKey, credentials?.username, credentials?.password);
     ensureSessionDir(sessionKey);
     const b = await getBrowser();
     const storageState = hasSessionState(sessionKey) ? sessionStatePath(sessionKey) : undefined;
@@ -54,6 +67,7 @@ export async function withBrowserContext<T>(
       return await callback(context);
     } finally {
       await context.storageState({ path: sessionStatePath(sessionKey) });
+      writeSessionCredentialFingerprint(sessionKey, credentials?.username, credentials?.password);
       await context.close();
     }
   });

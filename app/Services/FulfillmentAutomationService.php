@@ -13,7 +13,9 @@ use App\Models\FulfillmentAutomationRun;
 use App\Models\Order;
 use App\Models\WalletTransaction;
 use App\Models\WebsiteSetting;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\URL;
+use Throwable;
 
 class FulfillmentAutomationService
 {
@@ -426,5 +428,40 @@ class FulfillmentAutomationService
         }
 
         return 'https://wasim-store.com/'.ltrim($trimmed, '/');
+    }
+
+    public function clearWorkerBrowserSession(string $sessionKey): bool
+    {
+        $sessionKey = trim($sessionKey);
+
+        if ($sessionKey === '') {
+            return false;
+        }
+
+        $workerUrl = rtrim((string) config('fulfillment_automation.worker_url'), '/');
+
+        if ($workerUrl === '' || config('fulfillment_automation.callback_secret') === '') {
+            return false;
+        }
+
+        $rawBody = json_encode(['session_key' => $sessionKey], JSON_THROW_ON_ERROR);
+        $timestamp = time();
+        $signature = $this->signPayload($rawBody, $timestamp);
+        $timeout = (int) config('fulfillment_automation.timeouts.dispatch_seconds', 15);
+
+        try {
+            $response = Http::timeout($timeout)
+                ->withHeaders([
+                    'Content-Type' => 'application/json',
+                    'X-Automation-Timestamp' => (string) $timestamp,
+                    'X-Automation-Signature' => $signature,
+                ])
+                ->withBody($rawBody, 'application/json')
+                ->post($workerUrl.'/v1/sessions/clear');
+
+            return $response->successful();
+        } catch (Throwable) {
+            return false;
+        }
     }
 }
