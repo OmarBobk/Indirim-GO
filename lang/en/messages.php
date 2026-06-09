@@ -474,6 +474,7 @@ return [
     'sign_in_to_checkout' => 'Please sign in to complete checkout.',
     'checkout_could_not_complete' => 'Checkout could not be completed.',
     'payment_successful_order_processing' => 'Payment successful. Order :order_number is processing.',
+    'checkout_order_already_placed' => 'This order was already placed recently (Order :order_number). Check your orders if you are waiting for delivery.',
     'checkout_validation_failed' => 'Checkout validation failed.',
     'something_went_wrong_checkout' => 'Something went wrong while processing your checkout.',
     'activities' => 'Activities',

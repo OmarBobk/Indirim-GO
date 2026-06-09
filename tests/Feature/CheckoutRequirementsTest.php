@@ -12,8 +12,13 @@ use App\Models\Wallet;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
+use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    Role::query()->firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+});
 
 function makeProductWithRequirement(): array
 {
@@ -89,7 +94,7 @@ test('checkout stores requirements and creates fulfillment', function () {
         'requirements' => [
             'id' => '12345',
         ],
-    ]]);
+    ]])->order;
 
     $order->refresh();
     $item = $order->items()->first();
@@ -139,7 +144,7 @@ test('number requirements enforce numeric min value', function () {
         'requirements' => [
             'id' => 5,
         ],
-    ]]);
+    ]])->order;
 
     expect($order->status)->toBe(OrderStatus::Paid);
 });

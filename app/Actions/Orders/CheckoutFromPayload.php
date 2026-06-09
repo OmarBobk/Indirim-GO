@@ -19,7 +19,7 @@ class CheckoutFromPayload
      * @param  array<int, array<string, mixed>>  $items
      * @param  array<string, mixed>  $meta
      */
-    public function handle(User $user, array $items, array $meta = [], bool $useTransaction = true): Order
+    public function handle(User $user, array $items, array $meta = [], bool $useTransaction = true): CheckoutResult
     {
         if ($items === [] || array_is_list($items) === false) {
             throw ValidationException::withMessages([
@@ -30,26 +30,22 @@ class CheckoutFromPayload
         $wallet = Wallet::forUser($user);
         $cartHash = $this->cartHash($items);
 
-        $operation = function () use ($user, $wallet, $items, $meta, $cartHash): Order {
+        $operation = function () use ($user, $wallet, $items, $meta, $cartHash): CheckoutResult {
             $lockedWallet = Wallet::query()
                 ->whereKey($wallet->id)
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            $existingOrder = Order::query()
-                ->where('user_id', $user->id)
-                ->whereIn('status', [OrderStatus::PendingPayment, OrderStatus::Paid])
-                ->latest('id')
-                ->limit(5)
-                ->get()
-                ->first(fn (Order $order) => data_get($order->meta, 'cart_hash') === $cartHash);
+            $existingOrder = $this->findReusableOrder($user, $cartHash);
 
             if ($existingOrder !== null) {
                 if ($existingOrder->status === OrderStatus::Paid) {
-                    return $existingOrder;
+                    return new CheckoutResult($existingOrder, true);
                 }
 
-                return app(PayOrderWithWallet::class)->handle($existingOrder, $lockedWallet, false);
+                $paidOrder = app(PayOrderWithWallet::class)->handle($existingOrder, $lockedWallet, false);
+
+                return new CheckoutResult($paidOrder, true);
             }
 
             $metaForCreate = array_merge($meta, ['cart_hash' => $cartHash]);
@@ -66,7 +62,9 @@ class CheckoutFromPayload
                 false
             );
 
-            return app(PayOrderWithWallet::class)->handle($order, $lockedWallet, false);
+            $paidOrder = app(PayOrderWithWallet::class)->handle($order, $lockedWallet, false);
+
+            return new CheckoutResult($paidOrder, false);
         };
 
         try {
@@ -91,9 +89,25 @@ class CheckoutFromPayload
         }
     }
 
-    /**
-     * @param  array<int, array<string, mixed>>  $items
-     */
+    private function findReusableOrder(User $user, string $cartHash): ?Order
+    {
+        $idempotencyMinutes = max(1, (int) config('billing.checkout_paid_idempotency_minutes', 5));
+        $paidCutoff = now()->subMinutes($idempotencyMinutes);
+
+        return Order::query()
+            ->where('user_id', $user->id)
+            ->where(function ($query) use ($paidCutoff): void {
+                $query->where('status', OrderStatus::PendingPayment)
+                    ->orWhere(function ($query) use ($paidCutoff): void {
+                        $query->where('status', OrderStatus::Paid)
+                            ->where('paid_at', '>=', $paidCutoff);
+                    });
+            })
+            ->latest('id')
+            ->get()
+            ->first(fn (Order $order) => data_get($order->meta, 'cart_hash') === $cartHash);
+    }
+
     /**
      * Server-side referral from cookie (never trust client meta). Cookie wins when present.
      *
@@ -163,6 +177,9 @@ class CheckoutFromPayload
         ];
     }
 
+    /**
+     * @param  array<int, array<string, mixed>>  $items
+     */
     private function cartHash(array $items): string
     {
         $normalized = collect($items)

@@ -476,6 +476,7 @@ return [
     'sign_in_to_checkout' => 'يرجى تسجيل الدخول لإتمام عملية الدفع.',
     'checkout_could_not_complete' => 'تعذّر إتمام عملية الدفع.',
     'payment_successful_order_processing' => 'تم الدفع بنجاح. الطلب :order_number قيد المعالجة.',
+    'checkout_order_already_placed' => 'تم تقديم هذا الطلب مؤخراً (الطلب :order_number). راجع طلباتك إذا كنت تنتظر التسليم.',
     'checkout_validation_failed' => 'فشل التحقق من بيانات الدفع.',
     'something_went_wrong_checkout' => 'حدث خطأ أثناء معالجة عملية الدفع.',
     'activities' => 'السجل',

@@ -516,7 +516,7 @@ new class extends Component
         $this->validate($this->buyNowRules(), [], $this->buyNowAttributes());
 
         try {
-            $order = app(CheckoutFromPayload::class)->handle(
+            $checkout = app(CheckoutFromPayload::class)->handle(
                 auth()->user(),
                 [[
                     'product_id' => $this->buyNowProductId,
@@ -533,6 +533,8 @@ new class extends Component
                 ]
             );
 
+            $order = $checkout->order;
+
             if (! $order->exists || $order->status !== OrderStatus::Paid) {
                 $this->buyNowError = __('messages.checkout_could_not_complete');
                 $this->error($this->buyNowError);
@@ -540,7 +542,9 @@ new class extends Component
                 return;
             }
 
-            $message = __('messages.payment_successful_order_processing', ['order_number' => $order->order_number]);
+            $message = $checkout->reusedExistingOrder
+                ? __('messages.checkout_order_already_placed', ['order_number' => $order->order_number])
+                : __('messages.payment_successful_order_processing', ['order_number' => $order->order_number]);
             $this->success($message);
             $this->closeBuyNow();
         } catch (ValidationException $exception) {

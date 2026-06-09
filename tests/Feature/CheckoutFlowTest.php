@@ -1,5 +1,7 @@
 <?php
 
+use App\Actions\Fulfillments\FailFulfillment;
+use App\Actions\Orders\CheckoutFromPayload;
 use App\Enums\FulfillmentStatus;
 use App\Enums\OrderStatus;
 use App\Enums\ProductAmountMode;
@@ -18,8 +20,13 @@ use App\Models\WalletTransaction;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
+use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    Role::query()->firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+});
 
 test('checkout creates paid order and fulfillments from cart payload', function () {
     $user = User::factory()->create();
@@ -323,4 +330,101 @@ test('fixed amount rule band selection uses total not unit', function () {
 
     expect((float) $order->subtotal)->toBe(132.0)
         ->and((float) $order->subtotal)->not->toBe(180.0);
+});
+
+test('repurchase with identical cart after paid idempotency window creates a new order', function () {
+    $user = User::factory()->create();
+    Wallet::create([
+        'user_id' => $user->id,
+        'type' => WalletType::Customer,
+        'balance' => 1000,
+        'currency' => 'USD',
+    ]);
+
+    $package = Package::factory()->create();
+    $product = Product::factory()->create([
+        'package_id' => $package->id,
+        'entry_price' => 50,
+    ]);
+
+    $payload = [[
+        'product_id' => $product->id,
+        'package_id' => $package->id,
+        'quantity' => 1,
+    ]];
+
+    $first = app(CheckoutFromPayload::class)->handle($user, $payload);
+    $first->order->update(['paid_at' => now()->subMinutes(10)]);
+
+    $second = app(CheckoutFromPayload::class)->handle($user, $payload);
+
+    expect($first->order->id)->not->toBe($second->order->id)
+        ->and($second->reusedExistingOrder)->toBeFalse()
+        ->and(Order::query()->where('user_id', $user->id)->count())->toBe(2)
+        ->and(Fulfillment::query()->count())->toBe(2);
+});
+
+test('duplicate checkout within paid idempotency window reuses the same order', function () {
+    $user = User::factory()->create();
+    Wallet::create([
+        'user_id' => $user->id,
+        'type' => WalletType::Customer,
+        'balance' => 1000,
+        'currency' => 'USD',
+    ]);
+
+    $package = Package::factory()->create();
+    $product = Product::factory()->create([
+        'package_id' => $package->id,
+        'entry_price' => 50,
+    ]);
+
+    $payload = [[
+        'product_id' => $product->id,
+        'package_id' => $package->id,
+        'quantity' => 1,
+    ]];
+
+    $first = app(CheckoutFromPayload::class)->handle($user, $payload);
+    $second = app(CheckoutFromPayload::class)->handle($user, $payload);
+
+    expect($first->order->id)->toBe($second->order->id)
+        ->and($second->reusedExistingOrder)->toBeTrue()
+        ->and(Order::query()->where('user_id', $user->id)->count())->toBe(1)
+        ->and(WalletTransaction::query()->where('type', WalletTransactionType::Purchase)->count())->toBe(1);
+});
+
+test('repurchase after fulfillment failed without refund creates a new order', function () {
+    $user = User::factory()->create();
+    Wallet::create([
+        'user_id' => $user->id,
+        'type' => WalletType::Customer,
+        'balance' => 1000,
+        'currency' => 'USD',
+    ]);
+
+    $package = Package::factory()->create();
+    $product = Product::factory()->create([
+        'package_id' => $package->id,
+        'entry_price' => 50,
+    ]);
+
+    $payload = [[
+        'product_id' => $product->id,
+        'package_id' => $package->id,
+        'quantity' => 1,
+    ]];
+
+    $first = app(CheckoutFromPayload::class)->handle($user, $payload);
+    $first->order->update(['paid_at' => now()->subDay()]);
+
+    $fulfillment = Fulfillment::query()->where('order_id', $first->order->id)->firstOrFail();
+    app(FailFulfillment::class)->handle($fulfillment, 'Supplier rejected', 'system');
+
+    $second = app(CheckoutFromPayload::class)->handle($user, $payload);
+
+    expect($second->reusedExistingOrder)->toBeFalse()
+        ->and($second->order->id)->not->toBe($first->order->id)
+        ->and(Order::query()->where('user_id', $user->id)->count())->toBe(2)
+        ->and(Fulfillment::query()->where('status', FulfillmentStatus::Queued)->count())->toBe(1);
 });

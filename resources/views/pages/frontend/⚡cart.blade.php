@@ -44,7 +44,7 @@ new #[Layout('layouts::frontend')] class extends Component
         }
 
         try {
-            $order = app(CheckoutFromPayload::class)->handle(
+            $checkout = app(CheckoutFromPayload::class)->handle(
                 $user,
                 $items,
                 [
@@ -53,6 +53,8 @@ new #[Layout('layouts::frontend')] class extends Component
                 ]
             );
 
+            $order = $checkout->order;
+
             if (! $order->exists || $order->status !== OrderStatus::Paid) {
                 $this->checkoutError = __('messages.checkout_could_not_complete');
                 $this->error($this->checkoutError);
@@ -60,7 +62,9 @@ new #[Layout('layouts::frontend')] class extends Component
                 return;
             }
 
-            $this->checkoutSuccess = __('messages.payment_successful_order_processing', ['order_number' => $order->order_number]);
+            $this->checkoutSuccess = $checkout->reusedExistingOrder
+                ? __('messages.checkout_order_already_placed', ['order_number' => $order->order_number])
+                : __('messages.payment_successful_order_processing', ['order_number' => $order->order_number]);
             $this->lastOrderNumber = $order->order_number;
             $this->success($this->checkoutSuccess);
             $this->dispatch('checkout-success', orderNumber: $order->order_number);
