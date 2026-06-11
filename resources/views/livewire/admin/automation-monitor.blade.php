@@ -60,7 +60,7 @@
     x-on:keydown.arrow-left.window="lightbox.open && prevImage()"
 >
     {{-- Zone 1: KPI status bar --}}
-    <section class="sticky top-0 z-10 rounded-2xl border border-zinc-200 bg-white/95 p-4 shadow-sm backdrop-blur-md dark:border-zinc-700 dark:bg-zinc-900/95">
+    <section class="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
         <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div class="space-y-1">
                 <flux:heading size="lg" class="text-zinc-900 dark:text-zinc-100">
@@ -288,13 +288,12 @@
                 </div>
             @else
                 <table class="min-w-full divide-y divide-zinc-100 text-sm dark:divide-zinc-800">
-                    <thead class="bg-zinc-50 text-xs uppercase tracking-wide text-zinc-500 dark:bg-zinc-800/60 dark:text-zinc-400">
+                    <thead class="sticky top-0 z-10 bg-zinc-50 text-xs uppercase tracking-wide text-zinc-500 shadow-sm dark:bg-zinc-800/95 dark:text-zinc-400 dark:shadow-zinc-900/50">
                         <tr>
                             <th class="px-4 py-3 text-start font-semibold">{{ __('messages.id') }}</th>
                             <th class="px-4 py-3 text-start font-semibold">{{ __('messages.status') }}</th>
-                            <th class="px-4 py-3 text-start font-semibold">{{ __('messages.automation_run_id') }}</th>
                             <th class="px-4 py-3 text-start font-semibold">{{ __('messages.order') }}</th>
-                            <th class="px-4 py-3 text-start font-semibold">{{ __('messages.automation_supplier') }}</th>
+                            <th class="px-4 py-3 text-start font-semibold">{{ __('messages.username') }}</th>
                             <th class="px-4 py-3 text-start font-semibold">{{ __('messages.started') }}</th>
                             <th class="px-4 py-3 text-start font-semibold">{{ __('messages.duration') }}</th>
                             <th class="px-4 py-3 text-start font-semibold">{{ __('messages.automation_run_details') }}</th>
@@ -309,7 +308,7 @@
                                     wire:key="automation-group-{{ $group->fulfillment_id }}"
                                     class="bg-zinc-50/80 dark:bg-zinc-800/40"
                                 >
-                                    <td colspan="9" class="px-4 py-2">
+                                    <td colspan="8" class="px-4 py-2">
                                         <button
                                             type="button"
                                             class="inline-flex w-full items-center gap-2 text-start text-xs font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200"
@@ -368,7 +367,7 @@
     <div
         x-show="panelOpen"
         x-cloak
-        class="fixed inset-0 z-40 flex justify-end"
+        class="fixed inset-0 z-[80] flex justify-end"
         aria-modal="true"
         role="dialog"
     >
@@ -483,10 +482,45 @@
 
                     @php($logExcerpt = $this->formattedLogExcerpt($panelRun))
                     @if ($logExcerpt !== [])
-                        <details class="rounded-lg border border-zinc-200 dark:border-zinc-700">
-                            <summary class="cursor-pointer px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">{{ __('messages.automation_raw_log') }}</summary>
-                            <pre class="max-h-48 overflow-auto p-3 font-mono text-[11px] text-zinc-600 dark:text-zinc-400">{{ json_encode($logExcerpt, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) }}</pre>
-                        </details>
+                        <div class="overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-700">
+                            <div class="border-b border-zinc-200 bg-zinc-50 px-3 py-2 text-sm font-medium text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-300">
+                                {{ __('messages.automation_raw_log') }}
+                            </div>
+                            <ol class="divide-y divide-zinc-100 dark:divide-zinc-800">
+                                @foreach ($logExcerpt as $line)
+                                    <li class="flex gap-3 px-3 py-2.5" wire:key="panel-log-{{ $panelRun->id }}-{{ $line['id'] }}">
+                                        <span class="shrink-0 pt-0.5 font-mono text-xs tabular-nums text-zinc-400 dark:text-zinc-500">
+                                            {{ $line['id'] }}
+                                        </span>
+                                        <div class="min-w-0 flex-1 space-y-1">
+                                            <div class="flex flex-wrap items-center gap-2">
+                                                <span @class([
+                                                    'rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide',
+                                                    'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300' => $line['step'] === 'purchase_parsed',
+                                                    'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300' => $line['step'] !== 'purchase_parsed',
+                                                ])>
+                                                    {{ $line['step'] }}
+                                                </span>
+                                                @if ($line['level'] !== 'info')
+                                                    <span class="text-[10px] font-semibold uppercase text-amber-600 dark:text-amber-400">
+                                                        {{ $line['level'] }}
+                                                    </span>
+                                                @endif
+                                                @if ($line['ms'] !== null)
+                                                    <span class="font-mono text-[10px] text-zinc-400 dark:text-zinc-500">{{ $line['ms'] }}ms</span>
+                                                @endif
+                                            </div>
+                                            <p @class([
+                                                'break-words text-sm leading-relaxed text-zinc-700 dark:text-zinc-300',
+                                                'font-semibold text-emerald-800 dark:text-emerald-300' => $line['step'] === 'purchase_parsed',
+                                            ])>
+                                                {{ $line['message'] }}
+                                            </p>
+                                        </div>
+                                    </li>
+                                @endforeach
+                            </ol>
+                        </div>
                     @endif
                 </div>
 
@@ -530,7 +564,7 @@
     <div
         x-show="lightbox.open"
         x-cloak
-        class="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4 transition-opacity duration-100"
+        class="fixed inset-0 z-[90] flex items-center justify-center bg-black/90 p-4 transition-opacity duration-100"
         x-on:click.self="closeLightbox()"
     >
         <button type="button" class="absolute end-4 top-4 rounded-full bg-white/10 p-2 text-white hover:bg-white/20" x-on:click="closeLightbox()">

@@ -289,7 +289,8 @@ final class AutomationMonitor extends Component
 
         return FulfillmentAutomationRun::query()
             ->with([
-                'fulfillment.order:id,order_number',
+                'fulfillment.order:id,order_number,user_id,created_at',
+                'fulfillment.order.user:id,username',
                 'fulfillment.orderItem.package:id,name',
             ])
             ->when($this->statusFilter === 'running', fn (Builder $query): Builder => $query->active())
@@ -402,7 +403,8 @@ final class AutomationMonitor extends Component
 
         return FulfillmentAutomationRun::query()
             ->with([
-                'fulfillment.order:id,order_number',
+                'fulfillment.order:id,order_number,user_id,created_at',
+                'fulfillment.order.user:id,username',
                 'fulfillment.orderItem.package:id,name',
             ])
             ->where('uuid', $this->selectedRunUuid)
@@ -433,6 +435,17 @@ final class AutomationMonitor extends Component
     public function runStartedAt(FulfillmentAutomationRun $run): ?CarbonInterface
     {
         return $run->started_at ?? $run->dispatched_at ?? $run->created_at;
+    }
+
+    public function orderDateLabel(FulfillmentAutomationRun $run): string
+    {
+        $createdAt = $run->fulfillment?->order?->created_at;
+
+        if ($createdAt === null) {
+            return '—';
+        }
+
+        return $createdAt->format('M d, Y H:i');
     }
 
     public function supplierLabel(FulfillmentAutomationRun $run): string

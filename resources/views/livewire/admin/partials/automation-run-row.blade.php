@@ -28,7 +28,7 @@
     </td>
     <td class="px-4 py-3 @if ($isChild) ps-8 @endif">
         <div class="flex flex-wrap items-center gap-2">
-            <span @class(['inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold', $this->statusBadgeClass($run->status)])>
+            <span @class(['inline-flex items-center justify-center gap-1 rounded-full border px-2 py-0.5 text-center text-xs font-semibold', $this->statusBadgeClass($run->status)])>
                 {{ __('messages.automation_status_'.$run->status->value) }}
             </span>
             @if ($showAttemptLabel)
@@ -37,9 +37,6 @@
                 </span>
             @endif
         </div>
-    </td>
-    <td class="px-4 py-3 font-mono text-xs text-zinc-800 dark:text-zinc-200">
-        {{ Str::limit($run->uuid, 13, '…') }}
     </td>
     <td class="px-4 py-3" wire:click.stop>
         @if ($run->fulfillment?->order)
@@ -56,10 +53,10 @@
         @endif
     </td>
     <td class="px-4 py-3 text-zinc-700 dark:text-zinc-300">
-        {{ $this->supplierLabel($run) }}
+        {{ $run->fulfillment?->order?->user?->username ?? '—' }}
     </td>
     <td class="px-4 py-3 text-zinc-600 dark:text-zinc-400 whitespace-nowrap">
-        {{ $this->runStartedAt($run)?->diffForHumans() ?? '—' }}
+        {{ $this->orderDateLabel($run) }}
     </td>
     <td class="px-4 py-3 font-mono text-xs text-zinc-600 dark:text-zinc-400">
         {{ $this->runDurationLabel($run) }}

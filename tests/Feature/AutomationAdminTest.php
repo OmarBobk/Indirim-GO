@@ -303,12 +303,18 @@ test('selecting a run uuid sets selected run', function () {
         'attempt' => 1,
         'idempotency_key' => 'automation:fulfillment:'.$fulfillment->id.':attempt:select-test',
         'error_code' => 'margin_insufficient',
+        'log_excerpt' => [
+            ['step' => 'login', 'level' => 'info', 'message' => 'Logged in'],
+        ],
     ]);
 
     $component = Livewire::actingAs(adminUser())
         ->test(AutomationMonitor::class)
         ->call('selectRun', $run->uuid)
-        ->assertSet('selectedRunUuid', $run->uuid);
+        ->assertSet('selectedRunUuid', $run->uuid)
+        ->assertSee('login')
+        ->assertSee('Logged in')
+        ->assertDontSee('"step": "login"');
 
     expect($component->instance()->selectedRun?->uuid)->toBe($run->uuid);
 });
@@ -342,6 +348,34 @@ test('cancelling an automation run broadcasts AutomationRunChanged', function ()
             && $event->type === 'cancelled'
             && $event->status === FulfillmentAutomationRunStatus::Cancelled->value;
     });
+});
+
+test('automation monitor records table shows customer username and order date', function () {
+    $fulfillment = makeAutomationAdminFulfillment();
+    $fulfillment->load('order.user');
+    $order = $fulfillment->order;
+    $customer = $order->user;
+
+    FulfillmentAutomationRun::query()->create([
+        'uuid' => (string) Str::uuid(),
+        'fulfillment_id' => $fulfillment->id,
+        'supplier_key' => 'wasim',
+        'status' => FulfillmentAutomationRunStatus::Succeeded,
+        'attempt' => 1,
+        'idempotency_key' => 'automation:fulfillment:'.$fulfillment->id.':attempt:table-columns',
+        'finished_at' => now(),
+    ]);
+
+    $component = Livewire::actingAs(adminUser())
+        ->test(AutomationMonitor::class)
+        ->assertSee($customer->username)
+        ->assertSee($order->created_at?->format('M d, Y H:i') ?? '');
+
+    $run = FulfillmentAutomationRun::query()
+        ->where('fulfillment_id', $fulfillment->id)
+        ->first();
+
+    expect($component->instance()->orderDateLabel($run))->toBe($order->created_at?->format('M d, Y H:i'));
 });
 
 test('automation monitor shows purchase parsed summary on runs table', function () {
