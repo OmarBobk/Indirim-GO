@@ -66,10 +66,11 @@
   - ###DONE: if admin approve an topup request by accident what he should do ?
   - ###DONE: orders/{order}: "Delivered payload" should not be hashed like this "••••••••••••••••klds"
   - ###DONE: Add the payments ways like iban, sham cash wallet barcode, usdt wallt ...etc
-  - ###TODO: Automation manager:
+  - ###DONE: Automation manager:
     - ###DONE: in the record details the Raw log excerpt json array should be sorted 
     - ###DONE: the screenshots are repeated twice in "automation-worker/storage" and in "storage/app/public"
-    - ###DOING: when user order product and the automation is failed and the fulfillment is also marked as failed now if user tried to order the product again there is no order created instead he gets the order success message whit the order id of the old one (the failed one)
+    - ###DONE: when user order product and the automation is failed and the fulfillment is also marked as failed now if user tried to order the product again there is no order created instead he gets the order success message whit the order id of the old one (the failed one)
+  - ###TODO: Create new users and send the credentials to the people
   
 - Frontend:
   - ###DONE wallet transaction in /wallets should be more described
