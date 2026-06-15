@@ -104,8 +104,8 @@ Salesperson Profit: 5.69 USD
 
 
 You a senior prompt Generator with 20+ years exp
-first you can scan the uploaded file to understand my system.
-second lets go Ask → Plan → Agent → Review → Fix to Make Cursor implements this fix as a senior Laravel 12, Livewire 4, Tailwind and Alpinejs
+first you can scan the uploaded files to understand my system.
+second lets go Ask → Plan → Agent → Review → Fix to Make Cursor implements this as a senior Laravel 12, Livewire 4, Tailwind and Alpinejs
 now sometime cursor is overengineering so tell him what you need to tell to not do that.
 and by there are a lot of places where there a better path for performance for high quality code and fast and even best practices that cursor doesn't take 
 Cursor should take the best approach in everything code readability, maintance, high quality, better performance and all what Expert Developer are care about
@@ -233,3 +233,119 @@ You are an expert UI designer and full-stack Laravel developer. You build visual
 3. Compose into section components (Livewire)
 4. Assemble on the page layout
 5. Add interactivity last (Alpine.js)
+
+
+
+# Role
+You are a senior Laravel 12 engineer implementing an **AI agent surface** for ** İndirimGo ** — aligned with this repo’s architecture, not generic Laravel tutorials.
+Work like a staff engineer
+
+---
+# Repo facts (do not guess — verify in code)
+## Installed / not installed
+| Package | Status |
+|---------|--------|
+| `laravel/mcp` | **Available** (via Laravel Boost lockfile). Stubs exist: `stubs/server.stub`, `stubs/tool.stub`, `stubs/prompt.stub`. `routes/ai.php` exists but MCP route is commented. **No `app/Mcp/` yet.** |
+| `laravel/ai` (Laravel AI SDK) | **NOT installed** in `composer.json`. If you need first-class agents/chats/providers, propose `composer require laravel/ai` explicitly — do not assume it exists. |
+| OpenAI/Anthropic direct SDKs | **NOT installed** unless you add them. |
+## Stack (hard constraints)
+- PHP 8.4.x, **Laravel 12**, **Livewire 4**, **Tailwind CSS 4**, **Alpine.js**
+- **Flux UI FREE only** — no Pro components
+- Auth: **Fortify** (username login), **Spatie permissions**
+- Realtime: **Reverb** (for chat streaming later)
+- Tests: **Pest 3**, format: **Pint**
+- Do **not** add packages unless necessary and justified
+
+## Architecture (where code lives)
+- **Business logic:** `app/Actions/{Domain}/` — never fat Livewire
+- **Orchestration/IO:** `app/Services/`
+- **Pure domain:** `app/Domain/` (especially Pricing)
+- **Policies + permissions:** respect `config('permission.backend_permissions')` and `backend` middleware (404 on deny)
+- **Full-page Livewire:** `resources/views/pages/**/⚡*.blade.php` (single-file: PHP class + Blade)
+- **Widgets:** `app/Livewire/` + `resources/views/livewire/`
+- **Routes:** `routes/web.php`, `routes/automation.php` (worker), register MCP in `routes/ai.php`
+- **MCP registration pattern:** `routes/ai.php` uses `Laravel\Mcp\Facades\Mcp::web(...)`
+
+
+## Non-negotiable invariants (karman.store)
+1. **Financial truth:** `wallet_transactions` + `wallets.balance` only. Never derive money from `system_events`.
+2. **No client-trusted pricing/totals** — server repricing via `app/Domain/Pricing/*` and existing Actions.
+3. **Money mutations:** DB transaction + `lockForUpdate` + idempotency keys + exactly one financial `system_events` row; side effects in `DB::afterCommit()`.
+4. **Custom amount:** `requested_amount`, quantity 1 semantics — preserve.
+5. **Backend access:** permission-based; no role-only shortcuts.
+6. **Agent tools default to READ-ONLY** unless I explicitly asked for writes — and writes must go through existing Actions, never raw Eloquent on money paths.
+
+
+---
+# Required reading order (before designing)
+1. `SYSTEM_CONTEXT_CORE_v1.md` — full product + invariants
+2. `routes/web.php` — how backend routes and Livewire pages register
+3. `routes/ai.php` — MCP entry point
+4. `stubs/server.stub`, `stubs/tool.stub` — MCP class shape
+5. Sibling **Action** + **Policy** for the domain you touch (e.g. `app/Actions/Orders/*`, `app/Policies/OrderPolicy.php`)
+6. One existing admin Livewire page as UI reference (e.g. `resources/views/livewire/admin/automation-monitor.blade.php` or `resources/views/pages/backend/orders/⚡show.blade.php`)
+7. `.cursor/rules/000-core.mdc`, `200-livewire.mdc` — performance rules
+
+
+
+---
+# Deliverables (implement all three)
+## 1) MCP Server (“Agent”)
+- Create `app/Mcp/Servers/{Name}Server.php` extending `Laravel\Mcp\Server\Server`
+- Register in `routes/ai.php` with appropriate middleware (`web`, `auth`, admin/permission gate)
+- Write clear `instructions` markdown for the LLM: scope, forbidden actions, which tools exist, financial warnings
+- Register tools (and optional prompts/resources if useful)
+## 2) MCP Tool(s)
+- Create `app/Mcp/Tools/{Name}Tool.php` extending `Laravel\Mcp\Server\Tool`
+- Each tool:
+    - Typed `schema()` via `JsonSchema`
+    - `handle(Request $request): Response` — thin; delegate to Actions/Services/Eloquent **read queries**
+    - Authorization: verify user can perform equivalent UI action (Policy/Gate/permission)
+    - Return structured, human-readable text or JSON — no secrets, no full PAN/passwords
+- **Do not** expose: raw env secrets, password hashes, full card data, Telescope keys
+  Suggested first tools for ops assistant (adapt to my goal):
+- `LookupOrderTool` — order number → status, user, items summary
+- `LookupWalletTool` — user id/username → balance + recent posted txs (no mutation)
+- `LookupFulfillmentTool` — fulfillment id → status, automation run summary
+## 3) Chat UI (Livewire)
+- Admin page e.g. `/admin/assistant` or `/admin/chat` — **admin-only** or permission-gated like other backend pages
+- Livewire 4 single-file or `app/Livewire/Admin/*` component
+- UX:
+    - Message list (user + assistant)
+    - Input + send ( `wire:submit`, **not** `wire:model.live` on every keystroke)
+    - Loading state via `wire:loading`
+    - Empty/error states
+    - Dark mode like other admin pages
+- Flux free: `flux:button`, `flux:input`, `flux:heading`, `flux:callout`, etc.
+- Alpine: scroll-to-bottom, optional collapse — **no business state in Alpine**
+- Backend:
+    - Persist conversations/messages **only if needed** — prefer minimal schema; if persisting, migration + model + factory
+    - Call LLM provider (if using `laravel/ai`, use its agent/chat APIs; if not, document required env vars: `OPENAI_API_KEY`, model name)
+    - Wire tool calling to your MCP tools **or** invoke the same Action/Service methods directly (prefer one path, don’t duplicate logic)
+---
+# Implementation rules
+## Code style
+- `declare(strict_types=1);` on new PHP files
+- Constructor property promotion where appropriate
+- Explicit return types everywhere
+- PHPDoc array shapes where arrays are structured
+- Run `vendor/bin/pint --dirty` before finishing
+## Livewire performance
+- `wire:model.defer` / `lazy` on inputs
+- Computed properties for derived data
+- No side effects in `render()`
+- `wire:key` in loops
+## Testing (mandatory)
+- Pest feature tests:
+    - Unauthorized user cannot access chat route or MCP endpoint
+    - Authorized admin can load chat page
+    - Each MCP tool: happy path + forbidden + not found
+    - If chat sends a message, mock HTTP/AI client — don’t hit real APIs in tests
+- Run: `php artisan test --compact tests/Feature/{YourTest}.php`
+## Security
+- Rate limit chat + MCP routes
+- Log prompts/responses without PII where possible
+- Gate `viewTelescope`-style pattern: explicit allowlist or permission — **never public MCP**
+- Read-only tools by default; any write tool must call existing Action and reuse idempotency
+---
+

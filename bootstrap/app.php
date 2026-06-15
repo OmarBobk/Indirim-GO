@@ -12,6 +12,9 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
         then: function (): void {
             require base_path('routes/automation.php');
+            if (class_exists(\Laravel\Mcp\Facades\Mcp::class)) {
+                require base_path('routes/ai.php');
+            }
         },
     )
     ->withMiddleware(function (Middleware $middleware): void {

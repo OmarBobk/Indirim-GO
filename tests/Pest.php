@@ -50,6 +50,8 @@ use App\Models\OrderItem;
 use App\Models\Package;
 use App\Models\Product;
 use App\Models\User;
+use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
 
 function makeAutomationAdminFulfillment(): Fulfillment
 {
@@ -83,4 +85,21 @@ function makeAutomationAdminFulfillment(): Fulfillment
     (new CreateFulfillmentsForOrder)->handle($order);
 
     return Fulfillment::query()->where('order_id', $order->id)->firstOrFail();
+}
+
+function assistantAdminUser(): User
+{
+    $user = User::factory()->create();
+    $role = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+
+    $permissions = collect(config('permission.backend_permissions', []))
+        ->map(fn (string $name): Permission => Permission::firstOrCreate([
+            'name' => $name,
+            'guard_name' => 'web',
+        ]));
+
+    $role->syncPermissions($permissions);
+    $user->assignRole($role);
+
+    return $user;
 }
