@@ -33,7 +33,7 @@
         @endif
 
         @foreach ($messages as $index => $msg)
-            @continue($msg['role'] === 'system' || $msg['role'] === 'tool')
+            @continue(($msg['role'] ?? '') === 'tool')
             <div
                 wire:key="assistant-msg-{{ $index }}"
                 @class([

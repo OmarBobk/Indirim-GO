@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Mcp\Tools;
 
 use App\Actions\AiAssistant\FetchWalletData;
+use App\Support\AiAssistant\AssistantLookupFormatter;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
@@ -31,55 +32,10 @@ class LookupWalletTool extends Tool
         abort_unless(auth()->user()?->hasRole('admin'), 403);
 
         $usernameOrId = (string) $request->get('username_or_id');
-        $data = app(FetchWalletData::class)->handle($usernameOrId);
 
-        if ($data === null) {
-            return Response::text('User not found: '.$usernameOrId);
-        }
-
-        $user = $data['user'];
-        $wallet = $data['wallet'];
-
-        $lines = [
-            sprintf(
-                'User: %s (#%d) — %s %s',
-                $user['username'],
-                $user['id'],
-                $user['name'],
-                $user['email'],
-            ),
-            '',
-        ];
-
-        if ($wallet === null) {
-            $lines[] = 'Balance: 0.00 USD (no wallet record)';
-        } else {
-            $lines[] = sprintf('Wallet #%d (%s)', $wallet['id'], $wallet['currency']);
-            $lines[] = '';
-            $lines[] = sprintf('Balance: %s %s', $wallet['balance'], $wallet['currency']);
-        }
-
-        $lines[] = '';
-        $lines[] = 'Recent posted transactions (newest first):';
-        $lines[] = '';
-
-        if ($data['recent_transactions'] === []) {
-            $lines[] = 'No posted transactions on record.';
-        } else {
-            foreach ($data['recent_transactions'] as $transaction) {
-                $currency = $wallet['currency'] ?? 'USD';
-                $lines[] = sprintf(
-                    '#%d %s %s %s %s (%s)',
-                    $transaction['id'],
-                    $transaction['type'],
-                    $transaction['direction'],
-                    $transaction['amount'],
-                    $currency,
-                    $transaction['created_at'],
-                );
-            }
-        }
-
-        return Response::text(implode("\n", $lines));
+        return Response::text(AssistantLookupFormatter::wallet(
+            app(FetchWalletData::class)->handle($usernameOrId),
+            'User not found: '.$usernameOrId,
+        ));
     }
 }

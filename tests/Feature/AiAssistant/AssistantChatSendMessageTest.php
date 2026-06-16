@@ -2,27 +2,22 @@
 
 declare(strict_types=1);
 
+use App\Ai\Agents\OpsAssistant;
 use App\Livewire\Admin\AssistantChat;
-use Illuminate\Support\Facades\Http;
+use Laravel\Ai\Exceptions\InsufficientCreditsException;
+use Laravel\Ai\Responses\Data\ToolCall;
 use Livewire\Livewire;
 
 beforeEach(function (): void {
     config([
-        'services.openai.key' => 'test-openai-key',
-        'services.openai.base_url' => 'https://api.openai.com/v1',
-        'services.openai.model' => 'gpt-4o-mini',
+        'ai.providers.openai.key' => 'test-openai-key',
+        'ai.models.text' => 'gpt-4o-mini',
+        'ai.conversations.generate_title' => false,
     ]);
 });
 
-it('appends assistant reply to messages on successful openai response', function (): void {
-    Http::fake([
-        '*/chat/completions' => Http::response([
-            'choices' => [[
-                'message' => ['role' => 'assistant', 'content' => 'The order is paid.'],
-                'finish_reason' => 'stop',
-            ]],
-        ]),
-    ]);
+it('appends assistant reply to messages on successful agent response', function (): void {
+    OpsAssistant::fake(['The order is paid.']);
 
     $component = Livewire::actingAs(assistantAdminUser())
         ->test(AssistantChat::class)
@@ -34,39 +29,19 @@ it('appends assistant reply to messages on successful openai response', function
     $messages = $component->get('messages');
     $assistantMessages = array_values(array_filter(
         $messages,
-        fn (array $message): bool => ($message['role'] ?? '') === 'assistant' && ($message['content'] ?? null) !== null
+        fn (array $message): bool => ($message['role'] ?? '') === 'assistant' && filled($message['content'] ?? null)
     ));
 
     expect($assistantMessages)->not->toBeEmpty();
     expect($assistantMessages[0]['content'])->toBe('The order is paid.');
+
+    OpsAssistant::assertPrompted('What is the status of ORD-TEST?');
 });
 
-it('executes tool call and makes second openai request', function (): void {
-    Http::fake([
-        '*/chat/completions' => Http::sequence()
-            ->push([
-                'choices' => [[
-                    'message' => [
-                        'role' => 'assistant',
-                        'content' => null,
-                        'tool_calls' => [[
-                            'id' => 'call_123',
-                            'type' => 'function',
-                            'function' => [
-                                'name' => 'lookup_order',
-                                'arguments' => '{"order_number":"ORD-TEST-001"}',
-                            ],
-                        ]],
-                    ],
-                    'finish_reason' => 'tool_calls',
-                ]],
-            ])
-            ->push([
-                'choices' => [[
-                    'message' => ['role' => 'assistant', 'content' => 'Here is the order info.'],
-                    'finish_reason' => 'stop',
-                ]],
-            ]),
+it('executes tool call through the agent', function (): void {
+    OpsAssistant::fake([
+        new ToolCall('call_123', 'lookup_order', ['order_number' => 'ORD-TEST-001']),
+        'Here is the order info.',
     ]);
 
     $component = Livewire::actingAs(assistantAdminUser())
@@ -76,26 +51,20 @@ it('executes tool call and makes second openai request', function (): void {
         ->assertSet('error', '')
         ->assertSet('isLoading', false);
 
-    Http::assertSentCount(2);
-
     $messages = $component->get('messages');
     $contents = collect($messages)
-        ->filter(fn (array $message): bool => ($message['role'] ?? '') === 'assistant' && ($message['content'] ?? null) !== null)
+        ->filter(fn (array $message): bool => ($message['role'] ?? '') === 'assistant' && filled($message['content'] ?? null))
         ->pluck('content')
         ->all();
 
     expect($contents)->toContain('Here is the order info.');
+
+    OpsAssistant::assertPrompted('Look up ORD-TEST-001');
 });
 
-it('shows quota exceeded message when openai returns insufficient quota', function (): void {
-    Http::fake([
-        '*/chat/completions' => Http::response([
-            'error' => [
-                'message' => 'You exceeded your current quota, please check your plan and billing details.',
-                'type' => 'insufficient_quota',
-                'code' => 'insufficient_quota',
-            ],
-        ], 429),
+it('shows quota exceeded message when agent reports insufficient credits', function (): void {
+    OpsAssistant::fake([
+        fn () => throw InsufficientCreditsException::forProvider('openai'),
     ]);
 
     Livewire::actingAs(assistantAdminUser())
@@ -106,15 +75,8 @@ it('shows quota exceeded message when openai returns insufficient quota', functi
         ->assertSet('isLoading', false);
 });
 
-it('restores chat history from session after remount', function (): void {
-    Http::fake([
-        '*/chat/completions' => Http::response([
-            'choices' => [[
-                'message' => ['role' => 'assistant', 'content' => 'Order is paid.'],
-                'finish_reason' => 'stop',
-            ]],
-        ]),
-    ]);
+it('restores chat history from conversation store after remount', function (): void {
+    OpsAssistant::fake(['Order is paid.']);
 
     $admin = assistantAdminUser();
 
