@@ -10,7 +10,7 @@
 | Area | Purpose |
 |------|---------|
 | **Storefront** | Categories, packages, products, cart, buy-now, orders, wallet, loyalty, referrals |
-| **Backend** | Fulfillments, topups, refunds, settlements, commissions, users, catalog admin, **automation admin** |
+| **Backend** | Fulfillments, topups, refunds, settlements, commissions, users, catalog admin, **automation admin**, **Ops Assistant** |
 | **Financial core** | `wallets` + `wallet_transactions` as source of truth; `system_events` for audit |
 | **Fulfillment automation** | Browser-driven supplier fulfillment via Node/Playwright worker + Laravel run orchestration |
 | **Realtime** | Laravel Reverb + Echo; Firebase FCM for push |
@@ -29,6 +29,7 @@ This project uses Laravel 11+ streamlined layout (no `app/Http/Kernel.php`, no `
 | `bootstrap/providers.php` | Service providers (`AppServiceProvider`, `FortifyServiceProvider`, optional Telescope) |
 | `routes/web.php` | Primary HTTP + Livewire full-page routes |
 | `routes/automation.php` | Worker callbacks + admin artifact routes (loaded from `bootstrap/app.php` `then`) |
+| `routes/ai.php` | Ops Assistant MCP endpoint (`POST /mcp/ops-assistant`) |
 | `routes/settings.php` | Fortify-adjacent user settings (profile, password, 2FA, appearance) |
 | `routes/channels.php` | Private broadcast channel auth |
 | `routes/console.php` | Artisan schedule / closure commands |
@@ -51,7 +52,7 @@ This project uses Laravel 11+ streamlined layout (no `app/Http/Kernel.php`, no `
 Domain mutations live in `app/Actions/{Domain}/{Verb}{Noun}.php` as invokable or `handle()` classes — not fat controllers.
 
 ```text
-CheckoutFromPayload      → cart → order
+CheckoutFromPayload      → cart → order (returns CheckoutResult)
 PayOrderWithWallet       → wallet debit + fulfillments
 ApproveTopupRequest      → credit wallet + system event
 CompleteFulfillment      → status transition + notifications
@@ -166,8 +167,11 @@ flowchart LR
 | Path | Component | Gate |
 |------|-----------|------|
 | `/admin/website-settings` | `pages::backend.website-settings.index` | `admin` middleware |
-| `/admin/automation` | `pages::backend.automation.index` | `admin` middleware — runs inbox, needs-review, settings |
+| `/admin/automation` | `App\Livewire\Admin\AutomationMonitor` | `admin` middleware — runs inbox (Reverb), needs-review, Wasim credentials, session clear |
+| `/admin/assistant` | `App\Livewire\Admin\AssistantChat` | `admin` middleware + `throttle:20,1` — read-only Ops Assistant chat |
 | `/admin/bugs`, `/admin/bugs/{bug}` | bug Livewire pages | `can:manage_bugs` |
+
+**Sidebar (Operations group):** admins see **Automation** and **Ops Assistant** links in `resources/views/layouts/app/sidebar.blade.php`.
 
 ### Automation routes (`routes/automation.php`)
 
@@ -176,6 +180,20 @@ flowchart LR
 | `POST /internal/automation/runs/{uuid}/result` | `FulfillmentAutomationCallbackController@result` | HMAC middleware |
 | `POST /internal/automation/runs/{uuid}/artifacts` | `FulfillmentAutomationCallbackController@artifacts` | HMAC middleware |
 | `GET /admin/fulfillment-automation/runs/{run}/artifact` | `FulfillmentAutomationArtifactController@show` | Auth + backend; signed artifact access |
+
+**Worker HTTP** (separate Node process, `automation-worker/`):
+
+| Path | Notes |
+|------|--------|
+| `GET /health` | Build id, feature flags (`wasim_submit_purchase`, `wasim_reconcile`, `session_clear`) |
+| `POST /v1/runs` | HMAC — execute automation driver |
+| `POST /v1/sessions/clear` | HMAC — clear Playwright session for a `session_key` (e.g. `wasim-main`) |
+
+### AI routes (`routes/ai.php`)
+
+| Path | Handler | Notes |
+|------|---------|--------|
+| `POST /mcp/ops-assistant` | `OpsAssistantServer` (Laravel MCP) | Admin-authenticated read-only order/wallet/fulfillment tools |
 
 Fortify handles login, register, password reset, and email verification (configured in `config/fortify.php` + `FortifyServiceProvider`).
 
@@ -265,28 +283,75 @@ karman.store/
 
 Laravel orchestrates; the worker only runs browsers and reports results.
 
+### Purchase flow
+
 ```text
 Paid order → CreateFulfillmentsForOrder (provider from package)
           → DispatchFulfillmentAutomationJob (if eligible)
           → ReserveFulfillmentAutomationRun
           → DispatchFulfillmentAutomationRun (POST /v1/runs to worker, HMAC)
-          → Worker executes driver (wasim, acme, …)
+          → Worker executes driver (wasim purchase phase, acme, …)
           → POST callback result/artifacts to Laravel
-          → IngestFulfillmentAutomationResult → CompleteFulfillment | FailFulfillment
+          → IngestFulfillmentAutomationResult
 ```
+
+### Wasim two-phase flow
+
+| Phase | Worker payload | Typical outcome | Laravel effect |
+|-------|----------------|-----------------|----------------|
+| **Purchase** | `automation_phase: purchase` | `submitted` (+ supplier order id from Swal) | Fulfillment stays **processing**; `ScheduleWasimOrderReconcile` |
+| **Reconcile** | `automation_phase: reconcile` | `success` / `failed` (cancelled) / `pending_reconcile` | Complete fulfillment, fail+refund path, or retry reconcile job |
+
+Reconcile driver (`automation-worker/src/drivers/wasim/reconcileOrder.ts`) searches supplier orders page tabs (Cancelled → Completed → New) with date filter + order id.
 
 | Piece | Location |
 |-------|----------|
-| Config | `config/fulfillment_automation.php` (env: enabled, worker URL, secret, suppliers, timeouts) |
+| Config | `config/fulfillment_automation.php` (env: enabled, worker URL, secret, suppliers, reconcile delays, timeouts) |
 | DB kill switch | `website_settings.automation_enabled` via `WebsiteSetting::getAutomationEnabled()` |
+| Wasim credentials | `website_settings.wasim_automation_username` / `wasim_automation_password` (override env); admin form on automation page |
+| Session invalidation | `FulfillmentAutomationService::clearWorkerBrowserSession()` → worker `POST /v1/sessions/clear`; worker credential fingerprint per `session_key` |
 | Package provider | `packages.fulfillment_provider` — `null` manual, `browser:{key}` automated |
 | Run model | `FulfillmentAutomationRun` + `FulfillmentAutomationRunStatus` enum |
-| Service | `FulfillmentAutomationService` (eligibility, payload, HMAC sign/verify) |
-| Job | `DispatchFulfillmentAutomationJob` |
-| Worker | `automation-worker/` — `npm start`, drivers under `src/drivers/` |
-| Admin UI | `/admin/automation` — tabs: runs, needs review, settings |
+| Service | `FulfillmentAutomationService` (eligibility, reconcile eligibility, payload, HMAC, session clear) |
+| Jobs | `DispatchFulfillmentAutomationJob`, **`DispatchWasimReconcileJob`** |
+| Actions | `ScheduleWasimOrderReconcile`, `ReserveFulfillmentAutomationReconcileRun`, `IngestFulfillmentAutomationResult` |
+| Worker | `automation-worker/` — Wasim: `submitPurchase.ts`, `reconcileOrder.ts`, `ordersPageHelpers.ts` |
+| Admin UI | `/admin/automation` — `AutomationMonitor` Livewire; Reverb `admin.automation` channel |
 | Ops UI | `/fulfillments` detail panel — status, artifacts, retry |
 | Catalog UI | `/packages` table — status switch + fulfillment pill toggle |
+
+---
+
+## Checkout idempotency (`cart_hash`)
+
+`CheckoutFromPayload` stores a normalized cart fingerprint in `orders.meta.cart_hash` for safe retries:
+
+| Order status | Reuse rule |
+|--------------|------------|
+| `pending_payment` | Always reuse matching cart (resume checkout) |
+| `paid` | Reuse only if `paid_at` within `config('billing.checkout_paid_idempotency_minutes')` (default **5**; env `BILLING_CHECKOUT_PAID_IDEMPOTENCY_MINUTES`) |
+| Older paid / refunded | **New order** — enables repurchase after failed fulfillments without admin refund |
+
+Returns **`CheckoutResult`** (`order`, `reusedExistingOrder`). Cart and buy-now modal show different success copy when reusing a recent order.
+
+Tests: `tests/Feature/CheckoutFlowTest.php` (repurchase, double-submit, fail-without-refund scenarios).
+
+---
+
+## Ops Assistant (admin AI)
+
+Read-only chat for admins to look up orders, wallets, and fulfillments via OpenAI + Laravel AI agent tools.
+
+| Piece | Location |
+|-------|----------|
+| Page | `/admin/assistant` — `App\Livewire\Admin\AssistantChat` |
+| Agent | `App\Ai\Agents\OpsAssistant` |
+| Tools | `app/Ai/Tools/LookupOrderTool.php`, `LookupWalletTool.php`, `LookupFulfillmentTool.php` |
+| Data fetchers | `app/Actions/AiAssistant/FetchOrderData.php`, `FetchWalletData.php`, `FetchFulfillmentData.php` |
+| Formatting | `app/Support/AiAssistant/AssistantLookupFormatter.php` |
+| MCP server | `app/Mcp/Servers/OpsAssistantServer.php` — `routes/ai.php` |
+| Env | `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_BASE_URL` |
+| Tests | `tests/Feature/AiAssistant/*` |
 
 ---
 
@@ -323,8 +388,9 @@ app/
 
 | Folder | Responsibility |
 |--------|----------------|
-| `Actions/Orders/` | Checkout, wallet payment, refunds, admin order queries |
-| `Actions/Fulfillments/` | Create, claim, start, complete, fail, retry; **automation**: reserve, dispatch, ingest, cancel, artifact storage, retry automation |
+| `Actions/Orders/` | Checkout (`CheckoutFromPayload`, **`CheckoutResult`**), wallet payment, refunds, admin order queries |
+| `Actions/Fulfillments/` | Create, claim, start, complete, fail, retry; **automation**: reserve, dispatch, ingest, cancel, artifact storage, retry automation, **`ScheduleWasimOrderReconcile`** |
+| `Actions/AiAssistant/` | Read-only fetchers for Ops Assistant lookups |
 | `Actions/Topups/` | Create/approve/reject topup requests |
 | `Actions/Refunds/` | Approve/reject refund requests |
 | `Actions/Commissions/` | Payout batches, salesperson payout requests |
@@ -354,7 +420,7 @@ app/
 | `Commission`, `PayoutRequest`, `PayoutBatch` | Referral commissions and payouts |
 | `Settlement` | Profit/settlement accounting |
 | `PricingRule`, `UserProductPrice` | Default and per-user pricing |
-| `WebsiteSetting`, `PaymentMethod` | Site config (incl. `automation_enabled`), payment display |
+| `WebsiteSetting`, `PaymentMethod` | Site config (`automation_enabled`, **`wasim_automation_*`**), payment display |
 | `LoyaltySetting`, `LoyaltyTierConfig` | Loyalty program |
 | `Bug`, `BugAttachment`, `BugLink` | Internal bug reporting |
 | `AdminDevice`, `PushLog` | Admin push registration and logs |
@@ -370,7 +436,7 @@ app/
 | `LoyaltySpendService` | Loyalty spend tracking |
 | `SalespersonDashboardService` | Referral dashboard metrics |
 | `OperationalIntelligenceService` | Ops analytics |
-| `FulfillmentAutomationService` | Automation eligibility, worker payload, HMAC signatures |
+| `FulfillmentAutomationService` | Automation eligibility, reconcile eligibility, worker payload, HMAC signatures, **clear worker browser session** |
 | `FirebasePushService`, `PushRateLimiter` | FCM delivery |
 | `NotificationRecipientService` | Who receives which notifications |
 | `UserAuditTimelineService` | User audit timeline |
@@ -392,7 +458,7 @@ app/
 | `auth`, `verified` | Profile, wallet, orders, loyalty, referrals, notifications |
 | `auth`, `verified`, `backend` | Dashboard, catalog admin, fulfillments, topups, refunds, settlements, users |
 | `backend` + `can:manage_bugs` | Bug admin |
-| `backend` + `admin` | Website settings, **automation admin** |
+| `backend` + `admin` | Website settings, **automation admin**, **Ops Assistant** |
 
 **Aliases:** `admin`, `backend`, Spatie `role` / `permission` / `role_or_permission`.
 
@@ -445,7 +511,7 @@ resources/views/
 |------|-------|
 | `permission.php` | Spatie roles + `backend_permissions` list |
 | `fortify.php` | Auth features |
-| `referral.php`, `loyalty.php`, `billing.php` | Business rules |
+| `referral.php`, `loyalty.php`, `billing.php` | Business rules; **`checkout_paid_idempotency_minutes`** |
 | `pwa.php` | Progressive Web App |
 | `reverb.php`, `broadcasting.php` | Realtime |
 | `firebase.php`, `notifications.php` | Push and notification routing |
@@ -473,9 +539,10 @@ Pest-based suite under `tests/Feature` and `tests/Unit` (~125 files).
 | Coverage areas (examples) |
 |---------------------------|
 | Auth, registration, 2FA, blocked sessions |
-| Cart, checkout, buy-now, custom amount pricing |
+| Cart, checkout, buy-now, custom amount pricing, **checkout cart_hash / repurchase** |
 | Wallet, topups, proofs, transactions |
-| Orders, fulfillments, refunds, **fulfillment automation**, **automation admin** |
+| Orders, fulfillments, refunds, **fulfillment automation**, **automation admin**, **Wasim reconcile** |
+| **Ops Assistant** (`tests/Feature/AiAssistant/`) |
 | Referrals, commissions, payouts, settlements |
 | Admin pages, permissions, notifications, PWA |
 | Catalog (categories, packages incl. fulfillment toggle, products, pricing rules) |
@@ -536,11 +603,13 @@ From project rules (`.cursor/rules/laravel-boost.mdc`, `CLAUDE.md`):
 | Flow | Primary code |
 |------|----------------|
 | Browse & search | `pages/frontend/⚡main`, `SearchStorefrontCatalog`, API search controller |
-| Cart & checkout | `⚡cart`, `CheckoutFromPayload`, `CreateOrderFromCartPayload` |
+| Cart & checkout | `⚡cart`, `CheckoutFromPayload`, `CheckoutResult`, `CreateOrderFromCartPayload` |
 | Pay with wallet | `PayOrderWithWallet` |
 | Topup wallet | `⚡wallet`, `CreateTopupRequestAction`, `TopupProofController` |
 | Fulfillment ops | `pages/backend/fulfillments`, `Actions/Fulfillments/*` |
-| **Browser automation** | `pages/backend/automation`, `FulfillmentAutomationService`, `automation-worker/` |
+| **Browser automation** | `AutomationMonitor` (`/admin/automation`), `FulfillmentAutomationService`, `automation-worker/` |
+| **Wasim reconcile** | `ScheduleWasimOrderReconcile`, `DispatchWasimReconcileJob`, `reconcileOrder.ts` |
+| **Ops Assistant** | `/admin/assistant`, `AssistantChat`, `OpsAssistant` agent |
 | **Package automation toggle** | `pages/backend/packages`, `TogglePackageFulfillment` |
 | Refunds | `pages/backend/refunds`, `ApproveRefundRequest` / `RejectRefundRequest` |
 | Salesperson referrals | `⚡referral-link`, `salesperson-dashboard`, commission actions |
@@ -562,7 +631,7 @@ Root companion: `SYSTEM_CONTEXT_CORE_v1.md` — condensed AI delivery context (i
 
 ## Workspace Notes (current branch)
 
-Active/in-progress areas include fulfillment browser automation (`automation-worker/`, run orchestration, admin automation page), package fulfillment toggles, payment method uploads, and website settings extensions. Treat `storage/debugbar/`, worker screenshots/sessions, and compiled views as local/runtime artifacts — not part of the canonical structure.
+Active/in-progress areas include fulfillment browser automation (Wasim purchase + reconcile phases, worker session/credentials), checkout repurchase idempotency, Ops Assistant, package fulfillment toggles, payment method uploads, and website settings extensions. Treat `storage/debugbar/`, worker screenshots/sessions, and compiled views as local/runtime artifacts — not part of the canonical structure.
 
 ---
 

@@ -28,3 +28,22 @@ it('allows admin to load assistant page', function (): void {
         ->assertSeeLivewire(AssistantChat::class)
         ->assertSee(__('messages.assistant_page_title'));
 });
+
+it('shows ops assistant link in sidebar for admin', function (): void {
+    $this->actingAs(assistantAdminUser())
+        ->get(route('dashboard'))
+        ->assertOk()
+        ->assertSee(route('admin.assistant.index'), false)
+        ->assertSee(__('messages.assistant_page_title'));
+});
+
+it('hides ops assistant link in sidebar for non-admin backend users', function (): void {
+    Role::firstOrCreate(['name' => 'customer', 'guard_name' => 'web']);
+    $user = User::factory()->create();
+    $user->assignRole('customer');
+
+    $this->actingAs($user)
+        ->get(route('home'))
+        ->assertOk()
+        ->assertDontSee(route('admin.assistant.index'), false);
+});

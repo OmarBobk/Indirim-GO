@@ -78,7 +78,7 @@
                 @endif
 
                 <livewire:sidebar.operations-group
-                    :expanded="(request()->routeIs('fulfillments')) || (request()->routeIs('admin.orders.*')) || (request()->routeIs('admin.notifications.index'))"
+                    :expanded="(request()->routeIs('fulfillments')) || (request()->routeIs('admin.orders.*')) || (request()->routeIs('admin.notifications.index')) || (request()->routeIs('admin.automation.*')) || (request()->routeIs('admin.assistant.*'))"
                     :heading="__('messages.nav_operations')"
                     :key="'sidebar-operations-group'"
                 >
@@ -99,6 +99,9 @@
                     @role('admin')
                     <flux:sidebar.item icon="cpu-chip" :href="route('admin.automation.index')" :current="request()->routeIs('admin.automation.*')" wire:navigate>
                         {{ __('messages.automation_admin') }}
+                    </flux:sidebar.item>
+                    <flux:sidebar.item icon="chat-bubble-left-right" :href="route('admin.assistant.index')" :current="request()->routeIs('admin.assistant.*')" wire:navigate>
+                        {{ __('messages.assistant_page_title') }}
                     </flux:sidebar.item>
                     @endrole
                     @can('view_orders')
