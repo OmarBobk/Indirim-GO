@@ -60,11 +60,7 @@
 
                 <div class="flex flex-wrap sm:flex-nowrap justify-between gap-2 sm:gap-4 items-center w-full mb-3 sm:mb-0">
                     <!-- Logo -->
-                    <a href="{{ route('home') }}" wire:navigate class="flex items-center shrink-0 order-1">
-                        <span class="text-3xl font-bold leading-none">
-                            <span class="text-(--color-accent)">İndirim</span><span class="text-(--color-zinc-900) dark:text-(--color-zinc-100)">Go</span>
-                        </span>
-                    </a>
+                    <x-app-brand-logo wire:navigate class="order-1" />
 
                     <!-- Search Bar (Alpine + JSON API; packages only, inline results) -->
                     <div class="w-full max-w-3xl mx-auto sm:order-2 order-3">

@@ -16,7 +16,7 @@ new class extends Component
             'badge' => 'İndirim',
             'title' => 'Powerbank Koleksiyonu',
             'subtitle' => 'Yüksek kapasiteli şarj çözümleri',
-            'image' => 'images/sliders/promotional-2.jpg',
+            'image' => 'images/sliders/promotional-2.png',
             'href' => '#',
         ],
         [
