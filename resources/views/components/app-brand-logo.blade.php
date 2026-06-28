@@ -1,11 +1,13 @@
 @props([
     'href' => null,
+    'placement' => 'header',
 ])
 
 @php
     use App\Support\BrandLogo;
 
     $href ??= route('home');
+    $imageClasses = BrandLogo::imageClasses($placement);
 @endphp
 
 <a
@@ -16,17 +18,13 @@
     <img
         src="{{ BrandLogo::lightUrl() }}"
         alt="{{ config('app.name') }}"
-        class="h-9 w-auto sm:h-10 dark:hidden"
-        width="160"
-        height="40"
+        class="{{ $imageClasses }} object-contain object-left dark:hidden"
         decoding="async"
     >
     <img
         src="{{ BrandLogo::darkUrl() }}"
         alt="{{ config('app.name') }}"
-        class="hidden h-9 w-auto sm:h-10 dark:block"
-        width="160"
-        height="40"
+        class="{{ $imageClasses }} hidden object-contain object-left dark:block"
         decoding="async"
     >
 </a>

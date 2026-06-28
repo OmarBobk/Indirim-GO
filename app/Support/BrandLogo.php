@@ -33,4 +33,29 @@ final class BrandLogo
     {
         return asset(self::darkPath($locale));
     }
+
+    /**
+     * Tailwind height/width classes for storefront logo placements.
+     *
+     * English assets are a tall stacked mark; Arabic assets are a wide wordmark with
+     * extra canvas padding — each needs a different display size to read well.
+     */
+    public static function imageClasses(string $placement = 'header', ?string $locale = null): string
+    {
+        return match (self::variant($locale)) {
+            'ar' => match ($placement) {
+                'footer' => 'h-16 w-auto min-w-32 shrink-0 sm:h-[4.5rem] sm:min-w-36',
+                default => 'h-14 w-auto min-w-28 shrink-0 sm:h-16 sm:min-w-32 md:h-[4.5rem] md:min-w-36',
+            },
+            default => match ($placement) {
+                'footer' => 'h-11 w-auto shrink-0 sm:h-12',
+                default => 'h-10 w-auto shrink-0 sm:h-11',
+            },
+        };
+    }
+
+    public static function headerImageClasses(?string $locale = null): string
+    {
+        return self::imageClasses('header', $locale);
+    }
 }

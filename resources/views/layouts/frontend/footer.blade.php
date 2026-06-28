@@ -60,13 +60,11 @@
 
         <div class="mt-8 grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
             <div class="flex flex-col gap-5">
-                <a
-                    href="{{ route('home') }}"
-                    class="inline-flex items-center gap-2 text-2xl font-bold leading-none text-zinc-900 transition hover:text-(--color-accent) focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-accent) dark:text-zinc-100"
-                    aria-label="{{ __('main.footer_home_aria', ['name' => config('app.name')]) }}"
-                >
-                    <span class="text-(--color-accent)">{{ config('app.name') }}</span>
-                </a>
+                <x-app-brand-logo
+                    placement="footer"
+                    wire:navigate
+                    class="transition-opacity hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-accent)"
+                />
                 <flux:text class="text-sm text-zinc-600 dark:text-zinc-300">
                     {{ __('main.footer_tagline') }}
                 </flux:text>

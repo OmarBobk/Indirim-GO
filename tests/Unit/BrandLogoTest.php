@@ -18,3 +18,16 @@ it('falls back to english for unsupported locales', function () {
     expect(BrandLogo::variant('tr'))->toBe('en')
         ->and(BrandLogo::lightPath('tr'))->toBe('light_en_logo.png');
 });
+
+it('uses compact header sizing for english and larger sizing for arabic', function () {
+    expect(BrandLogo::headerImageClasses('en'))->toContain('h-10')
+        ->and(BrandLogo::headerImageClasses('en'))->not->toContain('min-w-28');
+
+    expect(BrandLogo::headerImageClasses('ar'))->toContain('h-14')
+        ->and(BrandLogo::headerImageClasses('ar'))->toContain('min-w-28');
+});
+
+it('uses larger footer sizing than header', function () {
+    expect(BrandLogo::imageClasses('footer', 'en'))->toContain('h-11')
+        ->and(BrandLogo::imageClasses('footer', 'ar'))->toContain('h-16');
+});
