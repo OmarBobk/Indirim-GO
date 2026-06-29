@@ -2,6 +2,7 @@ import type { Page } from 'playwright';
 import type { DriverResult, RunPayload } from '../../types.js';
 import type { RunLogger } from '../../logging/runLogger.js';
 import {
+  isSupplierOrderPendingReconcile,
   isSupplierOrderRejected,
   isSupplierOrderSuccessful,
   isSupplierRateLimitedReply,
@@ -128,7 +129,22 @@ export async function submitWasimPurchase(
     };
   }
 
-  if (isSupplierOrderRejected(parsed.supplierStatus, parsed.supplierReply)) {
+  if (isSupplierOrderPendingReconcile(parsed.supplierStatus, parsed.supplierOrderId)) {
+    const replyNote = parsed.supplierReply ? ` (${parsed.supplierReply})` : '';
+
+    return {
+      outcome: 'submitted',
+      externalOrderId: parsed.supplierOrderId!,
+      message: `Wasim order ${parsed.supplierOrderId} pending; reconcile on supplier orders page${replyNote}.`,
+      deliveredPayload: {
+        ...deliveredBase,
+        checkpoint: 'purchase_submitted_pending',
+        phase: 'purchase',
+      },
+    };
+  }
+
+  if (isSupplierOrderRejected(parsed.supplierStatus, parsed.supplierReply, parsed.supplierOrderId)) {
     return {
       outcome: 'failed',
       errorCode: 'supplier_order_rejected',

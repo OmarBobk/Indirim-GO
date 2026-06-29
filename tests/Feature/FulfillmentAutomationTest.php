@@ -160,7 +160,7 @@ test('ingest success completes fulfillment and is idempotent', function () {
     expect($fulfillment->logs()->where('message', 'Fulfillment completed')->count())->toBe(1);
 });
 
-test('ingest supplier rejection fails fulfillment and requests refund', function () {
+test('ingest supplier rejection fails fulfillment without refund when no order id', function () {
     $fulfillment = makeBrowserFulfillmentOrder();
     $order = Order::query()->findOrFail($fulfillment->order_id);
     Wallet::forUser(User::query()->findOrFail($order->user_id));
@@ -183,7 +183,6 @@ test('ingest supplier rejection fails fulfillment and requests refund', function
         'error_code' => 'supplier_order_rejected',
         'message' => '{"replay":["invalid player id"]}',
         'delivered_payload' => [
-            'supplier_order_id' => '12336',
             'supplier_entry_price' => 1.07,
             'supplier_status' => 'pending',
             'supplier_reply' => '{"replay":["invalid player id"]}',
@@ -201,7 +200,55 @@ test('ingest supplier rejection fails fulfillment and requests refund', function
         ->where('reference_type', Fulfillment::class)
         ->where('reference_id', $fulfillment->id)
         ->where('type', WalletTransactionType::Refund->value)
-        ->exists())->toBeTrue();
+        ->exists())->toBeFalse();
+});
+
+test('ingest submitted with pending swal and supplier order id keeps processing and queues reconcile', function () {
+    $fulfillment = makeBrowserFulfillmentOrder();
+    $fulfillment->update(['provider' => 'browser:wasim']);
+
+    $run = FulfillmentAutomationRun::query()->create([
+        'uuid' => (string) Str::uuid(),
+        'fulfillment_id' => $fulfillment->id,
+        'supplier_key' => 'wasim',
+        'status' => FulfillmentAutomationRunStatus::Running,
+        'attempt' => 1,
+        'idempotency_key' => 'automation:fulfillment:'.$fulfillment->id.':attempt:1',
+        'dispatched_at' => now(),
+        'started_at' => now(),
+    ]);
+
+    $fulfillment->update(['status' => FulfillmentStatus::Processing]);
+
+    app(IngestFulfillmentAutomationResult::class)->handle($run, [
+        'outcome' => 'submitted',
+        'external_order_id' => '15586',
+        'message' => 'Wasim order 15586 pending; reconcile on supplier orders page (رصيدك غير كافي).',
+        'delivered_payload' => [
+            'supplier_order_id' => '15586',
+            'supplier_entry_price' => 26.03,
+            'supplier_status' => 'pending',
+            'supplier_reply' => 'رصيدك غير كافي',
+            'checkpoint' => 'purchase_submitted_pending',
+            'phase' => 'purchase',
+        ],
+    ]);
+
+    $fulfillment->refresh();
+    $run->refresh();
+
+    expect($fulfillment->status)->toBe(FulfillmentStatus::Processing)
+        ->and($run->status)->toBe(FulfillmentAutomationRunStatus::Succeeded)
+        ->and(data_get($fulfillment->meta, 'automation.awaiting_wasim_reconcile'))->toBeTrue()
+        ->and(data_get($fulfillment->meta, 'automation.supplier_order_id'))->toBe('15586');
+
+    Queue::assertPushed(DispatchWasimReconcileJob::class);
+
+    expect(WalletTransaction::query()
+        ->where('reference_type', Fulfillment::class)
+        ->where('reference_id', $fulfillment->id)
+        ->where('type', WalletTransactionType::Refund->value)
+        ->exists())->toBeFalse();
 });
 
 test('ingest success stores supplier entry price on order item', function () {

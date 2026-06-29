@@ -115,8 +115,32 @@ export function isSupplierOrderCompleted(status: string | null): boolean {
   return isSupplierOrderSuccessful(status);
 }
 
-export function isSupplierOrderRejected(status: string | null, reply: string | null): boolean {
+/**
+ * Wasim created an order row but it is still pending (e.g. insufficient balance).
+ * Phase 2 reconcile on Wasim orders tabs is the source of truth — not the Swal reply.
+ */
+export function isSupplierOrderPendingReconcile(
+  status: string | null,
+  supplierOrderId: string | null,
+): boolean {
+  if (supplierOrderId === null || supplierOrderId.trim() === '') {
+    return false;
+  }
+
+  return normalizeSupplierOrderStatus(status) === 'pending';
+}
+
+/** Immediate failure when Wasim did not issue an order id to reconcile. */
+export function isSupplierOrderRejected(
+  status: string | null,
+  reply: string | null,
+  supplierOrderId: string | null = null,
+): boolean {
   if (isSupplierOrderSuccessful(status)) {
+    return false;
+  }
+
+  if (isSupplierOrderPendingReconcile(status, supplierOrderId)) {
     return false;
   }
 

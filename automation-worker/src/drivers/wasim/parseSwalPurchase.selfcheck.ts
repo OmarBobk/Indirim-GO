@@ -1,4 +1,5 @@
 import {
+  isSupplierOrderPendingReconcile,
   isSupplierOrderRejected,
   isSupplierOrderSuccessful,
   isSupplierRateLimitedReply,
@@ -16,9 +17,24 @@ const successHtml = `
 `;
 
 const rejectedHtml = `
-<p> معرف الطلب: <b>999</b></p>
 <p> السعر الإجمالي: <b>2.5</b></p>
 <p> الرد: <b>{"replay":["20210-Crystal accounts cannot be recharged to gem users"]}</b></p>
+<p> حالة الطلب: <b>pending</b></p>
+`;
+
+const insufficientBalanceHtml = `
+<p><b>تم إرسال طلبك بنجاح </b></p>
+<p> معرف الطلب: <b>15586</b></p>
+<p> معرف المنتج: <b>2</b></p>
+<p> السعر الإجمالي: <b>26.03091728061552</b></p>
+<p> مصدر السعر: <b>source</b></p>
+<p> الرد: <b>رصيدك غير كافي</b></p>
+<p> حالة الطلب: <b>Pending</b></p>
+`;
+
+const inactiveProductHtml = `
+<p> معرف الطلب: <b>15587</b></p>
+<p> الرد: <b>المنتج غير نشط , لا يمكنك شراءه</b></p>
 <p> حالة الطلب: <b>pending</b></p>
 `;
 
@@ -53,8 +69,28 @@ if (! isSupplierRateLimitedReply(rateLimitReply)) {
 
 const rejected = parseSwalPurchaseContent(rejectedHtml);
 
-if (! isSupplierOrderRejected(rejected.supplierStatus, rejected.supplierReply)) {
-  throw new Error(`expected rejected: ${JSON.stringify(rejected)}`);
+if (! isSupplierOrderRejected(rejected.supplierStatus, rejected.supplierReply, rejected.supplierOrderId)) {
+  throw new Error(`expected rejected without order id: ${JSON.stringify(rejected)}`);
+}
+
+const insufficientBalance = parseSwalPurchaseContent(insufficientBalanceHtml);
+
+if (! isSupplierOrderPendingReconcile(insufficientBalance.supplierStatus, insufficientBalance.supplierOrderId)) {
+  throw new Error(`expected pending reconcile: ${JSON.stringify(insufficientBalance)}`);
+}
+
+if (isSupplierOrderRejected(
+  insufficientBalance.supplierStatus,
+  insufficientBalance.supplierReply,
+  insufficientBalance.supplierOrderId,
+)) {
+  throw new Error('insufficient balance with order id must not be treated as rejected');
+}
+
+const inactiveProduct = parseSwalPurchaseContent(inactiveProductHtml);
+
+if (! isSupplierOrderPendingReconcile(inactiveProduct.supplierStatus, inactiveProduct.supplierOrderId)) {
+  throw new Error(`expected inactive product pending reconcile: ${JSON.stringify(inactiveProduct)}`);
 }
 
 console.log('parseSwalPurchase self-check passed');

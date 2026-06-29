@@ -327,7 +327,7 @@ class IngestFulfillmentAutomationResult
             null,
         );
 
-        if ($outcome === 'failed' && in_array($errorCode, ['supplier_order_rejected', 'supplier_order_cancelled'], true)) {
+        if ($outcome === 'failed' && $errorCode === 'supplier_order_cancelled') {
             $this->queueSupplierRejectionRefund($lockedFulfillment);
         }
 
