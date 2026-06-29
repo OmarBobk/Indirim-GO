@@ -23,8 +23,8 @@ it('uses compact header sizing for english and larger sizing for arabic', functi
     expect(BrandLogo::headerImageClasses('en'))->toContain('h-10')
         ->and(BrandLogo::headerImageClasses('en'))->not->toContain('min-w-28');
 
-    expect(BrandLogo::headerImageClasses('ar'))->toContain('h-14')
-        ->and(BrandLogo::headerImageClasses('ar'))->toContain('min-w-28');
+    expect(BrandLogo::headerImageClasses('ar'))->toContain('h-10')
+        ->and(BrandLogo::headerImageClasses('ar'))->toContain('min-w-24');
 });
 
 it('uses larger footer sizing than header', function () {

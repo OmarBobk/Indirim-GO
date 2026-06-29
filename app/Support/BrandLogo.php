@@ -45,7 +45,7 @@ final class BrandLogo
         return match (self::variant($locale)) {
             'ar' => match ($placement) {
                 'footer' => 'h-16 w-auto min-w-32 shrink-0 sm:h-[4.5rem] sm:min-w-36',
-                default => 'h-14 w-auto min-w-28 shrink-0 sm:h-16 sm:min-w-32 md:h-[4.5rem] md:min-w-36',
+                default => 'h-10 w-auto min-w-24 shrink-0 sm:h-11 sm:min-w-28 md:h-12 md:min-w-32',
             },
             default => match ($placement) {
                 'footer' => 'h-11 w-auto shrink-0 sm:h-12',

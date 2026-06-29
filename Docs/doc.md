@@ -70,8 +70,10 @@
     - ###DONE: in the record details the Raw log excerpt json array should be sorted 
     - ###DONE: the screenshots are repeated twice in "automation-worker/storage" and in "storage/app/public"
     - ###DONE: when user order product and the automation is failed and the fulfillment is also marked as failed now if user tried to order the product again there is no order created instead he gets the order success message whit the order id of the old one (the failed one)
-  - ###TODO: Create new users and send the credentials to the people
-  
+  - ###TODO: we need some automated process to check if there is any changing in the prices between wassim-store and our entry price.
+  - ###DONE: from now on the fulfillment should never be marked as failed from the automation this decision should be decide by admin only cuz:
+    - Refactor fulfillment automation handling for supplier order statuses
+
 - Frontend:
   - ###DONE wallet transaction in /wallets should be more described
   - ###DONE Wallet /wallet Request topups form borders remove the ring
