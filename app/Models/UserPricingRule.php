@@ -8,9 +8,9 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-class UserProductPrice extends Model
+class UserPricingRule extends Model
 {
-    /** @use HasFactory<\Database\Factories\UserProductPriceFactory> */
+    /** @use HasFactory<\Database\Factories\UserPricingRuleFactory> */
     use HasFactory;
 
     /**
@@ -18,8 +18,12 @@ class UserProductPrice extends Model
      */
     protected $fillable = [
         'user_id',
-        'product_id',
-        'price',
+        'min_price',
+        'max_price',
+        'wholesale_percentage',
+        'retail_percentage',
+        'priority',
+        'is_active',
         'note',
         'created_by',
     ];
@@ -30,18 +34,18 @@ class UserProductPrice extends Model
     protected function casts(): array
     {
         return [
-            'price' => 'decimal:2',
+            'min_price' => 'decimal:2',
+            'max_price' => 'decimal:2',
+            'wholesale_percentage' => 'decimal:2',
+            'retail_percentage' => 'decimal:2',
+            'priority' => 'integer',
+            'is_active' => 'boolean',
         ];
     }
 
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
-    }
-
-    public function product(): BelongsTo
-    {
-        return $this->belongsTo(Product::class);
     }
 
     public function creator(): BelongsTo

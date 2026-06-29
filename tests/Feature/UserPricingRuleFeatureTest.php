@@ -1,19 +1,18 @@
 <?php
 
 use App\Actions\Orders\CreateOrderFromCartPayload;
-use App\Actions\UserProductPrices\CreateUserProductPrice;
+use App\Actions\UserPricingRules\UpsertUserPricingRule;
 use App\Enums\LoyaltyTier;
 use App\Enums\ProductAmountMode;
-use App\Livewire\Users\UserProductPrices;
+use App\Livewire\Users\UserPricingRules;
 use App\Models\LoyaltyTierConfig;
 use App\Models\Package;
 use App\Models\PricingRule;
 use App\Models\Product;
 use App\Models\User;
-use App\Models\UserProductPrice;
+use App\Models\UserPricingRule;
 use App\Notifications\OrderPriceFlooredNotification;
 use App\Services\CustomerPriceService;
-use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
@@ -48,73 +47,53 @@ beforeEach(function (): void {
     Permission::firstOrCreate(['name' => 'manage_user_prices', 'guard_name' => 'web']);
 });
 
-test('user product price applies fixed adjustment (delta) before loyalty discount', function (): void {
+test('user pricing rule applies custom retail markup before loyalty discount', function (): void {
     $user = User::factory()->create(['loyalty_tier' => LoyaltyTier::Gold]);
     $user->assignRole('customer');
     $product = Product::factory()->create(['entry_price' => 100]);
 
-    UserProductPrice::query()->create([
+    UserPricingRule::query()->create([
         'user_id' => $user->id,
-        'product_id' => $product->id,
-        'price' => -5.00,
-        'created_by' => null,
+        'min_price' => 0,
+        'max_price' => 999999.99,
+        'retail_percentage' => 5,
+        'wholesale_percentage' => 1,
+        'priority' => 0,
+        'is_active' => true,
     ]);
 
-    $service = app(CustomerPriceService::class);
-    $overrides = $service->getUserOverridesFor($user);
-    $result = $service->priceFor($product, $user, $overrides);
+    $result = app(CustomerPriceService::class)->priceFor($product, $user);
 
     expect($result['base_price'])->toBe(105.0);
     expect($result['discount_amount'])->toBe(5.0);
     expect($result['final_price'])->toBe(100.0);
     expect($result['tier_name'])->toBe('gold');
-    expect($result['meta']['is_override'])->toBeTrue();
+    expect($result['meta']['uses_user_pricing'])->toBeTrue();
     expect($result['meta']['is_floor_applied'])->toBeTrue();
-    expect($result['meta']['is_below_cost'])->toBeFalse();
 });
 
-test('user product price adjustment follows derived base price changes (entry price updates)', function (): void {
-    $user = User::factory()->create(['loyalty_tier' => LoyaltyTier::Gold]);
-    $user->assignRole('customer');
-    $product = Product::factory()->create(['entry_price' => 100]);
-
-    UserProductPrice::query()->create([
-        'user_id' => $user->id,
-        'product_id' => $product->id,
-        'price' => -5.00,
-        'created_by' => null,
-    ]);
-
-    $service = app(CustomerPriceService::class);
-    $resultBefore = $service->priceFor($product, $user);
-
-    expect($resultBefore['base_price'])->toBe(105.0);
-
-    $product->update(['entry_price' => 150]);
-
-    $resultAfter = app(CustomerPriceService::class)->priceFor($product->refresh(), $user);
-    expect($resultAfter['base_price'])->toBe(160.0);
-    expect($resultAfter['meta']['is_override'])->toBeTrue();
-});
-
-test('user product price above entry is not below cost', function (): void {
+test('user pricing rule uses wholesale when user is salesperson', function (): void {
     $user = User::factory()->create();
-    $user->assignRole('customer');
+    $user->assignRole('salesperson');
     $product = Product::factory()->create(['entry_price' => 100]);
 
-    UserProductPrice::query()->create([
+    UserPricingRule::query()->create([
         'user_id' => $user->id,
-        'product_id' => $product->id,
-        'price' => 150.00,
-        'created_by' => null,
+        'min_price' => 0,
+        'max_price' => 999999.99,
+        'retail_percentage' => 20,
+        'wholesale_percentage' => 3,
+        'priority' => 0,
+        'is_active' => true,
     ]);
 
     $result = app(CustomerPriceService::class)->priceFor($product, $user);
 
-    expect($result['meta']['is_below_cost'])->toBeFalse();
+    expect($result['base_price'])->toBe(103.0);
+    expect($result['meta']['uses_user_pricing'])->toBeTrue();
 });
 
-test('no override falls back to existing customer price logic', function (): void {
+test('no user rule falls back to global pricing rules', function (): void {
     $user = User::factory()->create(['loyalty_tier' => LoyaltyTier::Gold]);
     $user->assignRole('customer');
     $product = Product::factory()->create(['entry_price' => 100]);
@@ -124,13 +103,23 @@ test('no override falls back to existing customer price logic', function (): voi
     expect($result['base_price'])->toBe(110.0);
     expect($result['discount_amount'])->toBe(10.0);
     expect($result['final_price'])->toBe(100.0);
-    expect($result['meta']['is_override'])->toBeFalse();
+    expect($result['meta']['uses_user_pricing'])->toBeFalse();
     expect($result['meta']['is_floor_applied'])->toBeTrue();
 });
 
-test('finalPriceForAmount returns expected structure and pricing values', function (): void {
+test('finalPriceForAmount returns expected structure with user pricing rule', function (): void {
     $user = User::factory()->create(['loyalty_tier' => LoyaltyTier::Gold]);
     $user->assignRole('customer');
+
+    UserPricingRule::query()->create([
+        'user_id' => $user->id,
+        'min_price' => 0,
+        'max_price' => 999999.99,
+        'retail_percentage' => 10,
+        'wholesale_percentage' => 2,
+        'priority' => 0,
+        'is_active' => true,
+    ]);
 
     $product = Product::factory()->create([
         'entry_price' => 0.01,
@@ -147,10 +136,10 @@ test('finalPriceForAmount returns expected structure and pricing values', functi
     expect($result['discount_amount'])->toBe(9.54);
     expect($result['final_price'])->toBe(95.39);
     expect($result['tier_name'])->toBe('gold');
-    expect(data_get($result, 'meta.is_floor_applied'))->toBeTrue();
+    expect(data_get($result, 'meta.uses_user_pricing'))->toBeTrue();
 });
 
-test('order item uses user product price adjustment when creating order', function (): void {
+test('order item uses user pricing rule when creating order', function (): void {
     $user = User::factory()->create();
     $package = Package::factory()->create();
     $product = Product::factory()->create([
@@ -158,11 +147,14 @@ test('order item uses user product price adjustment when creating order', functi
         'entry_price' => 100,
     ]);
 
-    UserProductPrice::query()->create([
+    UserPricingRule::query()->create([
         'user_id' => $user->id,
-        'product_id' => $product->id,
-        'price' => 42.50,
-        'created_by' => null,
+        'min_price' => 0,
+        'max_price' => 999999.99,
+        'retail_percentage' => 50,
+        'wholesale_percentage' => 5,
+        'priority' => 0,
+        'is_active' => true,
     ]);
 
     $order = app(CreateOrderFromCartPayload::class)->handle($user, [
@@ -175,8 +167,8 @@ test('order item uses user product price adjustment when creating order', functi
 
     $item = $order->items->first();
     expect($item)->not->toBeNull();
-    expect((float) $item->unit_price)->toBe(152.5);
-    expect((float) $item->line_total)->toBe(457.5);
+    expect((float) $item->unit_price)->toBe(150.0);
+    expect((float) $item->line_total)->toBe(450.0);
 });
 
 test('sends admin notification when order item price is clamped to entry price floor', function (): void {
@@ -191,11 +183,14 @@ test('sends admin notification when order item price is clamped to entry price f
         'entry_price' => 100,
     ]);
 
-    UserProductPrice::query()->create([
+    UserPricingRule::query()->create([
         'user_id' => $user->id,
-        'product_id' => $product->id,
-        'price' => -5.00,
-        'created_by' => null,
+        'min_price' => 0,
+        'max_price' => 999999.99,
+        'retail_percentage' => 5,
+        'wholesale_percentage' => 1,
+        'priority' => 0,
+        'is_active' => true,
     ]);
 
     app(CreateOrderFromCartPayload::class)->handle($user, [
@@ -213,43 +208,33 @@ test('sends admin notification when order item price is clamped to entry price f
         ->and($notification->type)->toBe(OrderPriceFlooredNotification::class);
 });
 
-test('create duplicate user product price fails validation', function (): void {
-    $admin = User::factory()->create();
-    $admin->givePermissionTo('manage_user_prices');
-
-    $target = User::factory()->create();
-    $product = Product::factory()->create();
-
-    UserProductPrice::query()->create([
-        'user_id' => $target->id,
-        'product_id' => $product->id,
-        'price' => 10.00,
-        'created_by' => $admin->id,
-    ]);
-
-    expect(fn () => app(CreateUserProductPrice::class)->handle($target, [
-        'product_id' => $product->id,
-        'price' => 20.00,
-    ], $admin))->toThrow(ValidationException::class);
-});
-
-test('user product prices modal shows catalog entry retail and wholesale for selected product', function (): void {
+test('user pricing rules livewire can create a rule', function (): void {
     $admin = User::factory()->create();
     $admin->givePermissionTo(['manage_users', 'manage_user_prices']);
 
     $target = User::factory()->create();
-    $product = Product::factory()->create([
-        'entry_price' => 100,
-        'is_active' => true,
-    ]);
-
-    $sym = config('billing.currency_symbol', '$');
 
     Livewire::actingAs($admin)
-        ->test(UserProductPrices::class, ['user' => $target])
+        ->test(UserPricingRules::class, ['user' => $target])
         ->call('openCreate')
-        ->call('selectProduct', $product->id)
-        ->assertSee(__('messages.user_product_price_catalog_context'))
-        ->assertSee($sym.'110.00')
-        ->assertSee($sym.'102.00');
+        ->set('retailPercentage', '8')
+        ->set('wholesalePercentage', '3')
+        ->call('save')
+        ->assertHasNoErrors();
+
+    expect(UserPricingRule::query()->where('user_id', $target->id)->count())->toBe(1);
+});
+
+test('upsert user pricing rule action requires permission', function (): void {
+    $admin = User::factory()->create();
+    $target = User::factory()->create();
+
+    expect(fn () => app(UpsertUserPricingRule::class)->handle($target, null, [
+        'min_price' => 0,
+        'max_price' => 999999.99,
+        'retail_percentage' => 5,
+        'wholesale_percentage' => 2,
+        'priority' => 0,
+        'is_active' => true,
+    ], $admin))->toThrow(\Illuminate\Auth\Access\AuthorizationException::class);
 });

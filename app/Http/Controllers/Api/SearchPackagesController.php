@@ -27,7 +27,6 @@ class SearchPackagesController extends Controller
         $term = trim($validated['q']);
         $placeholderImage = asset('images/icons/category-placeholder.svg');
         $user = $request->user();
-        $overrides = $user !== null ? $priceService->getUserOverridesFor($user) : [];
         $pricesVisible = WebsiteSetting::getPricesVisible();
         $money = FrontendMoney::for($user);
 
@@ -63,7 +62,6 @@ class SearchPackagesController extends Controller
             $placeholderImage,
             $priceService,
             $user,
-            $overrides,
             $pricesVisible,
             $money
         ): array {
@@ -72,7 +70,7 @@ class SearchPackagesController extends Controller
 
             if ($pricesVisible) {
                 foreach ($package->products as $product) {
-                    $prices = $priceService->priceFor($product, $user, $overrides);
+                    $prices = $priceService->priceFor($product, $user);
                     $final = (float) $prices['final_price'];
 
                     if ($fromPrice === null || $final < $fromPrice) {

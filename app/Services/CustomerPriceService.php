@@ -7,96 +7,30 @@ namespace App\Services;
 use App\Models\LoyaltyTierConfig;
 use App\Models\Product;
 use App\Models\User;
-use App\Models\UserProductPrice;
 use InvalidArgumentException;
 
 /**
  * Single source of customer-facing price including loyalty discount.
  * Uses PriceCalculator for base retail/wholesale; salesperson role gets wholesale, others get retail.
- * Applies tier discount on top. Do not modify PriceCalculator or Product accessors.
- *
- * User-specific overrides (user_product_prices) short-circuit before rules and loyalty.
+ * Applies tier discount on top.
  */
 class CustomerPriceService
 {
-    private ?int $overridesMemoUserId = null;
-
-    /** @var array<int, float> */
-    private array $overridesMemo = [];
-
     public function __construct(
         private readonly PriceCalculator $priceCalculator
     ) {}
 
     /**
-     * Map of product_id => override price for the given user (single query).
-     *
-     * @return array<int, float>
-     */
-    public function getUserOverridesFor(User $user): array
-    {
-        if ($this->overridesMemoUserId === $user->id) {
-            return $this->overridesMemo;
-        }
-
-        $this->overridesMemoUserId = $user->id;
-        $this->overridesMemo = UserProductPrice::query()
-            ->where('user_id', $user->id)
-            ->pluck('price', 'product_id')
-            ->mapWithKeys(fn ($price, $id): array => [(int) $id => (float) $price])
-            ->all();
-
-        return $this->overridesMemo;
-    }
-
-    /**
      * Resolve customer price for a product or raw entry price.
      *
-     * @return array{base_price: float, discount_amount: float, final_price: float, tier_name: string|null, meta: array{is_override: bool, is_below_cost?: bool, is_floor_applied?: bool}}
+     * @return array{base_price: float, discount_amount: float, final_price: float, tier_name: string|null, meta: array{uses_user_pricing: bool, is_floor_applied: bool}}
      */
-    public function priceFor(Product|float $productOrEntryPrice, ?User $user = null, ?array $overridesByProductId = null): array
+    public function priceFor(Product|float $productOrEntryPrice, ?User $user = null): array
     {
-        $overrides = $this->resolveOverrides($user, $overridesByProductId);
-
-        if ($user !== null && $productOrEntryPrice instanceof Product) {
-            $productId = $productOrEntryPrice->getKey();
-            if ($productId !== null && isset($overrides[(int) $productId])) {
-                $delta = $this->round((float) $overrides[(int) $productId]);
-                $basePrice = $this->resolveBasePrice($productOrEntryPrice, $user);
-                $adjustedBasePrice = $this->round($basePrice + $delta);
-
-                $tierConfig = $this->tierConfigForUser($user);
-                $discountPercent = $tierConfig !== null ? (float) $tierConfig->discount_percentage : 0.0;
-                $discountAmount = $this->round($adjustedBasePrice * $discountPercent / 100);
-                $finalPrice = $this->round($adjustedBasePrice - $discountAmount);
-                $tierName = $tierConfig?->name;
-
-                $entryPrice = $productOrEntryPrice->entry_price !== null
-                    ? (float) $productOrEntryPrice->entry_price
-                    : null;
-                $isFloorApplied = false;
-                if ($entryPrice !== null && $finalPrice < $entryPrice) {
-                    $finalPrice = $this->round($entryPrice);
-                    $discountAmount = $this->round($adjustedBasePrice - $finalPrice);
-                    $isFloorApplied = true;
-                }
-                $isBelowCost = $entryPrice !== null && $finalPrice < $entryPrice;
-
-                return [
-                    'base_price' => $adjustedBasePrice,
-                    'discount_amount' => $discountAmount,
-                    'final_price' => $finalPrice,
-                    'tier_name' => $tierName,
-                    'meta' => [
-                        'is_override' => true,
-                        'is_below_cost' => $isBelowCost,
-                        'is_floor_applied' => $isFloorApplied,
-                    ],
-                ];
-            }
-        }
-
-        $basePrice = $this->resolveBasePrice($productOrEntryPrice, $user);
+        $prices = $this->resolveRetailAndWholesale($productOrEntryPrice, $user);
+        $useWholesale = $user !== null && $user->hasRole('salesperson');
+        $basePrice = $useWholesale ? $prices['wholesale_price'] : $prices['retail_price'];
+        $usesUserPricing = $prices['uses_user_pricing'];
         $tierConfig = $user !== null ? $this->tierConfigForUser($user) : null;
         $discountPercent = $tierConfig !== null ? (float) $tierConfig->discount_percentage : 0.0;
         $discountAmount = $this->round($basePrice * $discountPercent / 100);
@@ -116,7 +50,7 @@ class CustomerPriceService
             'final_price' => $finalPrice,
             'tier_name' => $tierName,
             'meta' => [
-                'is_override' => false,
+                'uses_user_pricing' => $usesUserPricing,
                 'is_floor_applied' => $isFloorApplied,
             ],
         ];
@@ -125,26 +59,20 @@ class CustomerPriceService
     /**
      * Final price only (for order creation and simple display).
      */
-    public function finalPrice(Product|float $productOrEntryPrice, ?User $user = null, ?array $overridesByProductId = null): float
+    public function finalPrice(Product|float $productOrEntryPrice, ?User $user = null): float
     {
-        return $this->priceFor($productOrEntryPrice, $user, $overridesByProductId)['final_price'];
+        return $this->priceFor($productOrEntryPrice, $user)['final_price'];
     }
 
     /**
-     * Resolve customer price for amount-based products.
-     * Uses BCMath for entry total multiplication and preserves normal pricing pipeline.
-     *
-     * @return array{base_price: float, discount_amount: float, final_price: float, tier_name: string|null, meta: array{is_override: bool, is_below_cost?: bool, is_floor_applied?: bool}}
+     * @return array{base_price: float, discount_amount: float, final_price: float, tier_name: string|null, meta: array{uses_user_pricing: bool, is_floor_applied: bool}}
      */
-    public function finalPriceForAmount(Product $product, int $amount, User $user, ?array $overridesByProductId = null): array
+    public function finalPriceForAmount(Product $product, int $amount, User $user): array
     {
-        return $this->priceForComputedTotal($product, $amount, $user, $overridesByProductId);
+        return $this->priceForComputedTotal($product, $amount, $user);
     }
 
     /**
-     * Resolve customer price for fixed-quantity products.
-     * Pricing rules apply on total base (entry_price * quantity).
-     *
      * @return array{
      *   base_price: float,
      *   discount_amount: float,
@@ -152,16 +80,16 @@ class CustomerPriceService
      *   final_total: float,
      *   unit_price: float,
      *   tier_name: string|null,
-     *   meta: array{is_override: bool, is_below_cost?: bool, is_floor_applied?: bool}
+     *   meta: array{uses_user_pricing: bool, is_floor_applied: bool}
      * }
      */
-    public function finalPriceForQuantity(Product $product, int $quantity, User $user, ?array $overridesByProductId = null): array
+    public function finalPriceForQuantity(Product $product, int $quantity, User $user): array
     {
         if ($quantity <= 0) {
             throw new InvalidArgumentException('Quantity must be greater than zero.');
         }
 
-        $prices = $this->priceForComputedTotal($product, $quantity, $user, $overridesByProductId);
+        $prices = $this->priceForComputedTotal($product, $quantity, $user);
         $finalTotal = (float) $prices['final_price'];
 
         return [
@@ -172,9 +100,9 @@ class CustomerPriceService
     }
 
     /**
-     * @return array{base_price: float, discount_amount: float, final_price: float, tier_name: string|null, meta: array{is_override: bool, is_below_cost?: bool, is_floor_applied?: bool}}
+     * @return array{base_price: float, discount_amount: float, final_price: float, tier_name: string|null, meta: array{uses_user_pricing: bool, is_floor_applied: bool}}
      */
-    private function priceForComputedTotal(Product $product, int $multiplier, User $user, ?array $overridesByProductId = null): array
+    private function priceForComputedTotal(Product $product, int $multiplier, User $user): array
     {
         $entryPrice = $product->entry_price !== null
             ? (float) $product->entry_price
@@ -188,40 +116,30 @@ class CustomerPriceService
         $pricingProduct = clone $product;
         $pricingProduct->setAttribute('entry_price', $computedEntryTotal);
 
-        return $this->priceFor($pricingProduct, $user, $overridesByProductId);
+        return $this->priceFor($pricingProduct, $user);
     }
 
     /**
-     * Base price before loyalty discount: wholesale for salesperson role, retail otherwise.
+     * @return array{retail_price: float, wholesale_price: float, uses_user_pricing: bool}
      */
-    private function resolveBasePrice(Product|float $productOrEntryPrice, ?User $user = null): float
-    {
-        $useWholesale = $user !== null && $user->hasRole('salesperson');
-        $prices = $this->resolveRetailAndWholesale($productOrEntryPrice);
-
-        return $useWholesale ? $prices['wholesale_price'] : $prices['retail_price'];
-    }
-
-    /**
-     * @return array{retail_price: float, wholesale_price: float}
-     */
-    private function resolveRetailAndWholesale(Product|float $productOrEntryPrice): array
+    private function resolveRetailAndWholesale(Product|float $productOrEntryPrice, ?User $user = null): array
     {
         if ($productOrEntryPrice instanceof Product) {
             $entryPrice = $productOrEntryPrice->entry_price !== null
                 ? (float) $productOrEntryPrice->entry_price
                 : null;
             if ($entryPrice !== null) {
-                return $this->priceCalculator->calculate($entryPrice);
+                return $this->priceCalculator->calculate($entryPrice, 2, $user);
             }
 
             return [
                 'retail_price' => (float) $productOrEntryPrice->retail_price,
                 'wholesale_price' => (float) $productOrEntryPrice->wholesale_price,
+                'uses_user_pricing' => false,
             ];
         }
 
-        return $this->priceCalculator->calculate((float) $productOrEntryPrice);
+        return $this->priceCalculator->calculate((float) $productOrEntryPrice, 2, $user);
     }
 
     private function tierConfigForUser(User $user): ?LoyaltyTierConfig
@@ -254,22 +172,5 @@ class CustomerPriceService
         $computed = bcdiv($totalAsDecimal, (string) $quantity, 8);
 
         return (float) $computed;
-    }
-
-    /**
-     * @param  array<int, float>|null  $overridesByProductId
-     * @return array<int, float>
-     */
-    private function resolveOverrides(?User $user, ?array $overridesByProductId): array
-    {
-        if ($user === null) {
-            return [];
-        }
-
-        if ($overridesByProductId !== null) {
-            return $overridesByProductId;
-        }
-
-        return $this->getUserOverridesFor($user);
     }
 }

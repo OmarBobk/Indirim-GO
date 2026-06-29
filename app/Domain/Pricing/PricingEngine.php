@@ -19,11 +19,10 @@ final class PricingEngine
     public function quote(Product $product, int $quantity = 1, ?int $amount = null, ?User $user = null): PriceQuoteDTO
     {
         $amountMode = $product->amount_mode ?? ProductAmountMode::Fixed;
-        $overrides = $user !== null ? $this->priceService->getUserOverridesFor($user) : [];
 
         if ($amountMode === ProductAmountMode::Custom) {
             $requestedAmount = $this->customAmountValidator->validate($product, $amount);
-            $prices = $this->quoteCustom($product, $requestedAmount, $user, $overrides);
+            $prices = $this->quoteCustom($product, $requestedAmount, $user);
             $final = (float) $prices['final_price'];
 
             return new PriceQuoteDTO(
@@ -44,7 +43,7 @@ final class PricingEngine
 
         $normalizedQuantity = max(1, $quantity);
         $prices = $user !== null
-            ? $this->priceService->finalPriceForQuantity($product, $normalizedQuantity, $user, $overrides)
+            ? $this->priceService->finalPriceForQuantity($product, $normalizedQuantity, $user)
             : $this->quoteFixedGuest($product, $normalizedQuantity);
 
         return new PriceQuoteDTO(
@@ -62,13 +61,12 @@ final class PricingEngine
     }
 
     /**
-     * @param  array<int, float>  $overrides
      * @return array<string, mixed>
      */
-    private function quoteCustom(Product $product, int $amount, ?User $user, array $overrides): array
+    private function quoteCustom(Product $product, int $amount, ?User $user): array
     {
         if ($user !== null) {
-            return $this->priceService->finalPriceForAmount($product, $amount, $user, $overrides);
+            return $this->priceService->finalPriceForAmount($product, $amount, $user);
         }
 
         $entryPrice = (float) $product->entry_price;
@@ -80,7 +78,7 @@ final class PricingEngine
         $pricingProduct = clone $product;
         $pricingProduct->setAttribute('entry_price', $computedEntryTotal);
 
-        return $this->priceService->priceFor($pricingProduct, null, []);
+        return $this->priceService->priceFor($pricingProduct, null);
     }
 
     /**
@@ -91,7 +89,7 @@ final class PricingEngine
         $entryPrice = $product->entry_price !== null ? (float) $product->entry_price : null;
 
         if ($entryPrice === null || $entryPrice <= 0) {
-            $unit = $this->priceService->priceFor($product, null, []);
+            $unit = $this->priceService->priceFor($product, null);
 
             return [
                 ...$unit,
@@ -107,7 +105,7 @@ final class PricingEngine
         );
         $pricingProduct = clone $product;
         $pricingProduct->setAttribute('entry_price', $computedEntryTotal);
-        $line = $this->priceService->priceFor($pricingProduct, null, []);
+        $line = $this->priceService->priceFor($pricingProduct, null);
 
         return [
             ...$line,

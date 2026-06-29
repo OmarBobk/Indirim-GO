@@ -186,13 +186,13 @@ class User extends Authenticatable implements HasLocalePreference
     }
 
     /**
-     * Admin-defined custom prices for this user (per product).
+     * Admin-defined pricing rules for this user (retail + wholesale markups).
      *
-     * @return HasMany<UserProductPrice, $this>
+     * @return HasMany<UserPricingRule, $this>
      */
-    public function userProductPrices(): HasMany
+    public function userPricingRules(): HasMany
     {
-        return $this->hasMany(UserProductPrice::class);
+        return $this->hasMany(UserPricingRule::class);
     }
 
     /**

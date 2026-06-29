@@ -8,7 +8,7 @@ use App\Models\LoyaltyTierConfig;
 use App\Models\PricingRule;
 use App\Models\Product;
 use App\Models\User;
-use App\Models\UserProductPrice;
+use App\Models\UserPricingRule;
 
 /**
  * Snapshot of pricing rules + user flags for instant buy-now estimates in Alpine.
@@ -22,15 +22,28 @@ final class BuyNowClientPricingContext
      *   entry_price_per_unit: float|null,
      *   rules: list<array{min: float, max: float, retail_pct: float, wholesale_pct: float}>,
      *   use_wholesale: bool,
-     *   loyalty_discount_percent: float
+     *   loyalty_discount_percent: float,
+     *   uses_user_pricing: bool
      * }
      */
     public static function build(User $user, Product $product): array
     {
-        $rules = PricingRule::query()
+        $userRules = UserPricingRule::query()
+            ->where('user_id', $user->id)
             ->where('is_active', true)
             ->orderBy('priority')
-            ->get(['min_price', 'max_price', 'retail_percentage', 'wholesale_percentage'])
+            ->get(['min_price', 'max_price', 'retail_percentage', 'wholesale_percentage']);
+
+        $usesUserPricing = $userRules->isNotEmpty();
+
+        $sourceRules = $usesUserPricing
+            ? $userRules
+            : PricingRule::query()
+                ->where('is_active', true)
+                ->orderBy('priority')
+                ->get(['min_price', 'max_price', 'retail_percentage', 'wholesale_percentage']);
+
+        $rules = $sourceRules
             ->map(fn ($r): array => [
                 'min' => (float) $r->min_price,
                 'max' => (float) $r->max_price,
@@ -39,14 +52,6 @@ final class BuyNowClientPricingContext
             ])
             ->values()
             ->all();
-
-        $hasOverride = false;
-        if ($product->getKey() !== null) {
-            $hasOverride = UserProductPrice::query()
-                ->where('user_id', $user->id)
-                ->where('product_id', (int) $product->getKey())
-                ->exists();
-        }
 
         $loyaltyDiscount = 0.0;
         $role = $user->loyaltyRole();
@@ -59,8 +64,7 @@ final class BuyNowClientPricingContext
         }
 
         $entry = $product->entry_price !== null ? (float) $product->entry_price : null;
-        $clientPricable = ! $hasOverride
-            && $entry !== null
+        $clientPricable = $entry !== null
             && $entry > 0
             && $rules !== [];
 
@@ -70,6 +74,7 @@ final class BuyNowClientPricingContext
             'rules' => $rules,
             'use_wholesale' => $user->hasRole('salesperson'),
             'loyalty_discount_percent' => $loyaltyDiscount,
+            'uses_user_pricing' => $usesUserPricing,
         ];
     }
 
