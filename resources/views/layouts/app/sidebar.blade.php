@@ -199,12 +199,6 @@
             <flux:spacer />
 
             <flux:sidebar.nav>
-                @can('view_dashboard')
-                <flux:sidebar.item icon="folder-git-2" href="https://github.com/laravel/livewire-starter-kit" target="_blank">
-                    {{ __('messages.repository') }}
-                </flux:sidebar.item>
-                @endcan
-
                 <flux:sidebar.item icon="book-open-text" href="{{route('home')}}" target="_blank">
                     {{ __('messages.homepage') }}
                 </flux:sidebar.item>

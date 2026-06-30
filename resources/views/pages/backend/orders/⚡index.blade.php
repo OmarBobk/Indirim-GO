@@ -6,6 +6,7 @@ use App\Enums\OrderStatus;
 use App\Models\Order;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\View\View;
+use Livewire\Attributes\Url;
 use Livewire\Component;
 use Livewire\WithPagination;
 
@@ -13,8 +14,11 @@ new class extends Component
 {
     use WithPagination;
 
+    #[Url]
     public string $search = '';
+    #[Url]
     public string $statusFilter = 'all';
+    #[Url]
     public string $fulfillmentFilter = 'all';
     public ?string $dateFrom = null;
     public ?string $dateTo = null;

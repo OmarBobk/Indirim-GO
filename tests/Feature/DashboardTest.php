@@ -59,6 +59,5 @@ test('salesperson sidebar hides admin-only navigation sections', function () {
         ->assertSuccessful()
         ->assertDontSee(__('messages.nav_audit_monitoring'), false)
         ->assertDontSee(__('messages.nav_website_settings'), false)
-        ->assertDontSee(__('messages.repository'), false)
         ->assertDontSee(__('messages.settings'), false);
 });

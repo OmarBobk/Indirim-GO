@@ -1,8 +1,10 @@
 <?php
 
 use App\Actions\Refunds\ApproveRefundRequest;
+use App\Actions\Refunds\DismissStaleRefundRequest;
 use App\Actions\Refunds\GetRefundRequests;
 use App\Actions\Refunds\RejectRefundRequest;
+use App\Enums\FulfillmentStatus;
 use App\Enums\OrderStatus;
 use App\Models\Fulfillment;
 use App\Models\OrderItem;
@@ -50,6 +52,18 @@ new class extends Component
         $this->noticeVariant = 'danger';
         $this->noticeMessage = __('messages.refund_rejected');
         $this->error(__('messages.refund_rejected'));
+    }
+
+    public function dismissStaleRefund(int $transactionId): void
+    {
+        abort_unless(auth()->user()?->can('process_refunds'), 403);
+        $this->reset('noticeMessage', 'noticeVariant');
+
+        app(DismissStaleRefundRequest::class)->handle($transactionId, auth()->id());
+
+        $this->noticeVariant = 'success';
+        $this->noticeMessage = __('messages.refund_dismissed_stale');
+        $this->success(__('messages.refund_dismissed_stale'));
     }
 
     public function getRefundRequestsProperty(): LengthAwarePaginator
@@ -134,7 +148,9 @@ new class extends Component
                                     $note = data_get($transaction->meta, 'note');
                                     $isPendingRefund = $transaction->status === WalletTransaction::STATUS_PENDING;
                                     $isRefunded = $order?->status === OrderStatus::Refunded;
-                                    $canApprove = $isPendingRefund && ! $isRefunded;
+                                    $fulfillmentFailed = $displayFulfillment?->status === FulfillmentStatus::Failed;
+                                    $isStaleRefund = $isPendingRefund && $displayFulfillment !== null && ! $fulfillmentFailed;
+                                    $canApprove = $isPendingRefund && $fulfillmentFailed && ! $isRefunded;
                                     $statusColor = match ($transaction->status) {
                                         WalletTransaction::STATUS_POSTED => 'green',
                                         WalletTransaction::STATUS_REJECTED => 'red',
@@ -191,23 +207,37 @@ new class extends Component
                                             @endif
                                             @can('process_refunds')
                                                 @if ($isPendingRefund)
-                                                    @if ($canApprove)
+                                                    @if ($isStaleRefund)
+                                                        <flux:callout variant="subtle" icon="information-circle" class="text-start">
+                                                            {{ __('messages.refund_stale_hint') }}
+                                                        </flux:callout>
                                                         <flux:button
                                                             size="sm"
-                                                            variant="primary"
-                                                            class="!bg-[var(--cf-primary)] !text-[var(--cf-primary-foreground)] transition-colors duration-200 hover:brightness-110"
-                                                            wire:click="approveRefund({{ $transaction->id }})"
+                                                            variant="ghost"
+                                                            wire:click="dismissStaleRefund({{ $transaction->id }})"
+                                                            data-test="dismiss-stale-refund-{{ $transaction->id }}"
                                                         >
-                                                            {{ __('messages.approve') }}
+                                                            {{ __('messages.refund_dismiss_stale') }}
+                                                        </flux:button>
+                                                    @else
+                                                        @if ($canApprove)
+                                                            <flux:button
+                                                                size="sm"
+                                                                variant="primary"
+                                                                class="!bg-[var(--cf-primary)] !text-[var(--cf-primary-foreground)] transition-colors duration-200 hover:brightness-110"
+                                                                wire:click="approveRefund({{ $transaction->id }})"
+                                                            >
+                                                                {{ __('messages.approve') }}
+                                                            </flux:button>
+                                                        @endif
+                                                        <flux:button
+                                                            size="sm"
+                                                            variant="danger"
+                                                            wire:click="rejectRefund({{ $transaction->id }})"
+                                                        >
+                                                            {{ __('messages.reject') }}
                                                         </flux:button>
                                                     @endif
-                                                    <flux:button
-                                                        size="sm"
-                                                        variant="danger"
-                                                        wire:click="rejectRefund({{ $transaction->id }})"
-                                                    >
-                                                        {{ __('messages.reject') }}
-                                                    </flux:button>
                                                 @endif
                                             @elseif ($fulfillmentIdForLink === null)
                                                 <span class="text-[var(--cf-muted-foreground)]">—</span>

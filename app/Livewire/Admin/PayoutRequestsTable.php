@@ -10,6 +10,7 @@ use App\Models\PayoutRequest;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Contracts\View\View;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\Url;
 use Livewire\Component;
 use Livewire\WithPagination;
 use Masmerise\Toaster\Toastable;
@@ -21,6 +22,7 @@ final class PayoutRequestsTable extends Component
     use WithPagination;
 
     /** pending | all — default shows pending and processed together */
+    #[Url]
     public string $statusFilter = 'all';
 
     public function mount(): void

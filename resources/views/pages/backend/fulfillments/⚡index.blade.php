@@ -753,6 +753,22 @@ new class extends Component
         return $this->activeClaimedCount < 5;
     }
 
+    public function getCompleteModalPendingRefundProperty(): bool
+    {
+        $fulfillment = $this->selectedFulfillment;
+
+        if ($fulfillment === null) {
+            return false;
+        }
+
+        return WalletTransaction::query()
+            ->where('reference_type', Fulfillment::class)
+            ->where('reference_id', $fulfillment->id)
+            ->where('type', WalletTransactionType::Refund)
+            ->where('status', WalletTransaction::STATUS_PENDING)
+            ->exists();
+    }
+
     public function getSelectedFulfillmentProperty(): ?Fulfillment
     {
         if ($this->selectedFulfillmentId === null) {
@@ -1805,6 +1821,12 @@ new class extends Component
                     {{ __('messages.fulfillment_payload_hint') }}
                 </flux:text>
             </div>
+
+            @if ($this->completeModalPendingRefund)
+                <flux:callout variant="subtle" icon="exclamation-triangle" data-test="complete-modal-pending-refund-warning">
+                    {{ __('messages.fulfillment_complete_pending_refund_warning') }}
+                </flux:callout>
+            @endif
 
         <div
             x-data="{ autoDonePayloadUi: false, deliveredPayload: @entangle('deliveredPayloadInput').defer }"

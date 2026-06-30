@@ -40,6 +40,6 @@ Broadcast::channel('admin.automation', function ($user) {
     return $user !== null && $user->hasRole('admin');
 });
 
-Broadcast::channel('admin.automation', function ($user) {
-    return $user !== null && $user->hasRole('admin');
+Broadcast::channel('admin.ops-dashboard', function ($user) {
+    return $user !== null && $user->can('view_dashboard');
 });

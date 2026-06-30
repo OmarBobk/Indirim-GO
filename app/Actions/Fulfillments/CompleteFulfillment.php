@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Fulfillments;
 
+use App\Actions\Refunds\DismissPendingRefundForFulfillment;
 use App\Enums\FulfillmentLogLevel;
 use App\Enums\FulfillmentStatus;
 use App\Events\FulfillmentListChanged;
@@ -59,6 +60,11 @@ class CompleteFulfillment
                 ->lockForUpdate()
                 ->get();
             $orderItem->syncStatusFromFulfillments($fulfillments);
+
+            app(DismissPendingRefundForFulfillment::class)->handle(
+                $lockedFulfillment,
+                $actorId,
+            );
 
             app(AppendFulfillmentLog::class)->handle(
                 $lockedFulfillment,

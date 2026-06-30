@@ -17,6 +17,7 @@
     window.Laravel = window.Laravel || {};
     window.Laravel.userId = {{ auth()->id() }};
     window.Laravel.isAdmin = @json(auth()->user()?->hasRole('admin'));
+    window.Laravel.canViewDashboard = @json(auth()->user()?->can('view_dashboard'));
     window.Laravel.canViewFulfillments = @json(auth()->user()?->can('view_fulfillments'));
     window.Laravel.canManageBugs = @json(auth()->user()?->can('manage_bugs'));
 </script>

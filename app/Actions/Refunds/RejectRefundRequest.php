@@ -14,6 +14,7 @@ use App\Models\User;
 use App\Models\WalletTransaction;
 use App\Notifications\RefundRejectedNotification;
 use App\Services\SystemEventService;
+use App\Support\AdminOpsBroadcaster;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -156,6 +157,8 @@ class RejectRefundRequest
                     $owner->notify(RefundRejectedNotification::fromRefundTransaction($tx));
                 }
             });
+
+            AdminOpsBroadcaster::dispatch('refund-rejected');
 
             return $transaction;
         });

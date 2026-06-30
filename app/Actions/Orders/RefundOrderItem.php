@@ -19,6 +19,7 @@ use App\Models\WalletTransaction;
 use App\Notifications\RefundRequestedNotification;
 use App\Services\NotificationRecipientService;
 use App\Services\SystemEventService;
+use App\Support\AdminOpsBroadcaster;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -197,6 +198,8 @@ class RefundOrderItem
                 $notification = RefundRequestedNotification::fromRefundTransaction($tx);
                 app(NotificationRecipientService::class)->adminUsers()->each(fn ($admin) => $admin->notify($notification));
             });
+
+            AdminOpsBroadcaster::dispatch('refund-requested');
 
             return $transaction;
         });
