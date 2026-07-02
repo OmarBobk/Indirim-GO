@@ -33,15 +33,9 @@ class GetAdminSidebarCounts
      */
     public function totalExceptionsForVariant(array $counts, AdminDashboardVariant $variant): int
     {
-        $allowed = $variant->visibleExceptionKeys();
+        $keys = GetAdminExceptionCounts::actionableKeysForVisible($variant->visibleExceptionKeys());
 
-        if ($allowed === null) {
-            return (int) collect($counts)
-                ->except('orders_with_failures')
-                ->sum();
-        }
-
-        return (int) collect($counts)->only($allowed)->sum();
+        return (int) collect($counts)->only($keys)->sum();
     }
 
     public function metric(User $user, string $key): int

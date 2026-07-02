@@ -21,6 +21,33 @@ use App\Models\WalletTransaction;
 class GetAdminExceptionCounts
 {
     /**
+     * Queues that need a decision now — drive sidebar badges and "all clear".
+     *
+     * @var list<string>
+     */
+    public const ACTIONABLE_KEYS = [
+        'pending_refunds',
+        'pending_topups',
+        'fulfillment_queue',
+        'automation_needs_review',
+        'pending_payouts',
+        'open_bugs',
+    ];
+
+    /**
+     * @param  list<string>  $visibleKeys
+     * @return list<string>
+     */
+    public static function actionableKeysForVisible(?array $visibleKeys): array
+    {
+        if ($visibleKeys === null) {
+            return self::ACTIONABLE_KEYS;
+        }
+
+        return array_values(array_intersect($visibleKeys, self::ACTIONABLE_KEYS));
+    }
+
+    /**
      * Permission-scoped exception counts keyed for dashboard cards and sidebar badges.
      *
      * @return array{

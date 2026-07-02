@@ -238,9 +238,27 @@ test('get admin ops inbox reports all clear when no exceptions', function () {
     $inbox = app(GetAdminOpsInbox::class)->handle($admin);
 
     expect($inbox['all_clear'])->toBeTrue()
+        ->and($inbox['actionable_exception_total'])->toBe(0)
         ->and(collect($inbox['exception_cards'])->every(fn (array $card): bool => $card['count'] === 0))->toBeTrue()
         ->and($inbox['recent_pending_refunds'])->toBe([])
         ->and($inbox['recent_attention_orders'])->toBe([]);
+});
+
+test('failed fulfillments alone do not count as actionable exceptions', function () {
+    $admin = createAdminWithDashboardAccess();
+    makeAdminOpsFixture();
+
+    $inbox = app(GetAdminOpsInbox::class)->handle($admin);
+    $failedCard = collect($inbox['exception_cards'])->firstWhere('key', 'failed_fulfillments');
+
+    expect($failedCard['count'])->toBe(1)
+        ->and($inbox['actionable_exception_total'])->toBe(0)
+        ->and($inbox['all_clear'])->toBeTrue();
+
+    $sidebarCounts = app(\App\Actions\Dashboard\GetAdminSidebarCounts::class)->handle($admin);
+
+    expect($sidebarCounts['total_exceptions'])->toBe(0)
+        ->and($sidebarCounts['failed_fulfillments'])->toBe(1);
 });
 
 test('pending refund appears in recent table with wallet owner name', function () {

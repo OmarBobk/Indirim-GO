@@ -6,9 +6,9 @@
 @if ($count > 0)
     <span
         @class([
-            'inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1 text-[11px] font-semibold text-white',
-            'bg-amber-500' => $tone === 'amber',
-            'bg-red-500' => $tone === 'red',
+            'inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-bold tabular-nums text-white shadow-sm ring-1 ring-black/10',
+            'bg-amber-500 ring-amber-300/30' => $tone === 'amber',
+            'bg-red-500 ring-red-300/30' => $tone === 'red',
         ])
         data-test="sidebar-count-badge"
     >

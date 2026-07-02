@@ -89,8 +89,14 @@ new class extends Component
 };
 ?>
 
-<div class="flex flex-col gap-8">
-    <div class="flex flex-wrap items-center justify-end gap-2">
+<div class="admin-fulfillments flex min-h-full flex-1 flex-col gap-6">
+    <div class="cf-ops-toolbar cf-reveal flex flex-wrap items-center justify-between gap-3">
+        <div class="flex items-center gap-2.5">
+            <span class="cf-live-dot" aria-hidden="true"></span>
+            <flux:text class="text-xs font-semibold tracking-wide text-[var(--cf-muted-foreground)] uppercase">
+                {{ __('messages.admin_ops_live_sync') }}
+            </flux:text>
+        </div>
         <flux:button
             size="sm"
             variant="ghost"
@@ -99,8 +105,10 @@ new class extends Component
             wire:loading.attr="disabled"
             wire:target="refreshDashboard"
             data-test="refresh-dashboard"
+            class="transition-opacity"
         >
-            {{ __('messages.admin_ops_refresh') }}
+            <span wire:loading.remove wire:target="refreshDashboard">{{ __('messages.admin_ops_refresh') }}</span>
+            <span wire:loading wire:target="refreshDashboard">{{ __('messages.admin_ops_refreshing') }}</span>
         </flux:button>
     </div>
 

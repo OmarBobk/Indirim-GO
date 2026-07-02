@@ -29,6 +29,7 @@ class GetAdminOpsInbox
         private ResolveAdminDashboardVariant $resolveVariant,
         private FormatOpsQueueAge $formatQueueAge,
         private GetAdminExceptionCounts $exceptionCounts,
+        private GetAdminSidebarCounts $sidebarCounts,
     ) {}
 
     /**
@@ -43,6 +44,7 @@ class GetAdminOpsInbox
      *     recent_failed_fulfillments: list<array{id: int, order_number: ?string, product_name: string, last_error: ?string, href: string}>,
      *     recent_attention_orders: list<array{id: int, order_number: string, user_name: string, status: string, failed_count: int, created_at: ?string, href: string}>,
      *     recent_orders: list<array{id: int, order_number: string, user_name: string, status: string, total: float, created_at: ?string, href: string}>,
+     *     actionable_exception_total: int,
      *     all_clear: bool
      * }
      */
@@ -50,7 +52,10 @@ class GetAdminOpsInbox
     {
         $variant = $this->resolveVariant->handle($user);
         $exceptionCards = $this->filterCardsForVariant($this->exceptionCards($user), $variant);
-        $totalExceptions = collect($exceptionCards)->sum('count');
+        $actionableTotal = $this->sidebarCounts->totalExceptionsForVariant(
+            $this->exceptionCounts->handle($user),
+            $variant,
+        );
 
         $showQueueHealth = in_array($variant, [AdminDashboardVariant::Full, AdminDashboardVariant::Fulfillment], true)
             && $user->can('view_fulfillments');
@@ -68,7 +73,8 @@ class GetAdminOpsInbox
             'recent_failed_fulfillments' => $this->shouldLoadFailedFulfillments($variant, $user) ? $this->recentFailedFulfillments() : [],
             'recent_attention_orders' => $this->shouldLoadAttentionOrders($variant, $user) ? $this->recentAttentionOrders() : [],
             'recent_orders' => $this->shouldLoadRecentOrders($variant, $user) ? $this->recentOrders() : [],
-            'all_clear' => $totalExceptions === 0,
+            'actionable_exception_total' => $actionableTotal,
+            'all_clear' => $actionableTotal === 0,
         ];
     }
 
