@@ -4,13 +4,7 @@ declare(strict_types=1);
 
 namespace App\Livewire\Sidebar;
 
-use App\Enums\FulfillmentStatus;
-use App\Enums\TopupRequestStatus;
-use App\Enums\WalletTransactionType;
-use App\Models\Bug;
-use App\Models\Fulfillment;
-use App\Models\TopupRequest;
-use App\Models\WalletTransaction;
+use App\Actions\Dashboard\GetAdminSidebarCounts;
 use Livewire\Attributes\On;
 use Livewire\Component;
 
@@ -23,6 +17,7 @@ class SidebarToggleBadge extends Component
         $this->refreshBadge();
     }
 
+    #[On('admin-ops-inbox-updated')]
     #[On('fulfillment-list-updated')]
     #[On('topup-list-updated')]
     #[On('bug-inbox-updated')]
@@ -36,32 +31,14 @@ class SidebarToggleBadge extends Component
         }
 
         $user = auth()->user();
-        $operationsBadge = false;
+        abort_unless($user !== null, 403);
 
-        if ($user->can('view_fulfillments')) {
-            $operationsBadge = Fulfillment::query()
-                ->whereIn('status', [FulfillmentStatus::Queued, FulfillmentStatus::Processing])
-                ->exists();
-        }
-
-        if (! $operationsBadge && $user->can('view_refunds')) {
-            $operationsBadge = WalletTransaction::query()
-                ->where('type', WalletTransactionType::Refund)
-                ->where('status', WalletTransaction::STATUS_PENDING)
-                ->exists();
-        }
-
-        $financialsBadge = $user->can('manage_topups')
-            && TopupRequest::query()
-                ->where('status', TopupRequestStatus::Pending)
-                ->exists();
-
-        $bugsBadge = $user->can('manage_bugs')
-            && Bug::query()->openOrInProgress()->exists();
+        $opsAttention = $user->can('view_dashboard')
+            && app(GetAdminSidebarCounts::class)->handle($user)['total_exceptions'] > 0;
 
         $notificationsBadge = $user->unreadNotifications()->exists();
 
-        $this->hasBadge = $operationsBadge || $financialsBadge || $bugsBadge || $notificationsBadge;
+        $this->hasBadge = $opsAttention || $notificationsBadge;
     }
 
     public function render()

@@ -1,15 +1,7 @@
 @php
-    $pendingRefundsCount = 0;
     $dashboardHref = auth()->user()?->can('view_dashboard')
         ? route('dashboard')
         : (auth()->user()?->can('view_referrals') ? route('salesperson.dashboard') : route('home'));
-    if (auth()->check() && auth()->user()?->can('view_refunds')) {
-        $pendingRefundsCount = \App\Models\WalletTransaction::query()
-            ->where('type', \App\Enums\WalletTransactionType::Refund)
-            ->where('status', \App\Models\WalletTransaction::STATUS_PENDING)
-            ->count();
-    }
-
 @endphp
 <!DOCTYPE html>
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}" dir="{{ app()->getLocale() === 'ar' ? 'rtl' : 'ltr' }}" class="dark">
@@ -30,7 +22,10 @@
                     <flux:sidebar.group :heading="__('messages.nav_overview')" class="grid">
                         @can('view_dashboard')
                             <flux:sidebar.item icon="home" :href="route('dashboard')" :current="request()->routeIs('dashboard')" wire:navigate>
-                                {{ __('messages.dashboard') }}
+                                <span class="flex items-center gap-2">
+                                    {{ __('messages.dashboard') }}
+                                    <livewire:sidebar.dashboard-ops-indicator :key="'sidebar-dashboard-ops-indicator'" />
+                                </span>
                             </flux:sidebar.item>
                         @endcan
                         @can('view_referrals')
@@ -98,7 +93,10 @@
                     @endcan
                     @role('admin')
                     <flux:sidebar.item icon="cpu-chip" :href="route('admin.automation.index')" :current="request()->routeIs('admin.automation.*')" wire:navigate>
-                        {{ __('messages.automation_admin') }}
+                        <span class="flex items-center gap-2">
+                            {{ __('messages.automation_admin') }}
+                            <livewire:sidebar.automation-review-indicator :key="'sidebar-automation-review-indicator'" />
+                        </span>
                     </flux:sidebar.item>
                     <flux:sidebar.item icon="chat-bubble-left-right" :href="route('admin.assistant.index')" :current="request()->routeIs('admin.assistant.*')" wire:navigate>
                         {{ __('messages.assistant_page_title') }}
@@ -113,9 +111,7 @@
                     <flux:sidebar.item icon="receipt-refund" :href="route('refunds')" :current="request()->routeIs('refunds')" wire:navigate>
                         <span class="flex items-center gap-2">
                             {{ __('messages.refund_requests') }}
-                            @if ($pendingRefundsCount > 0)
-                                <span class="size-2 shrink-0 rounded-full bg-red-500" aria-hidden="true"></span>
-                            @endif
+                            <livewire:sidebar.refund-indicator :key="'sidebar-refund-indicator'" />
                         </span>
                     </flux:sidebar.item>
                     @endcan
@@ -148,7 +144,10 @@
                             {{ __('messages.commissions') }}
                         </flux:sidebar.item>
                         <flux:sidebar.item icon="inbox-arrow-down" :href="route('admin.payout-requests')" :current="request()->routeIs('admin.payout-requests')" wire:navigate>
-                            {{ __('messages.payout_requests') }}
+                            <span class="flex items-center gap-2">
+                                {{ __('messages.payout_requests') }}
+                                <livewire:sidebar.payout-indicator :key="'sidebar-payout-indicator'" />
+                            </span>
                         </flux:sidebar.item>
                         @endcan
                     </livewire:sidebar.financials-group>

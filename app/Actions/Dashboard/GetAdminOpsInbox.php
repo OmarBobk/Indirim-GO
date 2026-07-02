@@ -28,6 +28,7 @@ class GetAdminOpsInbox
         private CachedFulfillmentAnalyticsProvider $analytics,
         private ResolveAdminDashboardVariant $resolveVariant,
         private FormatOpsQueueAge $formatQueueAge,
+        private GetAdminExceptionCounts $exceptionCounts,
     ) {}
 
     /**
@@ -114,12 +115,7 @@ class GetAdminOpsInbox
      */
     private function filterCardsForVariant(array $cards, AdminDashboardVariant $variant): array
     {
-        $allowed = match ($variant) {
-            AdminDashboardVariant::Finance => ['pending_refunds', 'pending_topups', 'pending_payouts'],
-            AdminDashboardVariant::Fulfillment => ['fulfillment_queue', 'failed_fulfillments', 'automation_needs_review'],
-            AdminDashboardVariant::Orders => ['orders_with_failures'],
-            AdminDashboardVariant::Full => null,
-        };
+        $allowed = $variant->visibleExceptionKeys();
 
         if ($allowed === null) {
             return array_values(array_filter(
@@ -135,16 +131,15 @@ class GetAdminOpsInbox
     }
 
     /**
-     * @return list<array{key: string, label: string, count: int, href: string, severity: string, icon: string}>
+     * @return list<array{key: string, label: string, count: int, href: string, severity: string, icon: string, age_label?: string, age_severity?: string}>
      */
     private function exceptionCards(User $user): array
     {
+        $counts = $this->exceptionCounts->handle($user);
         $cards = [];
 
         if ($user->can('view_orders')) {
-            $failedOrderCount = Order::query()
-                ->whereHas('fulfillments', fn ($query) => $query->where('status', FulfillmentStatus::Failed))
-                ->count();
+            $failedOrderCount = $counts['orders_with_failures'];
 
             $cards[] = $this->card(
                 'orders_with_failures',
@@ -163,10 +158,7 @@ class GetAdminOpsInbox
         }
 
         if ($user->can('view_refunds')) {
-            $count = WalletTransaction::query()
-                ->where('type', WalletTransactionType::Refund)
-                ->where('status', WalletTransaction::STATUS_PENDING)
-                ->count();
+            $count = $counts['pending_refunds'];
 
             $cards[] = $this->card(
                 'pending_refunds',
@@ -186,9 +178,7 @@ class GetAdminOpsInbox
         }
 
         if ($user->can('manage_topups')) {
-            $count = TopupRequest::query()
-                ->where('status', TopupRequestStatus::Pending)
-                ->count();
+            $count = $counts['pending_topups'];
 
             $cards[] = $this->card(
                 'pending_topups',
@@ -207,9 +197,7 @@ class GetAdminOpsInbox
         }
 
         if ($user->can('view_fulfillments')) {
-            $queueCount = Fulfillment::query()
-                ->whereIn('status', [FulfillmentStatus::Queued, FulfillmentStatus::Processing])
-                ->count();
+            $queueCount = $counts['fulfillment_queue'];
 
             $cards[] = $this->card(
                 'fulfillment_queue',
@@ -226,9 +214,7 @@ class GetAdminOpsInbox
                     : null,
             );
 
-            $failedCount = Fulfillment::query()
-                ->where('status', FulfillmentStatus::Failed)
-                ->count();
+            $failedCount = $counts['failed_fulfillments'];
 
             $cards[] = $this->card(
                 'failed_fulfillments',
@@ -247,9 +233,7 @@ class GetAdminOpsInbox
         }
 
         if ($user->hasRole('admin')) {
-            $needsReviewCount = FulfillmentAutomationRun::query()
-                ->where('status', FulfillmentAutomationRunStatus::NeedsReview)
-                ->count();
+            $needsReviewCount = $counts['automation_needs_review'];
 
             $cards[] = $this->card(
                 'automation_needs_review',
@@ -268,9 +252,7 @@ class GetAdminOpsInbox
         }
 
         if ($user->can('manage_settlements')) {
-            $count = PayoutRequest::query()
-                ->where('status', PayoutRequestStatus::Pending)
-                ->count();
+            $count = $counts['pending_payouts'];
 
             $cards[] = $this->card(
                 'pending_payouts',
@@ -289,7 +271,7 @@ class GetAdminOpsInbox
         }
 
         if ($user->can('manage_bugs')) {
-            $count = Bug::query()->openOrInProgress()->count();
+            $count = $counts['open_bugs'];
 
             $cards[] = $this->card(
                 'open_bugs',

@@ -8,7 +8,7 @@ use App\Livewire\Sidebar\Concerns\RefreshesSidebarMetric;
 use Livewire\Attributes\On;
 use Livewire\Component;
 
-class TopupIndicator extends Component
+class AutomationReviewIndicator extends Component
 {
     use RefreshesSidebarMetric;
 
@@ -17,24 +17,24 @@ class TopupIndicator extends Component
         $this->mountRefreshesSidebarMetric();
     }
 
-    #[On('topup-list-updated')]
-    public function onTopupListUpdated(): void
+    #[On('automation-run-updated')]
+    public function onAutomationRunUpdated(): void
     {
         $this->refreshCount();
     }
 
     protected function sidebarMetricKey(): string
     {
-        return 'pending_topups';
+        return 'automation_needs_review';
     }
 
     protected function canViewSidebarMetric(): bool
     {
-        return auth()->user()?->can('manage_topups') ?? false;
+        return auth()->user()?->hasRole('admin') ?? false;
     }
 
     public function render()
     {
-        return view('livewire.sidebar.topup-indicator');
+        return view('livewire.sidebar.automation-review-indicator');
     }
 }

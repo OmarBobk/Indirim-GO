@@ -4,32 +4,33 @@ declare(strict_types=1);
 
 namespace App\Livewire\Sidebar;
 
-use App\Enums\FulfillmentStatus;
-use App\Models\Fulfillment;
+use App\Livewire\Sidebar\Concerns\RefreshesSidebarMetric;
 use Livewire\Attributes\On;
 use Livewire\Component;
 
 class FulfillmentIndicator extends Component
 {
-    public int $count = 0;
+    use RefreshesSidebarMetric;
 
     public function mount(): void
+    {
+        $this->mountRefreshesSidebarMetric();
+    }
+
+    #[On('fulfillment-list-updated')]
+    public function onFulfillmentListUpdated(): void
     {
         $this->refreshCount();
     }
 
-    #[On('fulfillment-list-updated')]
-    public function refreshCount(): void
+    protected function sidebarMetricKey(): string
     {
-        if (! auth()->check() || ! auth()->user()->can('view_fulfillments')) {
-            $this->count = 0;
+        return 'fulfillment_queue';
+    }
 
-            return;
-        }
-
-        $this->count = Fulfillment::query()
-            ->whereIn('status', [FulfillmentStatus::Queued, FulfillmentStatus::Processing])
-            ->count();
+    protected function canViewSidebarMetric(): bool
+    {
+        return auth()->user()?->can('view_fulfillments') ?? false;
     }
 
     public function render()

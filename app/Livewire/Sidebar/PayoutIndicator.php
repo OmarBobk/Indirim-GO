@@ -5,10 +5,9 @@ declare(strict_types=1);
 namespace App\Livewire\Sidebar;
 
 use App\Livewire\Sidebar\Concerns\RefreshesSidebarMetric;
-use Livewire\Attributes\On;
 use Livewire\Component;
 
-class TopupIndicator extends Component
+class PayoutIndicator extends Component
 {
     use RefreshesSidebarMetric;
 
@@ -17,24 +16,18 @@ class TopupIndicator extends Component
         $this->mountRefreshesSidebarMetric();
     }
 
-    #[On('topup-list-updated')]
-    public function onTopupListUpdated(): void
-    {
-        $this->refreshCount();
-    }
-
     protected function sidebarMetricKey(): string
     {
-        return 'pending_topups';
+        return 'pending_payouts';
     }
 
     protected function canViewSidebarMetric(): bool
     {
-        return auth()->user()?->can('manage_topups') ?? false;
+        return auth()->user()?->can('manage_settlements') ?? false;
     }
 
     public function render()
     {
-        return view('livewire.sidebar.topup-indicator');
+        return view('livewire.sidebar.payout-indicator');
     }
 }
