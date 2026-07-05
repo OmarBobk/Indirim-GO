@@ -33,6 +33,14 @@ return [
         'delays_seconds' => [60, 120, 300, 600, 900, 1800, 3600],
     ],
 
+    'price_scan' => [
+        'enabled' => (bool) env('FULFILLMENT_AUTOMATION_PRICE_SCAN_ENABLED', true),
+        'custom_reference_quantity' => (int) env('FULFILLMENT_AUTOMATION_PRICE_SCAN_CUSTOM_QTY', 1000),
+        'delay_ms_between_products' => (int) env('FULFILLMENT_AUTOMATION_PRICE_SCAN_DELAY_MS', 400),
+        'run_timeout_seconds' => (int) env('FULFILLMENT_AUTOMATION_PRICE_SCAN_TIMEOUT', 3600),
+        'drift_tolerance' => (float) env('FULFILLMENT_AUTOMATION_PRICE_SCAN_DRIFT_TOLERANCE', 0.0001),
+    ],
+
     'queue' => env('FULFILLMENT_AUTOMATION_QUEUE', 'fulfillment-automation'),
 
     'suppliers' => [

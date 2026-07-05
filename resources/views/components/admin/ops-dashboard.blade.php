@@ -25,7 +25,7 @@
 @endphp
 
 <div
-    class="flex h-full w-full flex-1 flex-col gap-6 lg:gap-8"
+    class="flex h-full w-full min-w-0 max-w-full flex-1 flex-col gap-6 overflow-x-hidden lg:gap-8"
     data-test="admin-ops-dashboard"
     data-variant="{{ $variant }}"
 >

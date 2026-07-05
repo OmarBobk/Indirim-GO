@@ -87,6 +87,9 @@ Route::middleware(['auth', 'verified', 'backend'])->group(function () {
     Route::livewire('/product-entry-prices', 'pages::backend.product-entry-prices.index')
         ->middleware('can:update_product_prices')
         ->name('product-entry-prices');
+    Route::livewire('/price-drift', 'pages::backend.price-drift.index')
+        ->middleware('can:update_product_prices')
+        ->name('price-drift');
     Route::livewire('/pricing-rules', 'pages::backend.pricing-rules.index')->name('pricing-rules');
     Route::livewire('/loyalty-tiers', 'pages::backend.loyalty-tiers.index')->name('loyalty-tiers');
     Route::livewire('/admin/orders', 'pages::backend.orders.index')->name('admin.orders.index');

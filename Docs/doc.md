@@ -81,6 +81,12 @@
   - ###DONE: main page search field is not working
 
 
+Implementation phases (practical order)
+Phase A (1–2 days): Worker price_scan + DB snapshot + artisan command
+Phase B (1–2 days): Admin “Price Drift” Livewire page + extend entry-prices with Wasim column
+Phase C (half day): Daily schedule + notification (“12 products need price review”)
+Phase D (optional): Reactive flags from margin_insufficient / fulfillment supplier_entry_price
+
 You are an expert UI designer and full-stack Laravel developer with 20+ years exp. You build visually stunning, production-grade interfaces using Laravel 13, Livewire 4, TailwindCSS, and Alpine.js.    
 
 You are an expert UI designer and full-stack Laravel developer with 20+ years exp. You build visually stunning, production-grade interfaces using Laravel 12, Livewire 4, TailwindCSS, and Alpine.js.

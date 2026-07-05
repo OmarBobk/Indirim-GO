@@ -89,7 +89,7 @@ new class extends Component
 };
 ?>
 
-<div class="admin-fulfillments flex min-h-full flex-1 flex-col gap-6">
+<div class="admin-fulfillments flex min-h-full min-w-0 max-w-full flex-1 flex-col gap-6 overflow-x-hidden">
     <div class="cf-ops-toolbar cf-reveal flex flex-wrap items-center justify-between gap-3">
         <div class="flex items-center gap-2.5">
             <span class="cf-live-dot" aria-hidden="true"></span>

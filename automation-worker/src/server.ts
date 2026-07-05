@@ -3,8 +3,9 @@ import { verifyLaravelRequest } from './auth/verifyLaravel.js';
 import { clearSessionState } from './browser/sessionStore.js';
 import { WORKER_BUILD } from './build.js';
 import { executeRun } from './runs/executeRun.js';
+import { executePriceScan } from './runs/executePriceScan.js';
 import { shutdownBrowserPool } from './browser/pool.js';
-import type { RunPayload } from './types.js';
+import type { PriceScanPayload, RunPayload } from './types.js';
 
 const app = express();
 const port = Number(process.env.PORT ?? 3100);
@@ -38,6 +39,7 @@ app.get('/health', (_req, res) => {
     build: WORKER_BUILD,
     wasim_submit_purchase: true,
     wasim_reconcile: true,
+    wasim_price_scan: true,
     session_clear: true,
   });
 });
@@ -70,6 +72,24 @@ app.post('/v1/runs', (req, res) => {
   res.status(202).json({ accepted: true, run_uuid: payload.run_uuid });
 
   void executeRun(payload);
+});
+
+app.post('/v1/price-scans', (req, res) => {
+  if (verifySignedRequest(req, res) === null) {
+    return;
+  }
+
+  const payload = req.body as PriceScanPayload;
+
+  if (!payload.scan_uuid || !Array.isArray(payload.items)) {
+    res.status(422).json({ message: 'scan_uuid and items are required' });
+
+    return;
+  }
+
+  res.status(202).json({ accepted: true, scan_uuid: payload.scan_uuid });
+
+  void executePriceScan(payload);
 });
 
 const server = app.listen(port, () => {

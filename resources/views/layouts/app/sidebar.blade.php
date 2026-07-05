@@ -42,7 +42,7 @@
                 @endif
 
                 @if (auth()->user()?->can('manage_products') || auth()->user()?->can('manage_sections') || auth()->user()?->can('manage_loyalty_tiers') || auth()->user()?->can('update_product_prices'))
-                <flux:sidebar.group expandable :expanded="(request()->routeIs('categories')) or (request()->routeIs('packages')) or (request()->routeIs('products')) or (request()->routeIs('product-entry-prices')) or (request()->routeIs('pricing-rules')) or (request()->routeIs('loyalty-tiers'))" :heading="__('messages.nav_content_management')" class="grid">
+                <flux:sidebar.group expandable :expanded="(request()->routeIs('categories')) or (request()->routeIs('packages')) or (request()->routeIs('products')) or (request()->routeIs('product-entry-prices')) or (request()->routeIs('price-drift')) or (request()->routeIs('pricing-rules')) or (request()->routeIs('loyalty-tiers'))" :heading="__('messages.nav_content_management')" class="grid">
                     @can('manage_sections')
                     <flux:sidebar.item icon="tag" :href="route('categories')" :current="(request()->routeIs('categories'))" wire:navigate>
                         {{ __('messages.categories') }}
@@ -58,6 +58,9 @@
                     @can('update_product_prices')
                     <flux:sidebar.item icon="pencil-square" :href="route('product-entry-prices')" :current="request()->routeIs('product-entry-prices')" wire:navigate>
                         {{ __('messages.product_entry_prices') }}
+                    </flux:sidebar.item>
+                    <flux:sidebar.item icon="scale" :href="route('price-drift')" :current="request()->routeIs('price-drift')" wire:navigate>
+                        {{ __('messages.price_drift') }}
                     </flux:sidebar.item>
                     @endcan
                     <flux:sidebar.item icon="currency-dollar" :href="route('pricing-rules')" :current="(request()->routeIs('pricing-rules'))" wire:navigate>
