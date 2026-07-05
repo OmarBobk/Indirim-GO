@@ -1,7 +1,7 @@
 import type { Page } from 'playwright';
 import type { RunPayload } from '../../types.js';
 import type { RunLogger } from '../../logging/runLogger.js';
-import { assertLineTotalCoversSupplierTotal } from './priceCheck.js';
+import { assertLineTotalCoversSupplierTotal, type PriceCheckFailure } from './priceCheck.js';
 import { fillPlayerId } from './productForm.js';
 
 export function resolveCustomAmount(payload: RunPayload): number | null {
@@ -104,7 +104,7 @@ export async function runCustomAmountProductSteps(
     supplierTotal: number;
     playerId: string;
   }
-  | { ok: false; errorCode: string; message: string }
+  | PriceCheckFailure
 > {
   const quantityResult = await fillCustomAmountQuantity(page, payload, logger, screenshot);
 
@@ -115,7 +115,10 @@ export async function runCustomAmountProductSteps(
   const priceResult = await assertLineTotalCoversSupplierTotal(page, payload, logger, screenshot);
 
   if (!priceResult.ok) {
-    return priceResult;
+    return {
+      ...priceResult,
+      customQuantity: quantityResult.quantity,
+    };
   }
 
   const playerResult = await fillPlayerId(page, payload, logger, screenshot);

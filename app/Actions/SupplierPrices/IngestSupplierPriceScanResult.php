@@ -108,6 +108,17 @@ class IngestSupplierPriceScanResult
                 ]),
             ])->save();
 
+            $scanId = $lockedScan->id;
+            $completed = ! $batchFailed;
+
+            DB::afterCommit(function () use ($scanId, $completed): void {
+                if (! $completed) {
+                    return;
+                }
+
+                app(NotifyWasimPriceDriftReview::class)->handle($scanId);
+            });
+
             return $lockedScan->refresh();
         });
     }
@@ -144,6 +155,8 @@ class IngestSupplierPriceScanResult
                 'supplier_scanned_price' => $scannedPrice,
                 'supplier_scanned_at' => now(),
                 'supplier_scan_error' => null,
+                'supplier_price_flag_reason' => null,
+                'supplier_price_flagged_at' => null,
             ]);
     }
 

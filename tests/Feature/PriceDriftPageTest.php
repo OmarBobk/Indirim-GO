@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Actions\SupplierPrices\ApplyWasimScannedEntryPrices;
 use App\Models\Package;
 use App\Models\Product;
 use App\Models\User;
@@ -127,13 +126,17 @@ test('price drift scan now dispatches worker request', function () {
     Http::assertSent(fn ($request): bool => $request->url() === 'http://automation-worker.test/v1/price-scans');
 });
 
-test('apply wasim scanned entry prices action updates multiple products', function () {
-    $first = makeDriftProduct(1.0, 1.1);
-    $second = makeDriftProduct(2.0, 2.2);
+test('price drift bulk apply selected updates entry prices', function () {
+    $first = makeDriftProduct(1.0, 1.5);
+    $second = makeDriftProduct(2.0, 2.8);
 
-    $updated = app(ApplyWasimScannedEntryPrices::class)->handle([$first->id, $second->id]);
+    $this->actingAs(priceDriftUser());
 
-    expect($updated)->toBe(2)
-        ->and((float) $first->fresh()->entry_price)->toBe(1.1)
-        ->and((float) $second->fresh()->entry_price)->toBe(2.2);
+    Livewire::test('pages::backend.price-drift.index')
+        ->set('selected', [(string) $first->id, (string) $second->id])
+        ->call('applySelected')
+        ->assertHasNoErrors();
+
+    expect((float) $first->fresh()->entry_price)->toBe(1.5)
+        ->and((float) $second->fresh()->entry_price)->toBe(2.8);
 });

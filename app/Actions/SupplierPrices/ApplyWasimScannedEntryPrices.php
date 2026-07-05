@@ -6,6 +6,7 @@ namespace App\Actions\SupplierPrices;
 
 use App\Actions\Products\UpdateProductEntryPrice;
 use App\Models\Product;
+use App\Services\SupplierPriceScanService;
 use InvalidArgumentException;
 
 class ApplyWasimScannedEntryPrices
@@ -41,6 +42,7 @@ class ApplyWasimScannedEntryPrices
             }
 
             app(UpdateProductEntryPrice::class)->handle($product, (string) $scanned);
+            app(SupplierPriceScanService::class)->clearReactiveFlag($product->refresh());
             $updated++;
         }
 
@@ -55,9 +57,12 @@ class ApplyWasimScannedEntryPrices
             throw new InvalidArgumentException('Product does not have a successful Wasim price scan to apply.');
         }
 
-        return app(UpdateProductEntryPrice::class)->handle(
+        $updated = app(UpdateProductEntryPrice::class)->handle(
             $product,
             (string) $product->getRawOriginal('supplier_scanned_price'),
         );
+        app(SupplierPriceScanService::class)->clearReactiveFlag($updated);
+
+        return $updated;
     }
 }

@@ -19,7 +19,7 @@ new class extends Component
 
     public string $filter = 'drifted';
 
-    /** @var array<int, string> */
+    /** @var list<string> */
     public array $selected = [];
 
     public function mount(): void
@@ -101,7 +101,10 @@ new class extends Component
 
     public function applySelected(): void
     {
-        $ids = array_map(intval(...), $this->selected);
+        $ids = array_values(array_unique(array_map(
+            static fn (string|int $id): int => (int) $id,
+            $this->selected,
+        )));
 
         if ($ids === []) {
             $this->info(__('messages.price_drift_nothing_selected'));
@@ -178,6 +181,16 @@ new class extends Component
         return app(SupplierPriceScanService::class)->buildWasimProductUrl($product);
     }
 
+    public function flagReasonLabel(Product $product): ?string
+    {
+        return app(SupplierPriceScanService::class)->flagReasonLabel($product);
+    }
+
+    public function hasReactiveFlag(Product $product): bool
+    {
+        return app(SupplierPriceScanService::class)->hasReactiveFlag($product);
+    }
+
     public function driftRowClass(Product $product): string
     {
         if ($product->supplier_scan_error !== null) {
@@ -245,10 +258,14 @@ new class extends Component
         </div>
     </header>
 
-  <section class="cf-reveal cf-reveal-delay-1 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+  <section class="cf-reveal cf-reveal-delay-1 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
         <div class="rounded-xl border border-red-200 bg-red-50/80 p-4 dark:border-red-900/50 dark:bg-red-950/30">
             <div class="text-2xl font-bold tabular-nums text-red-700 dark:text-red-200">{{ $this->stats['drifted'] }}</div>
             <div class="text-xs font-medium text-red-800/80 dark:text-red-300/80">{{ __('messages.price_drift_kpi_drifted') }}</div>
+        </div>
+        <div class="rounded-xl border border-violet-200 bg-violet-50/80 p-4 dark:border-violet-900/50 dark:bg-violet-950/30">
+            <div class="text-2xl font-bold tabular-nums text-violet-700 dark:text-violet-200">{{ $this->stats['flagged'] }}</div>
+            <div class="text-xs font-medium text-violet-800/80 dark:text-violet-300/80">{{ __('messages.price_drift_kpi_flagged') }}</div>
         </div>
         <div class="rounded-xl border border-emerald-200 bg-emerald-50/80 p-4 dark:border-emerald-900/50 dark:bg-emerald-950/30">
             <div class="text-2xl font-bold tabular-nums text-emerald-700 dark:text-emerald-200">{{ $this->stats['unchanged'] }}</div>
@@ -281,6 +298,7 @@ new class extends Component
                 </flux:select>
                 <flux:select wire:model.live="filter" :label="__('messages.filter')">
                     <flux:select.option value="drifted">{{ __('messages.price_drift_filter_drifted') }}</flux:select.option>
+                    <flux:select.option value="flagged">{{ __('messages.price_drift_filter_flagged') }}</flux:select.option>
                     <flux:select.option value="unchanged">{{ __('messages.price_drift_filter_unchanged') }}</flux:select.option>
                     <flux:select.option value="errors">{{ __('messages.price_drift_filter_errors') }}</flux:select.option>
                     <flux:select.option value="never_scanned">{{ __('messages.price_drift_filter_never_scanned') }}</flux:select.option>
@@ -294,7 +312,7 @@ new class extends Component
                 wire:click="applySelected"
                 wire:loading.attr="disabled"
                 wire:target="applySelected"
-                :disabled="count($selected) === 0"
+                x-bind:disabled="!$wire.selected || $wire.selected.length === 0"
             >
                 {{ __('messages.price_drift_apply_selected') }}
             </flux:button>
@@ -330,12 +348,20 @@ new class extends Component
                             >
                                 <td class="px-3 py-3 align-middle">
                                     @if ($this->canApplyProduct($product))
-                                        <flux:checkbox wire:model="selected" value="{{ $product->id }}" :label="false" />
+                                        <flux:checkbox
+                                            wire:key="price-drift-select-{{ $product->id }}"
+                                            wire:model.live="selected"
+                                            :value="$product->id"
+                                            :label="false"
+                                        />
                                     @endif
                                 </td>
                                 <td class="px-3 py-3 align-middle">
                                     <div class="font-medium text-[var(--cf-foreground)]">{{ $product->name }}</div>
                                     <div class="text-xs text-[var(--cf-muted-foreground)]">#{{ $product->id }}</div>
+                                    @if ($flag = $this->flagReasonLabel($product))
+                                        <flux:badge size="sm" color="violet" class="mt-1">{{ $flag }}</flux:badge>
+                                    @endif
                                 </td>
                                 <td class="px-3 py-3 align-middle text-[var(--cf-muted-foreground)]">
                                     {{ $product->package?->name ?? '—' }}

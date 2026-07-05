@@ -55,6 +55,12 @@ export const wasimDriver: RunDriver = {
             url: page.url(),
             product_api: productResult.productApi,
             product_url: productResult.productUrl,
+            ...(priceResult.supplierTotal !== undefined
+              ? {
+                supplier_total: priceResult.supplierTotal,
+                supplier_total_raw: priceResult.supplierTotalRaw ?? null,
+              }
+              : {}),
           },
         };
       }
@@ -96,6 +102,13 @@ export const wasimDriver: RunDriver = {
             url: page.url(),
             product_api: productResult.productApi,
             product_url: productResult.productUrl,
+            ...(customResult.supplierTotal !== undefined
+              ? {
+                supplier_total: customResult.supplierTotal,
+                supplier_total_raw: customResult.supplierTotalRaw ?? null,
+                custom_quantity: customResult.customQuantity ?? null,
+              }
+              : {}),
           },
         };
       }

@@ -39,6 +39,12 @@ return [
         'delay_ms_between_products' => (int) env('FULFILLMENT_AUTOMATION_PRICE_SCAN_DELAY_MS', 400),
         'run_timeout_seconds' => (int) env('FULFILLMENT_AUTOMATION_PRICE_SCAN_TIMEOUT', 3600),
         'drift_tolerance' => (float) env('FULFILLMENT_AUTOMATION_PRICE_SCAN_DRIFT_TOLERANCE', 0.0001),
+        'schedule_enabled' => (bool) env('FULFILLMENT_AUTOMATION_PRICE_SCAN_SCHEDULE_ENABLED', true),
+        'schedule_time' => env('FULFILLMENT_AUTOMATION_PRICE_SCAN_SCHEDULE_TIME', '06:00'),
+        'notify_on_drift' => (bool) env('FULFILLMENT_AUTOMATION_PRICE_SCAN_NOTIFY_ON_DRIFT', true),
+        'notify_on_reactive_flag' => (bool) env('FULFILLMENT_AUTOMATION_PRICE_SCAN_NOTIFY_ON_REACTIVE_FLAG', true),
+        'notify_permission' => env('FULFILLMENT_AUTOMATION_PRICE_SCAN_NOTIFY_PERMISSION', 'update_product_prices'),
+        'reactive_flags_enabled' => (bool) env('FULFILLMENT_AUTOMATION_PRICE_SCAN_REACTIVE_FLAGS', true),
     ],
 
     'queue' => env('FULFILLMENT_AUTOMATION_QUEUE', 'fulfillment-automation'),

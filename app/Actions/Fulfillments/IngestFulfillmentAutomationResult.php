@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Fulfillments;
 
 use App\Actions\Orders\RefundOrderItem;
+use App\Actions\SupplierPrices\FlagProductSupplierPriceFromFulfillment;
 use App\Enums\FulfillmentAutomationRunStatus;
 use App\Enums\FulfillmentLogLevel;
 use App\Enums\FulfillmentStatus;
@@ -102,6 +103,8 @@ class IngestFulfillmentAutomationResult
         $deliveredPayload['phase'] = 'purchase';
 
         $this->applySupplierEntryPriceToOrderItem($lockedFulfillment, $deliveredPayload);
+
+        $this->queueReactivePriceFlags($lockedFulfillment, $deliveredPayload, '');
 
         $fulfillmentMeta = $lockedFulfillment->meta ?? [];
         $fulfillmentMeta['automation'] = array_merge($fulfillmentMeta['automation'] ?? [], [
@@ -228,6 +231,8 @@ class IngestFulfillmentAutomationResult
 
         $this->applySupplierEntryPriceToOrderItem($lockedFulfillment, $deliveredPayload);
 
+        $this->queueReactivePriceFlags($lockedFulfillment, $deliveredPayload, '');
+
         $fulfillmentMeta = $lockedFulfillment->meta ?? [];
         $fulfillmentMeta['automation'] = array_merge($fulfillmentMeta['automation'] ?? [], [
             'awaiting_wasim_reconcile' => false,
@@ -331,6 +336,14 @@ class IngestFulfillmentAutomationResult
             $this->queueSupplierRejectionRefund($lockedFulfillment);
         }
 
+        if ($errorCode === 'margin_insufficient') {
+            $this->queueReactivePriceFlags(
+                $lockedFulfillment,
+                is_array($resultPayload) ? $resultPayload : [],
+                $errorCode,
+            );
+        }
+
         $eventType = $outcome === 'needs_review'
             ? 'fulfillment.automation.needs_review'
             : 'fulfillment.automation.failed';
@@ -377,6 +390,33 @@ class IngestFulfillmentAutomationResult
         OrderItem::query()
             ->whereKey($fulfillment->order_item_id)
             ->update(['entry_price' => (float) $supplierEntryPrice]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $deliveredPayload
+     */
+    private function queueReactivePriceFlags(Fulfillment $fulfillment, array $deliveredPayload, string $errorCode): void
+    {
+        $fulfillmentId = $fulfillment->id;
+        $payload = $deliveredPayload;
+
+        DB::afterCommit(function () use ($fulfillmentId, $payload, $errorCode): void {
+            $lockedFulfillment = Fulfillment::query()->find($fulfillmentId);
+
+            if ($lockedFulfillment === null) {
+                return;
+            }
+
+            $flagger = app(FlagProductSupplierPriceFromFulfillment::class);
+
+            if ($errorCode === 'margin_insufficient') {
+                $flagger->handleMarginInsufficient($lockedFulfillment, $payload);
+
+                return;
+            }
+
+            $flagger->handleSupplierEntryPrice($lockedFulfillment, $payload);
+        });
     }
 
     private function queueSupplierRejectionRefund(Fulfillment $fulfillment): void

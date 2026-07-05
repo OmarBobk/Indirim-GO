@@ -3,6 +3,21 @@ import type { RunPayload } from '../../types.js';
 import type { RunLogger } from '../../logging/runLogger.js';
 import { parseMoneyString } from '../../utils/parseMoney.js';
 
+export type PriceCheckFailure = {
+  ok: false;
+  errorCode: string;
+  message: string;
+  supplierTotal?: number;
+  supplierTotalRaw?: string;
+  customQuantity?: number;
+};
+
+export type PriceCheckSuccess = {
+  ok: true;
+  orderAmount: number;
+  supplierTotal: number;
+};
+
 export function resolveUnitPrice(payload: RunPayload): number | null {
   const value = payload.unit_price;
 
@@ -77,10 +92,7 @@ async function assertOrderAmountCoversSupplierTotal(
   missingMessage: string,
   logger: RunLogger,
   screenshot: (label: string) => Promise<void>,
-): Promise<
-  | { ok: true; orderAmount: number; supplierTotal: number }
-  | { ok: false; errorCode: string; message: string }
-> {
+): Promise<PriceCheckSuccess | PriceCheckFailure> {
   if (orderAmount === null) {
     return {
       ok: false,
@@ -109,6 +121,8 @@ async function assertOrderAmountCoversSupplierTotal(
       ok: false,
       errorCode: 'margin_insufficient',
       message: `Order ${amountLabel} (${orderAmount}) must be greater than Wasim total (${supplierTotal}).`,
+      supplierTotal,
+      supplierTotalRaw: supplierResult.displayedRaw,
     };
   }
 
@@ -128,7 +142,7 @@ export async function assertUnitPriceCoversSupplierTotal(
   screenshot: (label: string) => Promise<void>,
 ): Promise<
   | { ok: true; unitPrice: number; supplierTotal: number }
-  | { ok: false; errorCode: string; message: string }
+  | PriceCheckFailure
 > {
   const result = await assertOrderAmountCoversSupplierTotal(
     page,
@@ -158,7 +172,7 @@ export async function assertLineTotalCoversSupplierTotal(
   screenshot: (label: string) => Promise<void>,
 ): Promise<
   | { ok: true; lineTotal: number; supplierTotal: number }
-  | { ok: false; errorCode: string; message: string }
+  | PriceCheckFailure
 > {
   const result = await assertOrderAmountCoversSupplierTotal(
     page,

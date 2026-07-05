@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Enums\ProductAmountMode;
+use App\Enums\SupplierPriceFlagReason;
 use App\Enums\SupplierPriceScanItemStatus;
 use App\Enums\SupplierPriceScanStatus;
+use App\Models\Fulfillment;
 use App\Models\Product;
 use App\Models\SupplierPriceScan;
 use App\Models\SupplierPriceScanItem;
@@ -195,6 +197,7 @@ class SupplierPriceScanService
         return match ($filter) {
             'errors' => $query->whereNotNull('supplier_scan_error'),
             'never_scanned' => $query->whereNull('supplier_scanned_at'),
+            'flagged' => $query->whereNotNull('supplier_price_flag_reason'),
             'all' => $query,
             'unchanged' => $this->queryProductsByIds(
                 $this->scannableProducts($packageId)
@@ -205,16 +208,123 @@ class SupplierPriceScanService
             ),
             default => $this->queryProductsByIds(
                 $this->scannableProducts($packageId)
-                    ->filter(fn (Product $product): bool => $this->hasPriceDrift($product))
+                    ->filter(fn (Product $product): bool => $this->hasPriceDrift($product) || $this->hasReactiveFlag($product))
                     ->pluck('id')
                     ->all(),
             ),
         };
     }
 
+    public function hasReactiveFlag(Product $product): bool
+    {
+        return is_string($product->supplier_price_flag_reason)
+            && $product->supplier_price_flag_reason !== '';
+    }
+
+    public function flagReasonLabel(Product $product): ?string
+    {
+        if (! $this->hasReactiveFlag($product)) {
+            return null;
+        }
+
+        return match ($product->supplier_price_flag_reason) {
+            SupplierPriceFlagReason::MarginInsufficient->value => __('messages.price_drift_flag_margin_insufficient'),
+            SupplierPriceFlagReason::FulfillmentMismatch->value => __('messages.price_drift_flag_fulfillment_mismatch'),
+            default => $product->supplier_price_flag_reason,
+        };
+    }
+
+    public function normalizeObservedSupplierPrice(Product $product, float $observedTotal, ?int $quantity = null): ?float
+    {
+        if ($observedTotal <= 0) {
+            return null;
+        }
+
+        $mode = $product->amount_mode ?? ProductAmountMode::Fixed;
+
+        if ($mode === ProductAmountMode::Custom) {
+            $qty = $quantity ?? (int) config('fulfillment_automation.price_scan.custom_reference_quantity', 1000);
+
+            if ($qty <= 0) {
+                return null;
+            }
+
+            return $observedTotal / $qty;
+        }
+
+        return $observedTotal;
+    }
+
+    public function flagProductFromFulfillmentObservation(
+        Fulfillment $fulfillment,
+        float $observedTotal,
+        ?int $quantity,
+        SupplierPriceFlagReason $reason,
+    ): bool {
+        $fulfillment->loadMissing('orderItem.product.package');
+
+        $product = $fulfillment->orderItem?->product;
+
+        if ($product === null) {
+            return false;
+        }
+
+        if ($product->package?->fulfillment_provider !== 'browser:wasim') {
+            return false;
+        }
+
+        if (! is_string($product->product_api) || trim($product->product_api) === '') {
+            return false;
+        }
+
+        $normalized = $this->normalizeObservedSupplierPrice($product, $observedTotal, $quantity);
+
+        if ($normalized === null) {
+            return false;
+        }
+
+        if ($reason === SupplierPriceFlagReason::FulfillmentMismatch && ! $this->hasPriceDriftAgainst($product, $normalized)) {
+            return false;
+        }
+
+        $product->update([
+            'supplier_scanned_price' => $normalized,
+            'supplier_scanned_at' => now(),
+            'supplier_scan_error' => null,
+            'supplier_price_flag_reason' => $reason->value,
+            'supplier_price_flagged_at' => now(),
+        ]);
+
+        return true;
+    }
+
+    public function clearReactiveFlag(Product $product): void
+    {
+        if (! $this->hasReactiveFlag($product)) {
+            return;
+        }
+
+        $product->update([
+            'supplier_price_flag_reason' => null,
+            'supplier_price_flagged_at' => null,
+        ]);
+    }
+
+    public function hasPriceDriftAgainst(Product $product, float $observedEntryPrice): bool
+    {
+        $entry = $product->getRawOriginal('entry_price');
+
+        if ($entry === null || $entry === '') {
+            return true;
+        }
+
+        return abs($observedEntryPrice - (float) $entry) > $this->driftTolerance();
+    }
+
     /**
      * @return array{
      *     drifted: int,
+     *     flagged: int,
      *     unchanged: int,
      *     errors: int,
      *     never_scanned: int,
@@ -230,7 +340,10 @@ class SupplierPriceScanService
 
         $neverScanned = $products->whereNull('supplier_scanned_at')->count();
         $errors = $products->whereNotNull('supplier_scan_error')->count();
-        $drifted = $products->filter(fn (Product $product): bool => $this->hasPriceDrift($product))->count();
+        $drifted = $products->filter(
+            fn (Product $product): bool => $this->hasPriceDrift($product) || $this->hasReactiveFlag($product),
+        )->count();
+        $flagged = $products->filter(fn (Product $product): bool => $this->hasReactiveFlag($product))->count();
         $unchanged = $products
             ->reject(fn (Product $product): bool => $this->hasPriceDrift($product))
             ->reject(fn (Product $product): bool => $product->supplier_scanned_price === null || $product->supplier_scan_error !== null)
@@ -240,6 +353,7 @@ class SupplierPriceScanService
 
         return [
             'drifted' => $drifted,
+            'flagged' => $flagged,
             'unchanged' => $unchanged,
             'errors' => $errors,
             'never_scanned' => $neverScanned,

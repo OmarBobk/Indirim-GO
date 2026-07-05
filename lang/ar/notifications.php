@@ -62,4 +62,11 @@ return [
 
     'salesperson_payout_requested_title' => 'طلب صرف عمولة',
     'salesperson_payout_requested_message' => ':name طلب صرفًا (#:id، المؤهل: :eligible_display). راجع طلبات الصرف.',
+
+    'wasim_price_drift_review_title' => 'أسعار واسم تحتاج مراجعة',
+    'wasim_price_drift_review_message' => ':count منتج/منتجات لها أسعار دخول تختلف عن آخر مسح لوسيم. افتح صفحة انحراف الأسعار للمراجعة.',
+
+    'wasim_price_reactive_flag_title' => 'تنبيه سعر واسم من التنفيذ',
+    'wasim_price_reactive_flag_margin_message' => ':product (#:product_id) تم وسمه أثناء التنفيذ — الهامش غير كافٍ. راجع صفحة انحراف الأسعار.',
+    'wasim_price_reactive_flag_mismatch_message' => ':product (#:product_id) سعر واسم المباشر يختلف عن سعر الدخول. راجع صفحة انحراف الأسعار.',
 ];

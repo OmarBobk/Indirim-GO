@@ -10,11 +10,16 @@ use App\Models\Package;
 use App\Models\Product;
 use App\Models\SupplierPriceScan;
 use App\Models\SupplierPriceScanItem;
+use App\Models\User;
 use App\Models\WebsiteSetting;
+use App\Notifications\WasimPriceDriftReviewNotification;
 use App\Services\SupplierPriceScanService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
+use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
 
@@ -197,4 +202,129 @@ test('wasim scan prices command refuses duplicate running scan', function () {
 
     $this->artisan('wasim:scan-prices')
         ->assertExitCode(1);
+});
+
+function priceReviewRecipient(): User
+{
+    app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
+    Permission::firstOrCreate(['name' => 'update_product_prices']);
+    $role = Role::firstOrCreate(['name' => 'price_editor']);
+    $role->syncPermissions(['update_product_prices']);
+    $user = User::factory()->create();
+    $user->assignRole('price_editor');
+
+    return $user;
+}
+
+test('completed scan with drift notifies price review recipients after commit', function () {
+    Notification::fake();
+
+    $recipient = priceReviewRecipient();
+    $product = makeWasimScannableProduct(['entry_price' => 2.5]);
+    $scan = SupplierPriceScan::query()->create([
+        'uuid' => (string) Str::uuid(),
+        'supplier_key' => 'wasim',
+        'status' => SupplierPriceScanStatus::Running,
+        'products_total' => 1,
+        'started_at' => now(),
+    ]);
+    SupplierPriceScanItem::query()->create([
+        'supplier_price_scan_id' => $scan->id,
+        'product_id' => $product->id,
+        'product_api' => (string) $product->product_api,
+        'amount_mode' => ProductAmountMode::Fixed->value,
+        'status' => SupplierPriceScanItemStatus::Pending,
+    ]);
+
+    app(IngestSupplierPriceScanResult::class)->handle($scan, [
+        'status' => 'completed',
+        'items' => [
+            [
+                'product_id' => $product->id,
+                'ok' => true,
+                'scanned_price' => 2.75,
+                'displayed_raw' => '2.75',
+            ],
+        ],
+    ]);
+
+    Notification::assertSentTo($recipient, WasimPriceDriftReviewNotification::class);
+});
+
+test('completed scan without drift does not notify price review recipients', function () {
+    Notification::fake();
+
+    $recipient = priceReviewRecipient();
+    $product = makeWasimScannableProduct(['entry_price' => 2.5]);
+    $scan = SupplierPriceScan::query()->create([
+        'uuid' => (string) Str::uuid(),
+        'supplier_key' => 'wasim',
+        'status' => SupplierPriceScanStatus::Running,
+        'products_total' => 1,
+        'started_at' => now(),
+    ]);
+    SupplierPriceScanItem::query()->create([
+        'supplier_price_scan_id' => $scan->id,
+        'product_id' => $product->id,
+        'product_api' => (string) $product->product_api,
+        'amount_mode' => ProductAmountMode::Fixed->value,
+        'status' => SupplierPriceScanItemStatus::Pending,
+    ]);
+
+    app(IngestSupplierPriceScanResult::class)->handle($scan, [
+        'status' => 'completed',
+        'items' => [
+            [
+                'product_id' => $product->id,
+                'ok' => true,
+                'scanned_price' => 2.5,
+                'displayed_raw' => '2.5',
+            ],
+        ],
+    ]);
+
+    Notification::assertNothingSentTo($recipient);
+});
+
+test('failed scan batch does not notify price review recipients', function () {
+    Notification::fake();
+
+    $recipient = priceReviewRecipient();
+    $product = makeWasimScannableProduct(['entry_price' => 2.5]);
+    $scan = SupplierPriceScan::query()->create([
+        'uuid' => (string) Str::uuid(),
+        'supplier_key' => 'wasim',
+        'status' => SupplierPriceScanStatus::Running,
+        'products_total' => 1,
+        'started_at' => now(),
+    ]);
+    SupplierPriceScanItem::query()->create([
+        'supplier_price_scan_id' => $scan->id,
+        'product_id' => $product->id,
+        'product_api' => (string) $product->product_api,
+        'amount_mode' => ProductAmountMode::Fixed->value,
+        'status' => SupplierPriceScanItemStatus::Pending,
+    ]);
+
+    app(IngestSupplierPriceScanResult::class)->handle($scan, [
+        'status' => 'failed',
+        'error_code' => 'login_failed',
+        'message' => 'Could not log in.',
+        'items' => [],
+    ]);
+
+    Notification::assertNothingSentTo($recipient);
+});
+
+test('wasim scan prices command is registered on the schedule when enabled', function () {
+    config([
+        'fulfillment_automation.enabled' => true,
+        'fulfillment_automation.price_scan.enabled' => true,
+        'fulfillment_automation.price_scan.schedule_enabled' => true,
+    ]);
+
+    $event = collect(app(\Illuminate\Console\Scheduling\Schedule::class)->events())
+        ->first(fn ($scheduledEvent): bool => str_contains((string) ($scheduledEvent->command ?? ''), 'wasim:scan-prices'));
+
+    expect($event)->not->toBeNull();
 });
