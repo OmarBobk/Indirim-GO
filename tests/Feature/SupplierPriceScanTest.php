@@ -49,19 +49,6 @@ function signAutomationRequest(string $rawBody, ?int $timestamp = null): array
     ];
 }
 
-function makeWasimScannableProduct(array $overrides = []): Product
-{
-    $package = Package::factory()->create([
-        'fulfillment_provider' => 'browser:wasim',
-    ]);
-
-    return Product::factory()->create(array_merge([
-        'package_id' => $package->id,
-        'product_api' => 'Customer/Home/ProductRequest?productId='.fake()->unique()->numberBetween(100, 999),
-        'entry_price' => 1.25,
-    ], $overrides));
-}
-
 test('supplier price scan service finds only wasim products with product api', function () {
     $included = makeWasimScannableProduct();
     $manualPackage = Package::factory()->create(['fulfillment_provider' => null]);

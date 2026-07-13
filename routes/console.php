@@ -30,3 +30,8 @@ Schedule::command('wasim:scan-prices')
     ->when(fn (): bool => (bool) config('fulfillment_automation.enabled', false)
         && (bool) config('fulfillment_automation.price_scan.enabled', true)
         && (bool) config('fulfillment_automation.price_scan.schedule_enabled', true));
+
+Schedule::command('wasim:sweep-stale-price-scans')
+    ->everyFifteenMinutes()
+    ->when(fn (): bool => (bool) config('fulfillment_automation.enabled', false)
+        && (bool) config('fulfillment_automation.price_scan.enabled', true));

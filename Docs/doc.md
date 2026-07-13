@@ -68,7 +68,7 @@
     - ###DONE: in the record details the Raw log excerpt json array should be sorted 
     - ###DONE: the screenshots are repeated twice in "automation-worker/storage" and in "storage/app/public"
     - ###DONE: when user order product and the automation is failed and the fulfillment is also marked as failed now if user tried to order the product again there is no order created instead he gets the order success message whit the order id of the old one (the failed one)
-  - ###TODO: we need some automated process to check if there is any changing in the prices between wassim-store and our entry price.
+  - ###DONE: we need some automated process to check if there is any changing in the prices between wassim-store and our entry price.
   - ###DONE: from now on the fulfillment should never be marked as failed from the automation this decision should be decide by admin only cuz:
     - Refactor fulfillment automation handling for supplier order statuses
 
@@ -79,13 +79,6 @@
   - ###DONE Register form: mask the phone number field
   - ###DONE: Topups: when customer want to request a new topup he should see a toggle button if checked it then he need to upload the proof file if not then he can request the topup without uploading the proof
   - ###DONE: main page search field is not working
-
-
-Implementation phases (practical order)
-Phase A (1–2 days): Worker price_scan + DB snapshot + artisan command
-Phase B (1–2 days): Admin “Price Drift” Livewire page + extend entry-prices with Wasim column
-Phase C (half day): Daily schedule + notification (“12 products need price review”)
-Phase D (optional): Reactive flags from margin_insufficient / fulfillment supplier_entry_price
 
 You are an expert UI designer and full-stack Laravel developer with 20+ years exp. You build visually stunning, production-grade interfaces using Laravel 13, Livewire 4, TailwindCSS, and Alpine.js.    
 
@@ -122,6 +115,11 @@ Cursor should take the best approach in everything code readability, maintance, 
 3. You refine the plan
 4. Agent → implement
 5. Review → fix issues
+
+
+[2026-07-13 01:01:14] production.ERROR: [backup] Copying zip failed because: Unable to write file at location: İndirimGo/2026-07-13-01-00-04.zip..
+[2026-07-13 01:01:14] production.ERROR: [backup] Backup failed because: Unable to write file at location: İndirimGo/2026-07-13-01-00-04.zip..
+
 
 
 Composer 1.5
