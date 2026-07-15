@@ -150,6 +150,36 @@ test('delivered payload renders for order owner', function () {
         ->assertSee($payload['server']);
 });
 
+test('order details hides internal automation payload keys from customer', function () {
+    $user = User::factory()->create();
+    $orderPayload = makeCompletedOrder($user, [
+        'phase' => 'reconcile',
+        'automation' => true,
+        'checkpoint' => 'reconcile_completed',
+        'product_api' => '/Customer/Home/ProductRequest?productId=1999',
+        'product_url' => 'https://wasim-store.com/Customer/Home/ProductRequest?productId=1999',
+        'screenshots' => [['label' => 'orders_page'], ['label' => 'reconcile_completed']],
+        'reconcile_tab' => 'completed',
+        'automation_run_uuid' => 'd9891435-78ec-438d-9063-a6a7985016ba',
+        'supplier_processing_time' => null,
+        'supplier_status' => 'Completed',
+        'supplier_order_id' => '20724',
+        'supplier_description' => 'عملية التحويل تمت بنجاح / قهوة',
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('orders.show', $orderPayload['order']->order_number))
+        ->assertOk()
+        ->assertSee('20724')
+        ->assertSee('Completed')
+        ->assertSee('عملية التحويل تمت بنجاح / قهوة', false)
+        ->assertDontSee('reconcile_completed', false)
+        ->assertDontSee('d9891435-78ec-438d-9063-a6a7985016ba', false)
+        ->assertDontSee('productId=1999', false)
+        ->assertDontSee('wasim-store.com', false)
+        ->assertDontSee('orders_page', false);
+});
+
 test('delivered payload section includes overflow-safe classes for long codes', function () {
     $user = User::factory()->create();
     $longCode = str_repeat('a', 200).'Z9X7';

@@ -6,6 +6,7 @@ use App\Enums\FulfillmentStatus;
 use App\Enums\OrderStatus;
 use App\Models\Order;
 use App\Models\OrderItem;
+use App\Support\CustomerDeliveredPayload;
 use App\Support\FrontendMoney;
 use App\Support\OrderRequirementLabels;
 use App\Models\WalletTransaction;
@@ -130,61 +131,11 @@ new #[Layout('layouts::frontend')] class extends Component
     }
 
     /**
-     * @return array<int, array{key: string, value: string}>
+     * @return array<int, array{key: string, label: string, value: string}>
      */
     protected function payloadEntries(mixed $payload): array
     {
-        $payload = $this->normalizePayload($payload);
-
-        if ($payload === null) {
-            return [];
-        }
-
-        $values = is_array($payload) ? $payload : ['value' => $payload];
-        $entries = [];
-
-        foreach ($values as $key => $value) {
-            $keyLabel = is_string($key) ? $key : (string) $key;
-
-            $entries[] = [
-                'key' => $keyLabel,
-                'value' => $this->stringifyPayloadValue($value),
-            ];
-        }
-
-        return $entries;
-    }
-
-    protected function stringifyPayloadValue(mixed $value): string
-    {
-        if (is_bool($value)) {
-            return $value ? 'true' : 'false';
-        }
-
-        if (is_array($value)) {
-            return (string) json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-        }
-
-        if (is_null($value)) {
-            return 'null';
-        }
-
-        return (string) $value;
-    }
-
-    protected function normalizePayload(mixed $payload): mixed
-    {
-        if (! is_string($payload)) {
-            return $payload;
-        }
-
-        $decoded = json_decode($payload, true);
-
-        if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
-            return $decoded;
-        }
-
-        return $payload;
+        return CustomerDeliveredPayload::entries($payload);
     }
 
     /**
@@ -204,7 +155,11 @@ new #[Layout('layouts::frontend')] class extends Component
             $entries[] = [
                 'key' => $keyString,
                 'label' => OrderRequirementLabels::labelForKey($item, $keyString),
-                'value' => $this->stringifyPayloadValue($value),
+                'value' => is_bool($value)
+                    ? ($value ? 'true' : 'false')
+                    : (is_array($value)
+                        ? (string) json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
+                        : (string) ($value ?? 'null')),
             ];
         }
 
@@ -416,7 +371,7 @@ new #[Layout('layouts::frontend')] class extends Component
                                                             <div class="flex min-w-0 flex-wrap items-start justify-between gap-2" wire:key="fulfillment-payload-{{ $fulfillment->id }}-{{ $entry['key'] }}">
                                                                 <div class="flex min-w-0 flex-1 flex-col gap-1">
                                                                     <span class="text-[11px] uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-                                                                        {{ $entry['key'] }}
+                                                                        {{ $entry['label'] }}
                                                                     </span>
                                                                     <span class="block max-w-full break-all font-mono text-xs text-zinc-900 dark:text-zinc-100">
                                                                         {{ $entry['value'] }}

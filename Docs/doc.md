@@ -116,12 +116,6 @@ Cursor should take the best approach in everything code readability, maintance, 
 4. Agent → implement
 5. Review → fix issues
 
-
-[2026-07-13 01:01:14] production.ERROR: [backup] Copying zip failed because: Unable to write file at location: İndirimGo/2026-07-13-01-00-04.zip..
-[2026-07-13 01:01:14] production.ERROR: [backup] Backup failed because: Unable to write file at location: İndirimGo/2026-07-13-01-00-04.zip..
-
-
-
 Composer 1.5
 Opus 4.5
 GPT-5.2
