@@ -40,7 +40,7 @@ final class CustomerDeliveredPayload
         'log_excerpt',
     ];
 
-    private const IMAGE_URL_PATTERN = '/https?:\/\/[^\s<>"\']+\.(?:jpe?g|png|gif|webp|bmp|svg)(?:\?[^\s<>"\']*)?/iu';
+    private const IMAGE_URL_PATTERN = '/https?:\/\/[^\s<>"\']+/iu';
 
     /**
      * @return array<int, array{key: string, label: string, value: string, image_urls: list<string>}>
@@ -113,10 +113,46 @@ final class CustomerDeliveredPayload
                 continue;
             }
 
+            if (! self::looksLikeImageUrl($normalized)) {
+                continue;
+            }
+
             $urls[] = $normalized;
         }
 
         return $urls;
+    }
+
+    public static function looksLikeImageUrl(string $url): bool
+    {
+        $parts = parse_url($url);
+
+        if (! is_array($parts) || ! isset($parts['scheme'], $parts['host'])) {
+            return false;
+        }
+
+        $scheme = strtolower((string) $parts['scheme']);
+
+        if (! in_array($scheme, ['http', 'https'], true)) {
+            return false;
+        }
+
+        $host = strtolower((string) $parts['host']);
+        $path = (string) ($parts['path'] ?? '');
+
+        if (preg_match('/\.(jpe?g|png|gif|webp|bmp|svg)$/i', $path) === 1) {
+            return true;
+        }
+
+        if (preg_match('/\/(?:img|image|photo|picture)\.php$/i', $path) === 1) {
+            return true;
+        }
+
+        if (str_starts_with($host, 'img.') || str_starts_with($host, 'images.')) {
+            return true;
+        }
+
+        return false;
     }
 
     /**
@@ -130,7 +166,7 @@ final class CustomerDeliveredPayload
             $text = str_replace($url, '', $text);
         }
 
-        $text = preg_replace('/\s*\/\s*$/u', '', $text) ?? $text;
+        $text = preg_replace('/\s*(?:\/|--)\s*$/u', '', $text) ?? $text;
         $text = preg_replace('/\s{2,}/u', ' ', $text) ?? $text;
 
         return trim($text);

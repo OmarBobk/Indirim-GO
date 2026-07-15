@@ -198,6 +198,24 @@ test('order details renders image urls found inside delivery details', function 
     expect($html)->not->toContain('>'.$imageUrl.'<');
 });
 
+test('order details renders image gateway urls without file extensions', function () {
+    $user = User::factory()->create();
+    $imageUrl = 'http://img.znet.tr/Img.php?key=bzVhSmdCVDRQdmR3YnBlaWJPSGdPUFlXanRTNVBBPT0';
+    $orderPayload = makeCompletedOrder($user, [
+        'supplier_description' => '20260712015016000002 ✭عاشـ༗҈ــق༗҈ℳ❥.. -- '.$imageUrl,
+    ]);
+
+    $html = $this->actingAs($user)
+        ->get(route('orders.show', $orderPayload['order']->order_number))
+        ->assertOk()
+        ->assertSee('20260712015016000002', false)
+        ->assertSee('data-test="delivery-payload-image"', false)
+        ->assertSee('src="'.$imageUrl.'"', false)
+        ->getContent();
+
+    expect($html)->not->toContain('>'.$imageUrl.'<');
+});
+
 test('order details still works when details have no image url', function () {
     $user = User::factory()->create();
     $orderPayload = makeCompletedOrder($user, [
