@@ -40,8 +40,10 @@ final class CustomerDeliveredPayload
         'log_excerpt',
     ];
 
+    private const IMAGE_URL_PATTERN = '/https?:\/\/[^\s<>"\']+\.(?:jpe?g|png|gif|webp|bmp|svg)(?:\?[^\s<>"\']*)?/iu';
+
     /**
-     * @return array<int, array{key: string, label: string, value: string}>
+     * @return array<int, array{key: string, label: string, value: string, image_urls: list<string>}>
      */
     public static function entries(mixed $payload): array
     {
@@ -58,11 +60,7 @@ final class CustomerDeliveredPayload
                 return [];
             }
 
-            return [[
-                'key' => 'value',
-                'label' => self::labelForKey('value'),
-                'value' => $value,
-            ]];
+            return [self::makeEntry('value', $value)];
         }
 
         $entries = [];
@@ -78,14 +76,64 @@ final class CustomerDeliveredPayload
                 continue;
             }
 
-            $entries[] = [
-                'key' => $keyString,
-                'label' => self::labelForKey($keyString),
-                'value' => self::stringify($value),
-            ];
+            $entries[] = self::makeEntry($keyString, self::stringify($value));
         }
 
         return $entries;
+    }
+
+    /**
+     * @return array{key: string, label: string, value: string, image_urls: list<string>}
+     */
+    private static function makeEntry(string $key, string $rawValue): array
+    {
+        $imageUrls = self::extractImageUrls($rawValue);
+
+        return [
+            'key' => $key,
+            'label' => self::labelForKey($key),
+            'value' => self::displayTextWithoutImages($rawValue, $imageUrls),
+            'image_urls' => $imageUrls,
+        ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function extractImageUrls(string $value): array
+    {
+        preg_match_all(self::IMAGE_URL_PATTERN, $value, $matches);
+
+        $urls = [];
+
+        foreach ($matches[0] ?? [] as $url) {
+            $normalized = rtrim((string) $url, '.,);]');
+
+            if ($normalized === '' || in_array($normalized, $urls, true)) {
+                continue;
+            }
+
+            $urls[] = $normalized;
+        }
+
+        return $urls;
+    }
+
+    /**
+     * @param  list<string>  $imageUrls
+     */
+    private static function displayTextWithoutImages(string $value, array $imageUrls): string
+    {
+        $text = $value;
+
+        foreach ($imageUrls as $url) {
+            $text = str_replace($url, '', $text);
+        }
+
+        $text = preg_replace('/\s*\/\s*$/u', '', $text) ?? $text;
+        $text = preg_replace('/\s{2,}/u', ' ', $text) ?? $text;
+
+        return trim($text);
     }
 
     public static function isHiddenKey(string $key): bool

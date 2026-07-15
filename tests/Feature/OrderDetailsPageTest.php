@@ -180,6 +180,37 @@ test('order details hides internal automation payload keys from customer', funct
         ->assertDontSee('orders_page', false);
 });
 
+test('order details renders image urls found inside delivery details', function () {
+    $user = User::factory()->create();
+    $imageUrl = 'https://res.echoliveapp.com/fdc725aa1a3247ba9371d4c4a3ea94d7.jpg';
+    $orderPayload = makeCompletedOrder($user, [
+        'supplier_description' => 'عملية التحويل تمت بنجاح / قهوه / '.$imageUrl,
+    ]);
+
+    $html = $this->actingAs($user)
+        ->get(route('orders.show', $orderPayload['order']->order_number))
+        ->assertOk()
+        ->assertSee('عملية التحويل تمت بنجاح / قهوه', false)
+        ->assertSee('data-test="delivery-payload-image"', false)
+        ->assertSee('src="'.$imageUrl.'"', false)
+        ->getContent();
+
+    expect($html)->not->toContain('>'.$imageUrl.'<');
+});
+
+test('order details still works when details have no image url', function () {
+    $user = User::factory()->create();
+    $orderPayload = makeCompletedOrder($user, [
+        'supplier_description' => 'عملية التحويل تمت بنجاح / قهوه',
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('orders.show', $orderPayload['order']->order_number))
+        ->assertOk()
+        ->assertSee('عملية التحويل تمت بنجاح / قهوه', false)
+        ->assertDontSee('data-test="delivery-payload-image"', false);
+});
+
 test('delivered payload section includes overflow-safe classes for long codes', function () {
     $user = User::factory()->create();
     $longCode = str_repeat('a', 200).'Z9X7';

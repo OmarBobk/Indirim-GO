@@ -131,7 +131,7 @@ new #[Layout('layouts::frontend')] class extends Component
     }
 
     /**
-     * @return array<int, array{key: string, label: string, value: string}>
+     * @return array<int, array{key: string, label: string, value: string, image_urls: list<string>}>
      */
     protected function payloadEntries(mixed $payload): array
     {
@@ -369,13 +369,34 @@ new #[Layout('layouts::frontend')] class extends Component
                                                     <div class="grid min-w-0 gap-2 overflow-hidden rounded-xl border border-zinc-200 bg-white p-3 text-xs text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">
                                                         @foreach ($payloadEntries as $entry)
                                                             <div class="flex min-w-0 flex-wrap items-start justify-between gap-2" wire:key="fulfillment-payload-{{ $fulfillment->id }}-{{ $entry['key'] }}">
-                                                                <div class="flex min-w-0 flex-1 flex-col gap-1">
+                                                                <div class="flex min-w-0 flex-1 flex-col gap-2">
                                                                     <span class="text-[11px] uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
                                                                         {{ $entry['label'] }}
                                                                     </span>
-                                                                    <span class="block max-w-full break-all font-mono text-xs text-zinc-900 dark:text-zinc-100">
-                                                                        {{ $entry['value'] }}
-                                                                    </span>
+                                                                    @if ($entry['value'] !== '')
+                                                                        <span class="block max-w-full break-all font-mono text-xs text-zinc-900 dark:text-zinc-100">
+                                                                            {{ $entry['value'] }}
+                                                                        </span>
+                                                                    @endif
+                                                                    @foreach ($entry['image_urls'] as $imageUrl)
+                                                                        <a
+                                                                            href="{{ $imageUrl }}"
+                                                                            target="_blank"
+                                                                            rel="noopener noreferrer"
+                                                                            class="block overflow-hidden rounded-lg border border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800"
+                                                                            wire:key="fulfillment-payload-image-{{ $fulfillment->id }}-{{ $entry['key'] }}-{{ $loop->index }}"
+                                                                            data-test="delivery-payload-image"
+                                                                        >
+                                                                            <img
+                                                                                src="{{ $imageUrl }}"
+                                                                                alt="{{ $entry['label'] }}"
+                                                                                class="mx-auto max-h-80 w-full object-contain"
+                                                                                loading="lazy"
+                                                                                decoding="async"
+                                                                                referrerpolicy="no-referrer"
+                                                                            />
+                                                                        </a>
+                                                                    @endforeach
                                                                 </div>
                                                             </div>
                                                         @endforeach
