@@ -1047,6 +1047,10 @@ return [
     'user_registration_referrer_username' => 'المُحيل عند التسجيل',
     'user_registration_creator_username' => 'اسم منشئ الحساب',
     'user_registration_export_detail' => 'المنشئ / المُحيل (اسم المستخدم)',
+
+    // Registration protection
+    'turnstile_verification_failed' => 'يرجى إكمال التحقق الأمني والمحاولة مرة أخرى.',
+    'registration_unavailable' => 'تعذر إكمال عملية التسجيل. يرجى المحاولة مرة أخرى لاحقاً.',
     'users_search_placeholder' => 'بحث بالاسم أو البريد أو اسم المستخدم…',
     'create_user' => 'إنشاء مستخدم',
     'create_user_hint' => 'إضافة مستخدم جديد. يمكن تعيين الأدوار والصلاحيات هنا أو لاحقاً.',

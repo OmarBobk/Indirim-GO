@@ -2,6 +2,8 @@
 
 namespace App\Providers;
 
+use App\Domain\Security\Contracts\HumanVerifier;
+use App\Domain\Security\Services\TurnstileVerifier;
 use App\Events\ActivityLogChanged;
 use App\Events\AutomationRunChanged;
 use App\Events\BugInboxChanged;
@@ -33,6 +35,8 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(CustomerPriceService::class, function ($app): CustomerPriceService {
             return new CustomerPriceService($app->make(PriceCalculator::class));
         });
+
+        $this->app->bind(HumanVerifier::class, TurnstileVerifier::class);
     }
 
     /**

@@ -1043,6 +1043,11 @@ return [
     'user_registration_referrer_username' => 'Referrer at signup',
     'user_registration_creator_username' => 'Creator username',
     'user_registration_export_detail' => 'Creator / referrer (username)',
+
+    // Registration protection
+    'turnstile_verification_failed' => 'Please complete the verification challenge and try again.',
+    'registration_unavailable' => 'We couldn\'t process your registration. Please try again later.',
+
     'users_search_placeholder' => 'Search by name, email, or username…',
     'create_user' => 'Create user',
     'create_user_hint' => 'Add a new user. Assign roles and permissions after creation or here.',
