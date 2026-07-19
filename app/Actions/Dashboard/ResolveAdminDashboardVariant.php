@@ -12,6 +12,7 @@ class ResolveAdminDashboardVariant
     public function handle(User $user): AdminDashboardVariant
     {
         $hasFinance = $user->can('manage_topups')
+            || $user->can('adjust_wallets')
             || $user->can('view_refunds')
             || $user->can('manage_settlements');
         $hasFulfillment = $user->can('view_fulfillments');

@@ -23,6 +23,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'manage_products',
             'manage_loyalty_tiers',
             'manage_topups',
+            'adjust_wallets',
             'view_referrals',
             'manage_referred_users',
             'create_orders',

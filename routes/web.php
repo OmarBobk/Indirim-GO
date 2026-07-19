@@ -111,6 +111,9 @@ Route::middleware(['auth', 'verified', 'backend'])->group(function () {
     Route::livewire('/refunds', 'pages::backend.refunds.index')->name('refunds');
     Route::livewire('/topups', 'pages::backend.topups.index')->name('topups');
     Route::livewire('/customer-funds', 'pages::backend.customer-funds.index')->name('customer-funds');
+    Route::livewire('/wallet-adjustments', 'pages::backend.wallet-adjustments.index')
+        ->middleware('can:adjust_wallets')
+        ->name('wallet-adjustments');
     Route::livewire('/settlements', 'pages::backend.settlements.index')->name('settlements');
     Route::livewire('/admin/commissions', CommissionsTable::class)
         ->middleware('can:manage_settlements')
