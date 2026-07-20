@@ -211,6 +211,7 @@ return [
         'manage_products',
         'manage_topups',
         'adjust_wallets',
+        'manage_wallet_credit',
         'view_referrals',
         'create_orders',
         'edit_orders',

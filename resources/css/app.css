@@ -70,7 +70,8 @@
     .admin-customer-funds,
     .admin-products,
     .admin-fulfillments,
-    .admin-notifications {
+    .admin-notifications,
+    .admin-credit-facility {
         min-width: 0;
         max-width: 100%;
         border-radius: 1rem;
@@ -89,7 +90,8 @@
     .admin-customer-funds .cf-display,
     .admin-products .cf-display,
     .admin-fulfillments .cf-display,
-    .admin-notifications .cf-display {
+    .admin-notifications .cf-display,
+    .admin-credit-facility .cf-display {
         font-family: 'Space Grotesk', Inter, ui-sans-serif, sans-serif;
     }
 
@@ -108,35 +110,40 @@
     .admin-customer-funds .cf-reveal,
     .admin-products .cf-reveal,
     .admin-fulfillments .cf-reveal,
-    .admin-notifications .cf-reveal {
+    .admin-notifications .cf-reveal,
+    .admin-credit-facility .cf-reveal {
         animation: cf-slide-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) backwards;
     }
 
     .admin-customer-funds .cf-reveal-delay-1,
     .admin-products .cf-reveal-delay-1,
     .admin-fulfillments .cf-reveal-delay-1,
-    .admin-notifications .cf-reveal-delay-1 {
+    .admin-notifications .cf-reveal-delay-1,
+    .admin-credit-facility .cf-reveal-delay-1 {
         animation-delay: 0.06s;
     }
 
     .admin-customer-funds .cf-reveal-delay-2,
     .admin-products .cf-reveal-delay-2,
     .admin-fulfillments .cf-reveal-delay-2,
-    .admin-notifications .cf-reveal-delay-2 {
+    .admin-notifications .cf-reveal-delay-2,
+    .admin-credit-facility .cf-reveal-delay-2 {
         animation-delay: 0.12s;
     }
 
     .admin-customer-funds .cf-reveal-delay-3,
     .admin-products .cf-reveal-delay-3,
     .admin-fulfillments .cf-reveal-delay-3,
-    .admin-notifications .cf-reveal-delay-3 {
+    .admin-notifications .cf-reveal-delay-3,
+    .admin-credit-facility .cf-reveal-delay-3 {
         animation-delay: 0.18s;
     }
 
     .admin-customer-funds .cf-reveal-delay-4,
     .admin-products .cf-reveal-delay-4,
     .admin-fulfillments .cf-reveal-delay-4,
-    .admin-notifications .cf-reveal-delay-4 {
+    .admin-notifications .cf-reveal-delay-4,
+    .admin-credit-facility .cf-reveal-delay-4 {
         animation-delay: 0.24s;
     }
 
@@ -144,7 +151,8 @@
         .admin-customer-funds .cf-reveal,
         .admin-products .cf-reveal,
         .admin-fulfillments .cf-reveal,
-        .admin-notifications .cf-reveal {
+        .admin-notifications .cf-reveal,
+        .admin-credit-facility .cf-reveal {
             animation: none;
         }
     }
@@ -213,7 +221,8 @@
     .admin-customer-funds .cf-table-shell,
     .admin-products .cf-table-shell,
     .admin-fulfillments .cf-table-shell,
-    .admin-notifications .cf-table-shell {
+    .admin-notifications .cf-table-shell,
+    .admin-credit-facility .cf-table-shell {
         overflow: hidden;
         border-radius: 1rem;
         border: 1px solid var(--cf-border);
@@ -223,7 +232,8 @@
     .admin-customer-funds .cf-table-head,
     .admin-products .cf-table-head,
     .admin-fulfillments .cf-table-head,
-    .admin-notifications .cf-table-head {
+    .admin-notifications .cf-table-head,
+    .admin-credit-facility .cf-table-head {
         border-bottom: 1px solid var(--cf-border);
         background-color: color-mix(in srgb, var(--cf-card-elevated) 85%, var(--cf-card));
     }
@@ -231,14 +241,16 @@
     .admin-customer-funds .cf-pagination p,
     .admin-products .cf-pagination p,
     .admin-fulfillments .cf-pagination p,
-    .admin-notifications .cf-pagination p {
+    .admin-notifications .cf-pagination p,
+    .admin-credit-facility .cf-pagination p {
         color: var(--cf-muted-foreground) !important;
     }
 
     .admin-customer-funds .cf-pagination nav [class*='border-gray'],
     .admin-products .cf-pagination nav [class*='border-gray'],
     .admin-fulfillments .cf-pagination nav [class*='border-gray'],
-    .admin-notifications .cf-pagination nav [class*='border-gray'] {
+    .admin-notifications .cf-pagination nav [class*='border-gray'],
+    .admin-credit-facility .cf-pagination nav [class*='border-gray'] {
         background-color: var(--cf-card) !important;
         border-color: var(--cf-border) !important;
         color: var(--cf-muted-foreground) !important;
@@ -247,7 +259,8 @@
     .admin-customer-funds .cf-pagination nav a[class*='border-gray']:hover,
     .admin-products .cf-pagination nav a[class*='border-gray']:hover,
     .admin-fulfillments .cf-pagination nav a[class*='border-gray']:hover,
-    .admin-notifications .cf-pagination nav a[class*='border-gray']:hover {
+    .admin-notifications .cf-pagination nav a[class*='border-gray']:hover,
+    .admin-credit-facility .cf-pagination nav a[class*='border-gray']:hover {
         color: var(--cf-primary) !important;
         border-color: color-mix(in srgb, var(--cf-primary) 45%, var(--cf-border)) !important;
         background-color: var(--cf-card-elevated) !important;
@@ -256,10 +269,128 @@
     .admin-customer-funds .cf-pagination nav [aria-current='page'] span,
     .admin-products .cf-pagination nav [aria-current='page'] span,
     .admin-fulfillments .cf-pagination nav [aria-current='page'] span,
-    .admin-notifications .cf-pagination nav [aria-current='page'] span {
+    .admin-notifications .cf-pagination nav [aria-current='page'] span,
+    .admin-credit-facility .cf-pagination nav [aria-current='page'] span {
         background-color: var(--cf-primary-soft) !important;
         color: var(--cf-primary) !important;
         border-color: color-mix(in srgb, var(--cf-primary) 55%, var(--cf-border)) !important;
+    }
+
+    /* Credit facility ops desk — row states, chips, sticky editor */
+    .admin-credit-facility .cf-ops-row {
+        cursor: pointer;
+        transition:
+            background-color 0.15s ease,
+            box-shadow 0.15s ease;
+    }
+
+    .admin-credit-facility .cf-ops-row:hover {
+        background-color: var(--cf-card-elevated);
+    }
+
+    .admin-credit-facility .cf-ops-row:focus-visible {
+        outline: none;
+        box-shadow: inset 0 0 0 2px var(--cf-ring);
+        background-color: var(--cf-card-elevated);
+    }
+
+    .admin-credit-facility .cf-ops-row--debt {
+        box-shadow: inset 3px 0 0 var(--cf-destructive);
+    }
+
+    .admin-credit-facility .cf-ops-row--debt:focus-visible {
+        box-shadow:
+            inset 3px 0 0 var(--cf-destructive),
+            inset 0 0 0 2px var(--cf-ring);
+    }
+
+    .admin-credit-facility .cf-ops-row--selected {
+        background-color: var(--cf-primary-soft);
+        box-shadow: inset 3px 0 0 var(--cf-primary);
+    }
+
+    .admin-credit-facility .cf-ops-row--selected:hover {
+        background-color: color-mix(in srgb, var(--cf-primary) 20%, var(--cf-card));
+    }
+
+    .admin-credit-facility .cf-ops-row--selected:focus-visible {
+        box-shadow:
+            inset 3px 0 0 var(--cf-primary),
+            inset 0 0 0 2px var(--cf-ring);
+    }
+
+    .admin-credit-facility .cf-ops-row--selected.cf-ops-row--debt {
+        box-shadow: inset 3px 0 0 var(--cf-primary);
+    }
+
+    .admin-credit-facility .cf-status-chip {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 0.375rem;
+        border: 1px solid var(--cf-border);
+        background-color: var(--cf-card-elevated);
+        padding: 0.125rem 0.5rem;
+        font-size: 0.75rem;
+        font-weight: 600;
+        line-height: 1.25rem;
+        white-space: nowrap;
+        color: var(--cf-foreground);
+    }
+
+    .admin-credit-facility .cf-status-chip--ok {
+        border-color: color-mix(in srgb, var(--cf-success) 40%, var(--cf-border));
+        background-color: var(--cf-success-soft);
+        color: var(--cf-success);
+    }
+
+    .admin-credit-facility .cf-status-chip--warn {
+        border-color: color-mix(in srgb, #fbbf24 40%, var(--cf-border));
+        background-color: color-mix(in srgb, #fbbf24 14%, var(--cf-card));
+        color: #fbbf24;
+    }
+
+    .admin-credit-facility .cf-status-chip--debt {
+        border-color: color-mix(in srgb, var(--cf-destructive) 40%, var(--cf-border));
+        background-color: var(--cf-destructive-soft);
+        color: var(--cf-destructive);
+    }
+
+    .admin-credit-facility .cf-status-chip--muted {
+        color: var(--cf-muted-foreground);
+    }
+
+    .admin-credit-facility .cf-detail-shell {
+        border-radius: 1rem;
+        border: 1px solid var(--cf-border);
+        background-color: var(--cf-card);
+        padding: 1.25rem;
+    }
+
+    .admin-credit-facility .cf-detail-shell--review {
+        border-color: color-mix(in srgb, var(--cf-primary) 35%, var(--cf-border));
+        background:
+            linear-gradient(160deg, var(--cf-primary-soft) 0%, var(--cf-card) 42%);
+    }
+
+    .admin-credit-facility .cf-success-shell {
+        border-radius: 1rem;
+        border: 1px solid color-mix(in srgb, var(--cf-success) 35%, var(--cf-border));
+        background: linear-gradient(160deg, var(--cf-success-soft) 0%, var(--cf-card) 55%);
+        padding: 1.25rem;
+    }
+
+    .admin-credit-facility .cf-debt-callout {
+        border-radius: 0.75rem;
+        border: 1px solid color-mix(in srgb, var(--cf-destructive) 40%, var(--cf-border));
+        background-color: var(--cf-destructive-soft);
+        padding: 0.875rem 1rem;
+    }
+
+    @media (min-width: 1280px) {
+        .admin-credit-facility .cf-detail-sticky {
+            position: sticky;
+            top: 1rem;
+        }
     }
 
     .admin-themed-modal {

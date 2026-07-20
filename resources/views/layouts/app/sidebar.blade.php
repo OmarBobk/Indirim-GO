@@ -120,9 +120,9 @@
                     @endcan
                 </livewire:sidebar.operations-group>
 
-                @if (auth()->user()?->can('manage_topups') || auth()->user()?->can('manage_settlements') || auth()->user()?->can('adjust_wallets'))
+                @if (auth()->user()?->can('manage_topups') || auth()->user()?->can('manage_settlements') || auth()->user()?->can('adjust_wallets') || auth()->user()?->can('manage_wallet_credit'))
                     <livewire:sidebar.financials-group
-                        :expanded="request()->routeIs('topups') || request()->routeIs('settlements') || request()->routeIs('customer-funds') || request()->routeIs('wallet-adjustments') || request()->routeIs('admin.commissions') || request()->routeIs('admin.payout-requests')"
+                        :expanded="request()->routeIs('topups') || request()->routeIs('settlements') || request()->routeIs('customer-funds') || request()->routeIs('wallet-adjustments') || request()->routeIs('credit-facility') || request()->routeIs('admin.commissions') || request()->routeIs('admin.payout-requests')"
                         :heading="__('messages.nav_financials')"
                         :key="'sidebar-financials-group'"
                     >
@@ -142,6 +142,11 @@
                         @can('adjust_wallets')
                         <flux:sidebar.item icon="plus-circle" :href="route('wallet-adjustments')" :current="request()->routeIs('wallet-adjustments')" wire:navigate>
                             {{ __('messages.wallet_adjustments') }}
+                        </flux:sidebar.item>
+                        @endcan
+                        @can('manage_wallet_credit')
+                        <flux:sidebar.item icon="credit-card" :href="route('credit-facility')" :current="request()->routeIs('credit-facility')" wire:navigate>
+                            {{ __('messages.credit_facility') }}
                         </flux:sidebar.item>
                         @endcan
                         @can('manage_settlements')
