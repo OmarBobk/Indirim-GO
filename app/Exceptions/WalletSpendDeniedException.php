@@ -17,7 +17,7 @@ final class WalletSpendDeniedException extends RuntimeException
         ?Throwable $previous = null,
     ) {
         parent::__construct(
-            $decision->failureReason?->userMessage() ?? 'Wallet spend denied.',
+            $decision->failureReason?->userMessage($decision) ?? 'Wallet spend denied.',
             $code,
             $previous,
         );
