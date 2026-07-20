@@ -27,8 +27,10 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 ## 2. Stack baseline
 
 - **PHP/Laravel:** PHP 8.4.x, Laravel 12, Livewire 4.
-- **Frontend:** Blade + Alpine + Tailwind v4 + Flux free components.
+- **Frontend:** Blade + Alpine + **Tailwind CSS 4.1** + Flux **FREE** components only (no Pro).
+- **Flux overrides:** published views under `resources/views/flux/` (including modal); project CSS in `resources/css/app.css` (e.g. `.admin-themed-modal`).
 - **Auth/ACL:** Laravel Fortify + Spatie permissions/roles.
+- **AI/MCP:** `laravel/ai` (Ops Assistant agent) + `laravel/mcp` (`POST /mcp/ops-assistant`).
 - **Realtime:** Reverb + Echo/Pusher protocol.
 - **Testing/style:** Pest + PHPUnit, Pint.
 - **PWA:** `erag/laravel-pwa` with permission-aware install button.
@@ -38,13 +40,15 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 ## 3. Architecture map (where to implement changes)
 
 - **Routes:** `routes/web.php`, `routes/automation.php`, `routes/channels.php`, `routes/console.php`.
-- **Domain actions:** `app/Actions/*` (Orders, Fulfillments, Topups, Refunds, Pricing, Users, Commissions, Packages, …).
+- **Domain actions:** `app/Actions/*` (Orders, Fulfillments, Topups, Refunds, Pricing, Users, Commissions, Packages, SupplierPrices, Dashboard, …).
 - **Pricing domain:** `app/Domain/Pricing/PricingEngine.php`, `CustomAmountValidator.php`, `PriceQuoteDTO.php`.
+- **Registration security domain:** `app/Domain/Security/*` (Turnstile, honeypot, registration rate limits) — public self-register only.
 - **Financial services:** `SystemEventService`, `OperationalIntelligenceService`.
 - **Fulfillment automation:** `FulfillmentAutomationService`, `app/Actions/Fulfillments/*Automation*`, `app/Jobs/DispatchFulfillmentAutomationJob.php`, worker callbacks in `FulfillmentAutomationCallbackController`.
-- **Browser worker (Node/Playwright):** `automation-worker/` — executes supplier drivers; Laravel owns all business state.
-- **UI/state boundary:** Livewire for server state; Alpine for UI/cart state. Dashboard UI uses Blade components under `resources/views/components/dashboard/*` plus service-built payloads.
-- **Observability:** Spatie activity log + `system_events` + push logs + fulfillment automation run records/artifacts.
+- **Supplier price scans:** `SupplierPriceScanService`, `app/Actions/SupplierPrices/*`, admin UI `/price-drift`, worker price-scan callbacks.
+- **Browser worker (Node/Playwright):** `automation-worker/` — executes supplier drivers + price scans; Laravel owns all business state.
+- **UI/state boundary:** Livewire for server state; Alpine for UI/cart state. Dashboard UI uses Blade components under `resources/views/components/dashboard/*` plus service-built payloads. Customer order “delivered” display uses `CustomerDeliveredPayload` (filters automation internals, extracts image URLs).
+- **Observability:** Spatie activity log + `system_events` + push logs + fulfillment automation run records/artifacts; admin exception badge counts via `GetAdminExceptionCounts`.
 
 ---
 
@@ -65,6 +69,7 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 ## 5. Authentication, permissions, and roles
 
 - **Fortify config reality:** `username` auth key, `lowercase_usernames=true`, `home='/'`, registration currently enabled in features array.
+- **Public registration security (self-register only):** `App\Http\Controllers\Auth\RegisteredUserController` runs `GuardRegistrationAttempt` before `CreateNewUser`. Controls: honeypot (`config('security.registration.honeypot_field')`), IP/email rate limits (`config/security.php` / `REGISTRATION_*` env), Cloudflare Turnstile (`config('services.turnstile')` / `TURNSTILE_*`). Local: set `TURNSTILE_ENABLED=false`. Admin/salesperson-created users bypass these guards.
 - **Backend gate:** `EnsureBackendAccess` checks `config('permission.backend_permissions')` and returns 404 when blocked.
 - **Backend permissions list:** `view_dashboard`, `manage_users`, `manage_sections`, `manage_products`, `manage_topups`, `view_referrals`, `create_orders`, `edit_orders`, `delete_orders`, `view_orders`, `view_fulfillments`, `manage_fulfillments`, `view_refunds`, `process_refunds`, `view_activities`, `manage_settlements`, `manage_bugs`, `update_product_prices`.
 - **Important nuance:** `manage_user_prices` exists for per-user price overrides but is not itself a backend-entry permission.
@@ -77,7 +82,7 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - **Customer:** browse catalog, cart, buy-now/custom amount, wallet + topups, orders/details, loyalty, referral link page when allowed by `view_referrals`, notifications, locale switch.
 - **Supervisor/operations:** fulfillment queues and claim workflow, refunds, topups, customer funds, settlements, bugs inbox.
 - **Salesperson:** `view_referrals` dashboard, referral link, referral-driven order/commission analytics, eligible payout visibility.
-- **Admin:** all ops pages + system events + user management + commissions management + website settings + **fulfillment automation admin** (`/admin/automation`) + **Ops Assistant** (`/admin/assistant`, read-only AI lookups).
+- **Admin:** all ops pages + system events + user management + commissions management + website settings + **fulfillment automation admin** (`/admin/automation`) + **Ops Assistant** (`/admin/assistant`, read-only AI lookups) + **Wasim price drift** (`/price-drift`, `can:update_product_prices`).
 
 ---
 
@@ -133,6 +138,14 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - **Worker:** `automation-worker/` Playwright service; Wasim drivers: `submitPurchase`, `reconcileOrder`, `ordersPageHelpers`; suppliers in `config/fulfillment_automation.php`.
 - **Callbacks:** `POST /internal/automation/runs/{uuid}/result|artifacts` (CSRF exempt, HMAC middleware). Worker also exposes **`POST /v1/sessions/clear`** (HMAC). Artifacts at `admin/fulfillment-automation/runs/{run}/artifact`.
 
+### Supplier price scanning (Wasim)
+
+- **Purpose:** Compare catalog entry prices vs live Wasim product prices; surface drift for staff with `update_product_prices`.
+- **UI:** `/price-drift` (`pages::backend.price-drift.index`) — start scan, review drift, apply scanned entry prices; related display helpers on `/product-entry-prices`.
+- **Orchestration:** `StartSupplierPriceScan` → `DispatchSupplierPriceScan` → worker `POST /v1/price-scans` → `IngestSupplierPriceScanResult` (`POST /internal/automation/price-scans/{uuid}/result`). Stale sweep: `wasim:sweep-stale-price-scans`.
+- **Reactive flags:** fulfillment ingest can flag products (`FlagProductSupplierPriceFromFulfillment`) when supplier price/margin issues appear; optional notifications to `update_product_prices` holders.
+- **Config:** `config('fulfillment_automation.price_scan')` (enabled, schedule, drift tolerance, notify flags). Requires automation enabled + worker.
+
 ---
 
 ## 10. Referral and commissions domain
@@ -187,7 +200,7 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - For realtime changes, ensure no event is emitted before transaction commit.
 - For automation changes, preserve HMAC callback verification, idempotent run ingestion, and eligibility guards; do not move financial truth into worker callbacks.
 - Prefer Actions over new Services unless orchestration/IO warrants it; keep Livewire thin.
-- Add/update tests in `tests/Feature` for regression-prone behavior (`FulfillmentAutomationTest`, `AutomationAdminTest`, `CheckoutFlowTest`, `AiAssistant/*`, `PackagesPageTest`).
+- Add/update tests in `tests/Feature` for regression-prone behavior (`FulfillmentAutomationTest`, `AutomationAdminTest`, `CheckoutFlowTest`, `AiAssistant/*`, `PackagesPageTest`, `SupplierPriceScanTest`, `Auth/RegistrationTest`).
 
 ---
 
@@ -203,6 +216,7 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - **2026-05-02:** commission payout batching/wallet crediting and `view_sales` -> `view_referrals` permission migration (`f7d0d97`, `10cbfbb`).
 - **2026-05-28 to 2026-06-02:** browser fulfillment automation — worker service, run model, dispatch/sweep commands, HMAC callbacks, admin automation page, package fulfillment toggles, `WebsiteSetting::automation_enabled` kill switch.
 - **2026-06:** Wasim **two-phase** automation (purchase `submitted` → reconcile on supplier orders page); Wasim admin credentials + worker session clear; checkout **`cart_hash`** idempotency limited to pending + short paid window (`CheckoutResult`); **Ops Assistant** admin chat (`/admin/assistant`, sidebar nav, read-only order/wallet/fulfillment lookups).
+- **2026-07:** **Supplier price scans** + `/price-drift` UI, reactive fulfillment price flags, stale-scan sweep; **admin exception counts** (`GetAdminExceptionCounts`) for dashboard/sidebar badges; **`CustomerDeliveredPayload`** for safe customer-facing delivered payload rendering (incl. image URLs); **registration security** — Cloudflare Turnstile + honeypot + registration rate limits (`app/Domain/Security/*`).
 
 ---
 
@@ -210,29 +224,35 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 
 - **Public:** `/`, `/categories/{category:slug}`, `/cart`, `/contact`, `/404`, `language/{locale}`.
 - **Auth+verified (storefront):** `/profile`, `/wallet`, `/loyalty`, `/referral-link`, `/orders`, `/orders/{order_number}`, `/notifications`, `/topup-proofs/{proof}`, `/bug-attachments/{attachment}`, `POST /api/pricing/buy-now-custom-amount-quote`.
-- **Backend:** `/dashboard` (`can:view_dashboard`), `/salesperson-dashboard` (`can:view_referrals`), `/categories`, `/packages`, `/products`, `/product-entry-prices` (`can:update_product_prices`), `/pricing-rules`, `/loyalty-tiers`, `/admin/orders/*`, `/admin/users/*`, `/admin/users/{user}/audit`, `/fulfillments`, `/refunds`, `/topups`, `/customer-funds`, `/settlements`, `/admin/commissions` (`can:manage_settlements`), `/admin/notifications`, `/admin/bugs/*`, `/admin/website-settings` (admin only), **`/admin/automation`** (admin only), **`/admin/assistant`** (admin only, throttled).
-- **Automation (internal):** `POST /internal/automation/runs/{uuid}/result`, `POST /internal/automation/runs/{uuid}/artifacts` (HMAC-signed, CSRF exempt). Worker: `POST /v1/runs`, **`POST /v1/sessions/clear`** (HMAC).
+- **Backend:** `/dashboard` (`can:view_dashboard`), `/salesperson-dashboard` (`can:view_referrals`), `/categories`, `/packages`, `/products`, `/product-entry-prices` (`can:update_product_prices`), **`/price-drift`** (`can:update_product_prices`), `/pricing-rules`, `/loyalty-tiers`, `/admin/orders/*`, `/admin/users/*`, `/admin/users/{user}/audit`, `/fulfillments`, `/refunds`, `/topups`, `/customer-funds`, `/settlements`, `/admin/commissions` (`can:manage_settlements`), `/admin/notifications`, `/admin/bugs/*`, `/admin/website-settings` (admin only), **`/admin/automation`** (admin only), **`/admin/assistant`** (admin only, throttled).
+- **Automation (internal):** `POST /internal/automation/runs/{uuid}/result`, `POST /internal/automation/runs/{uuid}/artifacts`, **`POST /internal/automation/price-scans/{uuid}/result`** (HMAC-signed, CSRF exempt). Worker: `POST /v1/runs`, **`POST /v1/sessions/clear`**, **`POST /v1/price-scans`** (HMAC).
 - **AI/MCP:** `POST /mcp/ops-assistant` (admin MCP server for read-only ops tools).
 
 ---
 
 ## 16. Primary source files for AI prompts
 
-- `routes/web.php`, `routes/automation.php`, `routes/channels.php`, `routes/console.php`
-- `config/permission.php`, `config/fortify.php`, `config/referral.php`, **`config/fulfillment_automation.php`**, **`config/billing.php`** (`checkout_paid_idempotency_minutes`)
+- `routes/web.php`, `routes/automation.php`, `routes/channels.php`, `routes/console.php`, `routes/ai.php`
+- `config/permission.php`, `config/fortify.php`, `config/referral.php`, **`config/fulfillment_automation.php`** (incl. `price_scan`), **`config/billing.php`**, **`config/security.php`**, `config/services.php` (`turnstile`, `openai`)
 - `app/Actions/Orders/CheckoutFromPayload.php`, **`CheckoutResult.php`**, `CreateOrderFromCartPayload.php`, `PayOrderWithWallet.php`
 - `app/Actions/Commissions/CreatePayoutBatch.php`
 - `app/Actions/Refunds/ApproveRefundRequest.php`
 - `app/Actions/Fulfillments/ClaimFulfillment.php`, `CreateFulfillmentsForOrder.php`, **`DispatchFulfillmentAutomationRun.php`**, **`IngestFulfillmentAutomationResult.php`**, **`ScheduleWasimOrderReconcile.php`**, **`RetryFulfillmentAutomation.php`**
 - `app/Actions/Packages/TogglePackageFulfillment.php`, `UpsertPackage.php`
+- `app/Actions/SupplierPrices/*`, `app/Services/SupplierPriceScanService.php`
+- `app/Actions/Dashboard/GetAdminExceptionCounts.php`
 - `app/Actions/AiAssistant/FetchOrderData.php`, `FetchWalletData.php`, `FetchFulfillmentData.php`
+- `app/Domain/Security/*`, `app/Http/Controllers/Auth/RegisteredUserController.php`
+- `app/Support/CustomerDeliveredPayload.php`
 - `app/Services/FulfillmentAutomationService.php` (incl. **`clearWorkerBrowserSession()`**), `SystemEventService.php`, `OperationalIntelligenceService.php`
 - `app/Services/SalespersonDashboardService.php`, `resources/views/components/dashboard/*`
 - `app/Domain/Pricing/*`
-- `app/Ai/Agents/OpsAssistant.php`, `app/Livewire/Admin/AssistantChat.php`, `app/Livewire/Admin/AutomationMonitor.php`
-- `app/Models/FulfillmentAutomationRun.php`, `WebsiteSetting.php` (`automation_enabled`, **`wasim_automation_*`**)
-- `resources/views/livewire/admin/automation-monitor.blade.php`, `resources/views/livewire/admin/assistant-chat.blade.php`, `resources/views/pages/backend/fulfillments/⚡index.blade.php`
-- `resources/views/layouts/app/sidebar.blade.php` (Automation + Ops Assistant nav)
+- `app/Ai/Agents/OpsAssistant.php`, `app/Mcp/Servers/OpsAssistantServer.php`, `app/Livewire/Admin/AssistantChat.php`, `app/Livewire/Admin/AutomationMonitor.php`
+- `app/Models/FulfillmentAutomationRun.php`, `SupplierPriceScan.php`, `WebsiteSetting.php` (`automation_enabled`, **`wasim_automation_*`**)
+- `resources/views/livewire/admin/automation-monitor.blade.php`, `resources/views/livewire/admin/assistant-chat.blade.php`, `resources/views/pages/backend/fulfillments/⚡index.blade.php`, `resources/views/pages/backend/price-drift/⚡index.blade.php`
+- `resources/views/layouts/app/sidebar.blade.php` (Automation + Ops Assistant + price-drift nav)
+- `resources/views/flux/modal/index.blade.php`, `resources/css/app.css`
 - `automation-worker/README.md`, `automation-worker/src/drivers/wasim/*`, `automation-worker/src/server.ts` (`/v1/sessions/clear`)
 - `resources/js/app.js`
 - **Agent rules:** `.cursor/rules/laravel-boost.mdc` (stack versions, financial guardrails, testing/Pint/Livewire conventions)
+- **Companion map:** `Docs/PROJECT_STRUCTURE.md` (full layout); backlog scratchpad: `Docs/doc.md` (verify code — do not trust outdated “not installed” notes without checking `composer.json`)
