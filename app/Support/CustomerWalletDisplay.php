@@ -109,23 +109,97 @@ final class CustomerWalletDisplay
     }
 
     /**
-     * Short secondary line for nav when a usable facility exists and the customer is not in debt focus.
+     * Bare secondary money for the compact header stack when a usable facility exists.
+     * Debt → remaining available; prepaid/zero → credit limit.
      */
-    public function navCreditHint(): ?string
+    public function navSecondaryAmount(): ?string
     {
         if (! $this->isCreditActive()) {
             return null;
         }
 
         if ($this->tone() === 'debt') {
+            return $this->formattedAvailableToSpend();
+        }
+
+        return $this->formattedCreditLimit();
+    }
+
+    /**
+     * Labeled secondary line for CTA badges (Limit/Available + amount).
+     */
+    public function navCreditHint(): ?string
+    {
+        $amount = $this->navSecondaryAmount();
+
+        if ($amount === null) {
+            return null;
+        }
+
+        if ($this->tone() === 'debt') {
             return __('messages.wallet_nav_available', [
-                'amount' => $this->formattedAvailableToSpend(),
+                'amount' => $amount,
             ]);
         }
 
         return __('messages.wallet_nav_limit', [
-            'amount' => $this->formattedCreditLimit(),
+            'amount' => $amount,
         ]);
+    }
+
+    /**
+     * Single-line badge for the Add Credit CTA (amount + Limit/Available when facility is active).
+     */
+    public function formattedCtaBadge(): string
+    {
+        $primary = $this->formattedNavAmount();
+        $hint = $this->navCreditHint();
+
+        if ($hint === null) {
+            return $primary;
+        }
+
+        return $primary.' · '.$hint;
+    }
+
+    /**
+     * Plain-language rows for the mobile chrome popover (no hover required).
+     *
+     * @return list<array{label: string, value: string, tone: ?string}>
+     */
+    public function chromeDetailRows(): array
+    {
+        $rows = [];
+
+        if ($this->tone() === 'debt') {
+            $rows[] = [
+                'label' => __('messages.wallet_you_owe'),
+                'value' => $this->formattedOutstandingDebt(),
+                'tone' => 'debt',
+            ];
+        } else {
+            $rows[] = [
+                'label' => __('messages.wallet_prepaid_balance'),
+                'value' => $this->formattedBalance(),
+                'tone' => $this->tone() === 'positive' ? 'positive' : 'zero',
+            ];
+        }
+
+        if ($this->isCreditActive()) {
+            $rows[] = [
+                'label' => __('messages.wallet_credit_limit_label'),
+                'value' => $this->formattedCreditLimit(),
+                'tone' => null,
+            ];
+        }
+
+        $rows[] = [
+            'label' => __('messages.wallet_available_to_spend'),
+            'value' => $this->formattedAvailableToSpend(),
+            'tone' => bccomp((string) $this->wallet->availableToSpend(), '0', 2) === 1 ? 'positive' : null,
+        ];
+
+        return $rows;
     }
 
     /**

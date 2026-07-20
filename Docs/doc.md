@@ -331,3 +331,50 @@ Status as of July 2026: MCP server, AI tools, and admin chat UI are **implemente
 - Read-only tools by default; any write tool must call existing Action and reuse idempotency
 ---
 
+
+
+
+Phase 1
+UX Architecture (Ask)
+
+↓
+
+Phase 2
+Implementation
+
+↓
+
+Phase 3
+UX Review
+
+↓
+
+Phase 4
+Security Review
+
+↓
+
+Phase 5
+Performance Review
+
+↓
+
+Phase 6
+Production Readiness
+
+↓
+
+Merge
+
+
+1. Landing Experience
+
+2. Browsing Experience
+
+3. Product Experience
+
+4. Checkout Experience
+
+5. Customer Experience
+
+6. Delight Experience

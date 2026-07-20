@@ -201,21 +201,65 @@
 
 
                         @auth
-                            <a
-                                href="{{ route('wallet') }}"
-                                wire:navigate
-                                class="inline-flex items-center gap-2 border-zinc-200 bg-white px-1 sm:px-3 py-2 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
-                                aria-label="{{ __('main.wallet') }}{{ $walletDisplay ? ' — '.$walletDisplay->navTitle() : '' }}"
-                                data-test="wallet-balance"
-                            >
-                                <flux:icon icon="wallet" class="size-4 text-zinc-500 dark:text-zinc-300" />
-                                @if (\App\Models\WebsiteSetting::getPricesVisible() && $walletDisplay)
-                                    <x-wallet.nav-amount
-                                        :display="$walletDisplay"
-                                        class="hidden sm:inline-flex"
-                                    />
-                                @endif
-                            </a>
+                            @if (\App\Models\WebsiteSetting::getPricesVisible() && $walletDisplay)
+                                <div
+                                    class="relative shrink-0"
+                                    x-data="{ open: false }"
+                                    x-on:keydown.escape.window="open = false"
+                                    x-on:scroll.window="open = false"
+                                    x-on:click.outside="open = false"
+                                >
+                                    <button
+                                        type="button"
+                                        class="inline-flex shrink-0 items-center justify-center rounded-md px-1.5 py-0.5 transition hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--color-accent)/40 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:hover:bg-zinc-800 dark:focus-visible:ring-offset-zinc-900"
+                                        aria-label="{{ __('main.wallet') }} — {{ $walletDisplay->navTitle() }}"
+                                        aria-expanded="false"
+                                        aria-haspopup="dialog"
+                                        x-bind:aria-expanded="open.toString()"
+                                        x-on:click="open = ! open"
+                                        data-test="wallet-balance"
+                                    >
+                                        <x-wallet.nav-amount
+                                            :display="$walletDisplay"
+                                            stacked
+                                            class="min-w-0"
+                                        />
+                                    </button>
+                                    <div
+                                        x-cloak
+                                        x-show="open"
+                                        x-transition.opacity.duration.150ms
+                                        class="absolute end-0 top-full z-50 mt-2 w-64 max-w-[min(16rem,calc(100vw-1.5rem))] rounded-xl border border-zinc-200 bg-white p-3 shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
+                                        role="dialog"
+                                        aria-label="{{ __('main.wallet') }}"
+                                        data-test="wallet-chrome-popover"
+                                    >
+                                        <x-wallet.chrome-summary :display="$walletDisplay" />
+                                        <div class="mt-3">
+                                            <flux:button
+                                                href="{{ route('wallet') }}"
+                                                variant="primary"
+                                                size="sm"
+                                                class="w-full justify-center !bg-accent !text-accent-foreground hover:!bg-accent-hover"
+                                                wire:navigate
+                                                data-test="wallet-chrome-open"
+                                            >
+                                                {{ __('main.add_sufficient') }}
+                                            </flux:button>
+                                        </div>
+                                    </div>
+                                </div>
+                            @else
+                                <a
+                                    href="{{ route('wallet') }}"
+                                    wire:navigate
+                                    class="inline-flex items-center gap-2 px-1 py-2 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-100 sm:px-3 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                                    aria-label="{{ __('main.wallet') }}"
+                                    data-test="wallet-balance"
+                                >
+                                    <flux:icon icon="wallet" class="size-4 text-zinc-500 dark:text-zinc-300" />
+                                </a>
+                            @endif
                         @endauth
 
                         <flux:button x-data x-on:click="$flux.dark = ! $flux.dark" icon="moon" variant="subtle" aria-label="Toggle dark mode" />
@@ -258,8 +302,8 @@
                                 x-on:scroll="update()"
                                 class="overflow-x-auto scrollbar-hide sm:mx-12"
                             >
-                                <!-- Add side padding on desktop so arrows don't overlap items -->
-                                <flux:navbar class="gap-4 !py-0 ltr:lg:pr-12 rtl:lg:pl-12 justify-start sm:justify-center">
+                                <!-- Side padding keeps the Add Credit CTA fully reachable on narrow RTL/LTR phones -->
+                                <flux:navbar class="gap-3 !py-0 pe-4 ps-1 sm:gap-4 sm:pe-0 sm:ps-0 ltr:lg:pr-12 rtl:lg:pl-12 justify-start sm:justify-center">
                                     <flux:navbar.item class="border !border-accent  after:!h-0 {{request()->routeIs('home') ? '!bg-accent hover:!bg-accent-hover !text-accent-foreground' : ''}}"
                                                       data-nav-active="{{ request()->routeIs('home') ? 'true' : 'false' }}"
                                                       href="{{route('home')}}" icon="home">{{__('main.home')}}</flux:navbar.item>
@@ -267,19 +311,20 @@
                                                       data-nav-active="{{ request()->routeIs('orders.index') ? 'true' : 'false' }}"
                                                       href="{{route('orders.index')}}">{{__('main.my_orders')}}</flux:navbar.item>
                                     @if (\App\Models\WebsiteSetting::getPricesVisible() && $walletDisplay)
-                                    <flux:navbar.item class="border !border-accent after:!h-0 {{request()->routeIs('wallet') ? '!bg-accent hover:!bg-accent-hover !text-accent-foreground' : ''}}"
+                                    <flux:navbar.item class="shrink-0 border !border-accent after:!h-0 {{request()->routeIs('wallet') ? '!bg-accent hover:!bg-accent-hover !text-accent-foreground' : ''}}"
                                                       data-nav-active="{{ request()->routeIs('wallet') ? 'true' : 'false' }}"
                                                       href="{{route('wallet')}}"
                                                       wire:navigate
                                                       title="{{ $walletDisplay->navTitle() }}"
-                                                      badge="{{ $walletDisplay->formattedNavAmount() }}"
+                                                      badge="{{ $walletDisplay->formattedCtaBadge() }}"
                                                       badge:color="{{ $walletDisplay->badgeColor() }}"
-                                                      badge:class="ms-3 whitespace-nowrap px-2 tabular-nums"
+                                                      badge:class="ms-2 max-w-[11rem] truncate whitespace-nowrap px-2 tabular-nums sm:max-w-none sm:ms-3"
                                                       data-test="wallet-add-sufficient"
                                                       data-wallet-tone="{{ $walletDisplay->tone() }}"
+                                                      data-wallet-cta-badge="{{ $walletDisplay->formattedCtaBadge() }}"
                                                       icon="plus">{{__('main.add_sufficient')}}</flux:navbar.item>
                                     @else
-                                    <flux:navbar.item class="border !border-accent after:!h-0 {{request()->routeIs('wallet') ? '!bg-accent hover:!bg-accent-hover !text-accent-foreground' : ''}}"
+                                    <flux:navbar.item class="shrink-0 border !border-accent after:!h-0 {{request()->routeIs('wallet') ? '!bg-accent hover:!bg-accent-hover !text-accent-foreground' : ''}}"
                                                       data-nav-active="{{ request()->routeIs('wallet') ? 'true' : 'false' }}"
                                                       href="{{route('wallet')}}"
                                                       wire:navigate

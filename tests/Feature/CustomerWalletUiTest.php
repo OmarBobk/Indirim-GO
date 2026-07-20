@@ -74,7 +74,9 @@ test('header shows green prepaid balance and credit limit hint when facility is 
 
     $money = FrontendMoney::for($user);
     $balance = $money->format(10.87, 'USD', 2);
-    $limitHint = __('messages.wallet_nav_limit', ['amount' => $money->format(100.00, 'USD', 2)]);
+    $limitAmount = $money->format(100.00, 'USD', 2);
+    $limitHint = __('messages.wallet_nav_limit', ['amount' => $limitAmount]);
+    $ctaBadge = $balance.' · '.$limitHint;
 
     $this->actingAs($user)
         ->get(route('home'))
@@ -83,8 +85,13 @@ test('header shows green prepaid balance and credit limit hint when facility is 
         ->assertSeeHtml('data-wallet-tone="positive"')
         ->assertSeeHtml('text-emerald-700')
         ->assertSee($balance)
-        ->assertSee($limitHint)
+        ->assertSee($limitAmount)
+        ->assertSeeHtml('data-test="wallet-nav-credit-hint"')
+        ->assertSeeHtml('>'.e($limitAmount).'</span>')
+        ->assertDontSeeHtml('hidden text-[10px] font-medium text-zinc-500 dark:text-zinc-400 lg:inline')
+        ->assertSeeHtml('data-test="wallet-chrome-summary"')
         ->assertSeeHtml('data-test="wallet-add-sufficient"')
+        ->assertSeeHtml('data-wallet-cta-badge="'.e($ctaBadge).'"')
         ->assertSeeHtml('data-test="wallet-nav-amount"');
 });
 
@@ -100,9 +107,11 @@ test('header shows red signed debt when wallet is overdrawn', function () {
 
     $money = FrontendMoney::for($user);
     $signedDebt = $money->format(-10.00, 'USD', 2);
+    $availableAmount = $money->format(90.00, 'USD', 2);
     $availableHint = __('messages.wallet_nav_available', [
-        'amount' => $money->format(90.00, 'USD', 2),
+        'amount' => $availableAmount,
     ]);
+    $ctaBadge = $signedDebt.' · '.$availableHint;
 
     $this->actingAs($user)
         ->get(route('home'))
@@ -110,7 +119,12 @@ test('header shows red signed debt when wallet is overdrawn', function () {
         ->assertSeeHtml('data-wallet-tone="debt"')
         ->assertSeeHtml('text-red-700')
         ->assertSee($signedDebt)
-        ->assertSee($availableHint)
+        ->assertSee($availableAmount)
+        ->assertSeeHtml('data-test="wallet-nav-credit-hint"')
+        ->assertSeeHtml('>'.e($availableAmount).'</span>')
+        ->assertSeeHtml('data-wallet-cta-badge="'.e($ctaBadge).'"')
+        ->assertSee(__('messages.wallet_credit_limit_label'))
+        ->assertSee($money->format(100.00, 'USD', 2))
         ->assertDontSeeHtml('data-wallet-tone="positive"');
 });
 
@@ -126,7 +140,60 @@ test('header treats zero balance as neutral tone', function () {
         ->assertSeeHtml('data-wallet-tone="zero"')
         ->assertSee($money->format(0.00, 'USD', 2))
         ->assertSeeHtml('text-zinc-700')
+        ->assertDontSeeHtml('data-test="wallet-nav-credit-hint"')
         ->assertDontSeeHtml('data-wallet-tone="debt"');
+});
+
+test('header does not show credit limit when facility is off', function () {
+    $user = User::factory()->create(['locale' => 'en']);
+    $wallet = Wallet::forUser($user);
+    $wallet->update([
+        'balance' => '25.00',
+        'credit_enabled' => false,
+        'credit_limit' => '500.00',
+        'credit_status' => null,
+    ]);
+
+    $money = FrontendMoney::for($user);
+    $balance = $money->format(25.00, 'USD', 2);
+    $limitHint = __('messages.wallet_nav_limit', ['amount' => $money->format(500.00, 'USD', 2)]);
+
+    $this->actingAs($user)
+        ->get(route('home'))
+        ->assertOk()
+        ->assertSee($balance)
+        ->assertSeeHtml('data-wallet-cta-badge="'.e($balance).'"')
+        ->assertDontSee($limitHint)
+        ->assertDontSeeHtml('data-test="wallet-nav-credit-hint"')
+        ->assertDontSee(__('messages.wallet_credit_limit_label'));
+});
+
+test('header surfaces active credit limit at zero balance for mobile chrome', function () {
+    $user = User::factory()->create(['locale' => 'en']);
+    $wallet = Wallet::forUser($user);
+    $wallet->update([
+        'balance' => '0.00',
+        'credit_enabled' => true,
+        'credit_limit' => '250.00',
+        'credit_status' => CreditFacilityStatus::Active,
+    ]);
+
+    $money = FrontendMoney::for($user);
+    $balance = $money->format(0.00, 'USD', 2);
+    $limitAmount = $money->format(250.00, 'USD', 2);
+    $limitHint = __('messages.wallet_nav_limit', ['amount' => $limitAmount]);
+
+    $this->actingAs($user)
+        ->get(route('home'))
+        ->assertOk()
+        ->assertSeeHtml('data-wallet-tone="zero"')
+        ->assertSee($balance)
+        ->assertSee($limitAmount)
+        ->assertSeeHtml('data-test="wallet-nav-credit-hint"')
+        ->assertSeeHtml('>'.e($limitAmount).'</span>')
+        ->assertSeeHtml('data-test="wallet-chrome-summary"')
+        ->assertSee(__('messages.wallet_credit_limit_label'))
+        ->assertSeeHtml('data-wallet-cta-badge="'.e($balance.' · '.$limitHint).'"');
 });
 
 test('wallet page shows owed amount and credit facility when overdrawn with active credit', function () {
