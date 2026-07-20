@@ -10,9 +10,12 @@ use App\Enums\OrderStatus;
 use App\Enums\ProductAmountMode;
 use App\Models\Package;
 use App\Models\Product;
+use App\Models\Wallet;
 use App\Support\BuyNowClientPricingContext;
+use App\Support\BuyNowLoginIntent;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Validation\ValidationException;
+use Livewire\Attributes\Computed;
 use Livewire\Component;
 use Masmerise\Toaster\Toastable;
 
@@ -46,6 +49,7 @@ new class extends Component
     public ?string $buyNowError = null;
     public ?string $buyNowSuccess = null;
     public ?string $buyNowOrderNumber = null;
+    public bool $buyNowNeedsFunds = false;
     public bool $isPackageOverlayOpen = false;
     public bool $showPackageProducts = false;
     public ?int $selectedPackageId = null;
@@ -72,6 +76,42 @@ new class extends Component
      * @var array<int, array<string, mixed>>
      */
     public array $packageOverlayClientPricingContexts = [];
+
+    public function mount(): void
+    {
+        if (! auth()->check()) {
+            return;
+        }
+
+        $intent = BuyNowLoginIntent::pull();
+
+        if ($intent === null) {
+            return;
+        }
+
+        if (isset($intent['package_id'])) {
+            $this->openPackageOverlay((int) $intent['package_id']);
+        }
+
+        if (isset($intent['product_id'])) {
+            $this->openBuyNow(
+                (int) $intent['product_id'],
+                isset($intent['package_id']),
+                $intent['quantity'] ?? null,
+                $intent['requested_amount'] ?? null,
+            );
+        }
+    }
+
+    #[Computed]
+    public function walletAvailableToSpendAmount(): ?float
+    {
+        if (! auth()->check()) {
+            return null;
+        }
+
+        return (float) Wallet::forUser(auth()->user())->availableToSpend();
+    }
 
     /**
      * Active pricing rules + user flags for Alpine instant tier math (custom buy-now only).
@@ -100,11 +140,17 @@ new class extends Component
     public function openBuyNow(int $productId, bool $fromPackageOverlay = false, mixed $quantity = null, mixed $overlayCustomAmount = null): void
     {
         if (! auth()->check()) {
-            $this->redirectRoute('login');
+            $this->redirectToLoginWithBuyNowIntent([
+                'product_id' => $productId,
+                'package_id' => $fromPackageOverlay ? $this->selectedPackageId : null,
+                'quantity' => $this->normalizeBuyNowOptionalPositiveInt($quantity),
+                'requested_amount' => $this->normalizeBuyNowOptionalPositiveInt($overlayCustomAmount),
+            ]);
+
             return;
         }
 
-        $this->reset('buyNowError', 'buyNowSuccess', 'buyNowOrderNumber');
+        $this->reset('buyNowError', 'buyNowSuccess', 'buyNowOrderNumber', 'buyNowNeedsFunds');
         $this->resetValidation();
 
         $product = $this->loadProductForBuyNow($productId);
@@ -199,6 +245,7 @@ new class extends Component
             'buyNowError',
             'buyNowSuccess',
             'buyNowOrderNumber',
+            'buyNowNeedsFunds',
             'isPackageOverlayOpen',
             'showPackageProducts',
             'selectedPackageId',
@@ -478,10 +525,18 @@ new class extends Component
 
     public function submitBuyNow(?int $clientCustomAmount = null): void
     {
-        $this->reset('buyNowError', 'buyNowSuccess', 'buyNowOrderNumber');
+        $this->reset('buyNowError', 'buyNowSuccess', 'buyNowOrderNumber', 'buyNowNeedsFunds');
 
         if (! auth()->check()) {
-            $this->redirectRoute('login');
+            $this->redirectToLoginWithBuyNowIntent([
+                'product_id' => $this->buyNowProductId,
+                'package_id' => $this->selectedPackageId,
+                'quantity' => $this->normalizeBuyNowOptionalPositiveInt($this->buyNowQuantity),
+                'requested_amount' => $this->buyNowAmountMode === ProductAmountMode::Custom->value
+                    ? $this->normalizeBuyNowOptionalPositiveInt($clientCustomAmount ?? $this->buyNowRequestedAmount)
+                    : null,
+            ]);
+
             return;
         }
 
@@ -545,11 +600,13 @@ new class extends Component
             $message = $checkout->reusedExistingOrder
                 ? __('messages.checkout_order_already_placed', ['order_number' => $order->order_number])
                 : __('messages.payment_successful_order_processing', ['order_number' => $order->order_number]);
+            $this->buyNowSuccess = $message;
+            $this->buyNowOrderNumber = $order->order_number;
             $this->success($message);
-            $this->closeBuyNow();
         } catch (ValidationException $exception) {
             $this->buyNowError = collect($exception->errors())->flatten()->first()
                 ?? __('messages.checkout_validation_failed');
+            $this->buyNowNeedsFunds = array_key_exists('wallet', $exception->errors());
             $this->error($this->buyNowError);
         } catch (\Throwable $e) {
             report($e);
@@ -720,6 +777,21 @@ new class extends Component
         }
 
         return false;
+    }
+
+    /**
+     * @param  array{product_id?: int|null, package_id?: int|null, quantity?: int|null, requested_amount?: int|null}  $intent
+     */
+    private function redirectToLoginWithBuyNowIntent(array $intent): void
+    {
+        BuyNowLoginIntent::store([
+            'product_id' => $intent['product_id'] ?? null,
+            'package_id' => $intent['package_id'] ?? null,
+            'quantity' => $intent['quantity'] ?? null,
+            'requested_amount' => $intent['requested_amount'] ?? null,
+        ]);
+
+        $this->redirectRoute('login');
     }
 
     private function formatGroupedIntegerForDisplay(int $value): string
@@ -1098,7 +1170,12 @@ new class extends Component
         </div>
 
         @if ($showPackageProducts)
-            <div class="space-y-4">
+            <div class="space-y-4" wire:loading.class="opacity-60" wire:target="openPackageOverlay">
+            <div wire:loading.flex wire:target="openPackageOverlay" class="items-center justify-center gap-2 py-8 text-sm text-zinc-500 dark:text-zinc-400">
+                <flux:icon icon="arrow-path" class="size-5 animate-spin" />
+                <span>{{ __('messages.please_wait') }}</span>
+            </div>
+            <div wire:loading.remove wire:target="openPackageOverlay">
             @if ($packageProducts === [])
                 <flux:callout variant="subtle" icon="information-circle">
                     {{ __('messages.no_products_yet') }}
@@ -1276,7 +1353,7 @@ new class extends Component
                                             type="button"
                                             variant="outline"
                                             size="sm"
-                                            class="flex-1 lg:flex-none"
+                                            class="min-h-11 flex-1 lg:flex-none"
                                             x-on:click="
                                                 $store.cart.add(product, qty);
                                                 const item = $store.cart.items.find((entry) => entry.id === product.id);
@@ -1303,7 +1380,7 @@ new class extends Component
                                             type="button"
                                             variant="primary"
                                             size="sm"
-                                            class="flex-1 lg:flex-none"
+                                            class="min-h-11 flex-1 lg:flex-none"
                                             x-on:click="$wire.openBuyNow({{ $product['id'] }}, true, 1, digitsParsed)"
                                         >
                                             {{ __('main.buy_now') }}
@@ -1349,11 +1426,12 @@ new class extends Component
                                         </button>
                                     </div>
 
-                                    <div class="flex items-center gap-2">
+                                    <div class="flex w-full items-center gap-2 sm:w-auto">
                                         <flux:button
                                             type="button"
                                             variant="outline"
-                                            size="xs"
+                                            size="sm"
+                                            class="min-h-11 flex-1 sm:flex-none"
                                             x-on:click="$store.cart.add(product, qty); qty = 1;"
                                         >
                                             {{ __('main.add_to_cart') }}
@@ -1361,7 +1439,8 @@ new class extends Component
                                         <flux:button
                                             type="button"
                                             variant="primary"
-                                            size="xs"
+                                            size="sm"
+                                            class="min-h-11 flex-1 sm:flex-none"
                                             x-on:click="$wire.openBuyNow({{ $product['id'] }}, true, Math.max(1, parseInt(qty, 10) || 1), null)"
                                         >
                                             {{ __('main.buy_now') }}
@@ -1388,10 +1467,12 @@ new class extends Component
                     <div class="mt-2">{{ __('messages.packages_intro') }}</div>
                 </div>
             </div>
-            </div>
+            </div>{{-- wire:loading.remove --}}
+            </div>{{-- package products shell --}}
         @else
-            {{-- Buy Now form: scrollable so quantity + requirements + buttons are visible --}}
-            <div class="max-h-[70vh] overflow-y-auto space-y-4">
+            {{-- Buy Now form: scroll body + sticky thumb-zone pay bar --}}
+            <div class="flex max-h-[min(78vh,40rem)] flex-col" data-test="buy-now-form">
+            <div class="min-h-0 flex-1 space-y-4 overflow-y-auto pe-0.5">
             <flux:heading size="sm" class="text-zinc-900 dark:text-zinc-100">
                 {{ __('main.buy_now') }}
             </flux:heading>
@@ -1402,29 +1483,46 @@ new class extends Component
             @endif
 
             @if ($buyNowError)
-                <flux:callout variant="subtle" icon="exclamation-triangle">
+                <flux:callout variant="subtle" icon="exclamation-triangle" data-test="buy-now-error">
                     {{ $buyNowError }}
                 </flux:callout>
             @endif
 
             @if ($buyNowSuccess)
-                <flux:callout variant="subtle" icon="check-circle">
+                <flux:callout variant="subtle" icon="check-circle" data-test="buy-now-success">
                     <div class="space-y-3">
                         <div>{{ $buyNowSuccess }}</div>
-                        @if ($buyNowOrderNumber)
-                            <flux:button
-                                as="a"
-                                href="{{ route('orders.show', $buyNowOrderNumber) }}"
-                                wire:navigate
-                                variant="outline"
-                                size="sm"
-                            >
-                                {{ __('messages.view_order') }}
+                        <div class="flex flex-wrap gap-2">
+                            @if ($buyNowOrderNumber)
+                                <flux:button
+                                    as="a"
+                                    href="{{ route('orders.show', $buyNowOrderNumber) }}"
+                                    wire:navigate
+                                    variant="primary"
+                                    size="sm"
+                                >
+                                    {{ __('messages.view_order') }}
+                                </flux:button>
+                            @endif
+                            <flux:button variant="ghost" size="sm" wire:click="closeBuyNow">
+                                {{ __('messages.close') }}
                             </flux:button>
-                        @endif
+                        </div>
                     </div>
                 </flux:callout>
             @endif
+
+            @unless ($buyNowSuccess)
+            @auth
+                @if ($this->walletAvailableToSpendAmount !== null && \App\Models\WebsiteSetting::getPricesVisible())
+                    <x-purchase.affordability
+                        :available="$this->walletAvailableToSpendAmount"
+                        :total="$buyNowLineFinalPrice"
+                        :needs-funds="$buyNowNeedsFunds"
+                        compact
+                    />
+                @endif
+            @endauth
 
             <div class="grid gap-4 sm:grid-cols-2">
                 @if ($buyNowAmountMode === \App\Enums\ProductAmountMode::Custom->value)
@@ -1487,7 +1585,7 @@ new class extends Component
                                     >
                                         {{ __('messages.estimated_total') }}
                                     </div>
-                                    <div class="mt-1 min-h-[2rem] tabular-nums text-2xl font-bold text-(--color-accent)" dir="{{ $bnNumericDir }}">
+                                    <div class="mt-1 min-h-[2rem] tabular-nums text-xl font-bold text-(--color-accent)" dir="{{ $bnNumericDir }}">
                                         <span
                                             x-show="serverError"
                                             x-text="serverError"
@@ -1508,14 +1606,7 @@ new class extends Component
                                             }"
                                         ></span>
                                     </div>
-                                    <p
-                                        class="mt-1 text-[11px] leading-relaxed"
-                                        x-bind:class="{
-                                            'text-zinc-500 dark:text-zinc-400': estimateCardEmphasis === 'neutral' || estimateCardEmphasis === 'success',
-                                            'text-rose-700/90 dark:text-rose-300/90': estimateCardEmphasis === 'attention',
-                                            'text-red-700/85 dark:text-red-300/90': estimateCardEmphasis === 'error',
-                                        }"
-                                    >
+                                    <p class="mt-1 text-[10px] leading-relaxed text-zinc-500 dark:text-zinc-400">
                                         {{ __('messages.live_price_checkout_hint') }}
                                     </p>
                                 </div>
@@ -1530,7 +1621,7 @@ new class extends Component
                         name="buyNowQuantity"
                         label="{{ __('messages.quantity') }}"
                         :loading="false"
-                        wire:model.live.debounce.400ms="buyNowQuantity"
+                        wire:model.live.blur="buyNowQuantity"
                     />
 
                     @if (\App\Models\WebsiteSetting::getPricesVisible())
@@ -1581,7 +1672,7 @@ new class extends Component
                             @if (($requirement['type'] ?? '') === 'select' && ! empty($requirement['options']))
                                 <select
                                     class="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700 shadow-sm outline-none transition focus:border-(--color-accent) dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
-                                    wire:model.live="buyNowRequirements.{{ $requirementKey }}"
+                                    wire:model.live.change="buyNowRequirements.{{ $requirementKey }}"
                                 >
                                     <option value="">--</option>
                                     @foreach ($requirement['options'] as $option)
@@ -1592,8 +1683,10 @@ new class extends Component
                                 <input
                                     class="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700 shadow-sm outline-none transition focus:border-(--color-accent) dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
                                     type="{{ ($requirement['type'] ?? '') === 'number' ? 'number' : 'text' }}"
-                                    placeholder="{{ $requirementKey }}"
-                                    wire:model.live.debounce.250ms="buyNowRequirements.{{ $requirementKey }}"
+                                    placeholder="{{ $requirement['label'] ?? $requirementKey }}"
+                                    wire:model.live.blur="buyNowRequirements.{{ $requirementKey }}"
+                                    autocomplete="off"
+                                    spellcheck="false"
                                 />
                             @endif
                             @error("buyNowRequirements.$requirementKey")
@@ -1605,45 +1698,63 @@ new class extends Component
             @else
                 <p class="text-sm text-zinc-500 dark:text-zinc-400">{{ __('messages.no_additional_requirements') }}</p>
             @endif
+            </div>{{-- end scroll body --}}
 
-            <div class="flex flex-wrap justify-end gap-2">
-                <flux:button variant="ghost" wire:click="closeBuyNow">
-                    {{ __('messages.cancel') }}
-                </flux:button>
-                @if ($buyNowAmountMode === \App\Enums\ProductAmountMode::Custom->value && $buyNowFinalPerUnitRate === null && ! (($buyNowClientPricingContext ?? [])['client_pricable'] ?? false))
-                    <flux:button variant="primary" disabled>
-                        {{ __('main.pay_now') }}
-                    </flux:button>
-                @elseif ($buyNowAmountMode === \App\Enums\ProductAmountMode::Custom->value)
-                    {{-- Native button: Flux's nested markup + Livewire morph (cloneNode) can evaluate Alpine before parent x-data is attached. --}}
-                    <button
-                        type="button"
-                        class="relative inline-flex items-center justify-center gap-2 whitespace-nowrap font-medium disabled:opacity-75 dark:disabled:opacity-75 disabled:cursor-default disabled:pointer-events-none h-10 text-sm rounded-lg ps-4 pe-4 bg-[var(--color-accent)] hover:bg-[color-mix(in_oklab,_var(--color-accent),_transparent_10%)] text-[var(--color-accent-foreground)] border border-black/10 dark:border-0 shadow-[inset_0px_1px_--theme(--color-white/.2)]"
-                        wire:loading.attr="disabled"
-                        wire:target="submitBuyNow"
-                        x-on:click.prevent="if (typeof amountValid !== 'undefined' && amountValid && typeof serverError !== 'undefined' && ! serverError && payableRate != null && {{ json_encode($this->buyNowCanSubmit) }}) { $wire.call('submitBuyNow', digitsParsed) }"
-                        x-bind:disabled="typeof amountValid === 'undefined' || typeof serverError === 'undefined' || typeof payableRate === 'undefined' ? true : (! amountValid || !! serverError || payableRate == null || {{ json_encode(! $this->buyNowCanSubmit) }})"
+            <div class="sticky bottom-0 z-10 mt-3 space-y-2 border-t border-zinc-200 bg-white pt-3 pb-[max(0.25rem,env(safe-area-inset-bottom))] dark:border-zinc-700 dark:bg-zinc-800" data-test="buy-now-sticky-actions">
+                @if ($buyNowNeedsFunds)
+                    <a
+                        href="{{ route('wallet.topup', array_filter(['amount' => $buyNowLineFinalPrice !== null && $this->walletAvailableToSpendAmount !== null ? number_format(max(0, (float) $buyNowLineFinalPrice - (float) $this->walletAvailableToSpendAmount), 2, '.', '') : null])) }}"
+                        wire:navigate
+                        class="block text-center text-xs font-semibold text-(--color-accent) hover:underline"
+                        data-test="buy-now-add-funds-link"
                     >
-                        {{ __('main.pay_now') }}
-                    </button>
-                @else
-                    <flux:button
-                        variant="primary"
-                        wire:click="submitBuyNow"
-                        wire:loading.attr="disabled"
-                        wire:target="submitBuyNow"
-                        wire:bind:disabled="{{ ! $this->buyNowCanSubmit }}"
-                    >
-                        {{ __('main.pay_now') }}
+                        {{ __('messages.cart_need_more_funds') }}
+                    </a>
+                @endif
+                <div class="flex flex-wrap items-center justify-end gap-2">
+                    <flux:button variant="ghost" wire:click="closeBuyNow">
+                        {{ __('messages.cancel') }}
                     </flux:button>
+                    @if ($buyNowAmountMode === \App\Enums\ProductAmountMode::Custom->value && $buyNowFinalPerUnitRate === null && ! (($buyNowClientPricingContext ?? [])['client_pricable'] ?? false))
+                        <flux:button variant="primary" disabled class="min-h-11 flex-1 sm:flex-none">
+                            {{ __('main.pay_now') }}
+                        </flux:button>
+                    @elseif ($buyNowAmountMode === \App\Enums\ProductAmountMode::Custom->value)
+                        <button
+                            type="button"
+                            class="relative inline-flex min-h-11 flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-black/10 bg-[var(--color-accent)] ps-4 pe-4 text-sm font-medium text-[var(--color-accent-foreground)] shadow-[inset_0px_1px_--theme(--color-white/.2)] hover:bg-[color-mix(in_oklab,_var(--color-accent),_transparent_10%)] disabled:pointer-events-none disabled:cursor-default disabled:opacity-75 dark:border-0 dark:disabled:opacity-75 sm:flex-none"
+                            wire:loading.attr="disabled"
+                            wire:target="submitBuyNow"
+                            x-on:click.prevent="if (typeof amountValid !== 'undefined' && amountValid && typeof serverError !== 'undefined' && ! serverError && payableRate != null && {{ json_encode($this->buyNowCanSubmit) }}) { $wire.call('submitBuyNow', digitsParsed) }"
+                            x-bind:disabled="typeof amountValid === 'undefined' || typeof serverError === 'undefined' || typeof payableRate === 'undefined' ? true : (! amountValid || !! serverError || payableRate == null || {{ json_encode(! $this->buyNowCanSubmit) }})"
+                            data-test="buy-now-pay"
+                        >
+                            <span wire:loading.remove wire:target="submitBuyNow">{{ __('main.pay_now') }}</span>
+                            <span wire:loading wire:target="submitBuyNow">{{ __('main.paying') }}</span>
+                        </button>
+                    @else
+                        <flux:button
+                            variant="primary"
+                            wire:click="submitBuyNow"
+                            wire:loading.attr="disabled"
+                            wire:target="submitBuyNow"
+                            wire:bind:disabled="{{ ! $this->buyNowCanSubmit }}"
+                            class="min-h-11 flex-1 sm:flex-none"
+                            data-test="buy-now-pay"
+                        >
+                            <span wire:loading.remove wire:target="submitBuyNow">{{ __('main.pay_now') }}</span>
+                            <span wire:loading wire:target="submitBuyNow">{{ __('main.paying') }}</span>
+                        </flux:button>
+                    @endif
+                </div>
+                @if ($errors->has('buyNowRequirements.*'))
+                    <p class="text-xs text-zinc-500 dark:text-zinc-400">
+                        {{ __('messages.requirements_required_checkout') }}
+                    </p>
                 @endif
             </div>
-            @if ($errors->has('buyNowRequirements.*'))
-                <p class="text-xs text-zinc-500 dark:text-zinc-400">
-                    {{ __('messages.requirements_required_checkout') }}
-                </p>
-            @endif
-            </div>
+            @endunless
+            </div>{{-- end buy-now-form flex --}}
         @endif
     </div>
 </flux:modal>

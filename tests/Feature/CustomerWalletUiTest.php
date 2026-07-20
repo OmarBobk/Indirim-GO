@@ -8,6 +8,7 @@ use App\Models\Package;
 use App\Models\Product;
 use App\Models\User;
 use App\Models\Wallet;
+use App\Models\WebsiteSetting;
 use App\Support\FrontendMoney;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
@@ -249,6 +250,8 @@ test('wallet page shows paused credit without implying overdraft is allowed', fu
 });
 
 test('cart shows available to spend from wallet helpers', function () {
+    WebsiteSetting::instance()->update(['prices_visible' => true]);
+
     $user = User::factory()->create();
     $wallet = Wallet::forUser($user);
     $wallet->update([
@@ -264,7 +267,8 @@ test('cart shows available to spend from wallet helpers', function () {
     Livewire::actingAs($user)
         ->test('pages::frontend.cart')
         ->assertSee(__('messages.cart_available_to_spend'))
-        ->assertSeeHtml('data-test="cart-available-to-spend"')
+        ->assertSeeHtml('data-test="cart-affordability"')
+        ->assertSeeHtml('data-test="purchase-affordability"')
         ->assertSee($money->format(110.00, 'USD', 2))
         ->assertDontSeeHtml('data-test="cart-amount-you-owe"');
 });

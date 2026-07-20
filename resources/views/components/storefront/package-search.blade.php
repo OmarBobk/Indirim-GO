@@ -1,3 +1,6 @@
+@props([
+    'inputId' => 'storefront-package-search-input',
+])
 @php
     $pricesVisible = \App\Models\WebsiteSetting::getPricesVisible();
 @endphp
@@ -23,6 +26,7 @@
             class="pointer-events-none absolute start-3 top-1/2 z-10 size-5 -translate-y-1/2 text-zinc-400"
         />
         <input
+            id="{{ $inputId }}"
             type="search"
             x-model="query"
             x-on:focus="onFocus()"
@@ -35,9 +39,10 @@
             aria-label="{{ __('main.search_packages_placeholder') }}"
             aria-expanded="false"
             x-bind:aria-expanded="panelOpen ? 'true' : 'false'"
-            aria-controls="storefront-package-search-results"
+            aria-controls="storefront-package-search-results-{{ $inputId }}"
             role="combobox"
             aria-autocomplete="list"
+            data-event="package-search-input"
         />
         <button
             type="button"
@@ -60,7 +65,7 @@
         class="absolute start-0 end-0 top-full z-[60] mt-2"
     >
         <div
-            id="storefront-package-search-results"
+            id="storefront-package-search-results-{{ $inputId }}"
             class="max-h-[min(70vh,28rem)] overflow-y-auto rounded-2xl border border-zinc-200 bg-white p-3 shadow-xl dark:border-zinc-700 dark:bg-zinc-900"
             role="listbox"
         >

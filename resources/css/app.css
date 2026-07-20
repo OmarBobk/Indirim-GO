@@ -848,6 +848,66 @@ html:has([popover]:popover-open) {
     background-image: var(--bg-pattern-dark) !important;
 }
 
+/*
+|--------------------------------------------------------------------------
+| Storefront mobile shell (Milestone 2)
+|--------------------------------------------------------------------------
+| Shared tokens for bottom nav, slim top bar, and sticky purchase CTAs.
+| Breakpoint must stay aligned with lg (cart sticky / bottom nav).
+*/
+:root {
+    --storefront-bottom-nav-height: 0px;
+    --storefront-top-bar-height: 0px;
+    --storefront-sticky-offset: 0px;
+    --storefront-safe-top: env(safe-area-inset-top, 0px);
+    --storefront-safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+@media (max-width: 1023px) {
+    .storefront-shell {
+        --storefront-top-bar-height: calc(3.25rem + var(--storefront-safe-top));
+        --storefront-bottom-nav-height: calc(3.75rem + var(--storefront-safe-bottom));
+        --storefront-sticky-offset: var(--storefront-bottom-nav-height);
+    }
+}
+
+.storefront-shell-main {
+    padding-top: var(--storefront-top-bar-height);
+    padding-bottom: calc(var(--storefront-bottom-nav-height) + 1rem);
+}
+
+@media (min-width: 1024px) {
+    .storefront-shell-main {
+        padding-top: 0;
+        padding-bottom: 0;
+    }
+}
+
+.storefront-mobile-top {
+    padding-top: var(--storefront-safe-top);
+    height: var(--storefront-top-bar-height);
+}
+
+.storefront-bottom-nav {
+    padding-bottom: var(--storefront-safe-bottom);
+    min-height: var(--storefront-bottom-nav-height);
+}
+
+.storefront-sticky-cta {
+    bottom: var(--storefront-sticky-offset);
+}
+
+/* FAB sits above bottom nav only inside the storefront shell (admin keeps bottom-4). */
+.storefront-shell .storefront-fab {
+    bottom: calc(var(--storefront-sticky-offset) + 1rem);
+}
+
+@media (min-width: 1024px) {
+    .storefront-shell .storefront-fab {
+        bottom: 1rem;
+    }
+}
+
 @layer theme {
     :root {
         --background: 222 39% 6%;

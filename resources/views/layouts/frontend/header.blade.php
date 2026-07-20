@@ -14,7 +14,7 @@
         @include('partials.frontend.head')
     </head>
     <body
-        class="min-h-screen bg-white dark:bg-zinc-900"
+        class="storefront-shell min-h-screen bg-white dark:bg-zinc-900"
         style="--bg-pattern: url('{{ asset('images/background-pattern.jpg') }}'); --bg-pattern-dark: url('{{ asset('images/background-pattern-dark.jpg') }}');"
         x-data
         x-on:cart-custom-amount-priced.window="
@@ -25,14 +25,20 @@
                 $store.cart.setCustomAmountError($event.detail);
             }
         "
+        data-storefront-shell="root"
     >
         <script>window.__addToCartMessageTemplate = @json(__('main.add_to_cart_for'));</script>
+
+        <x-storefront.mobile-top-bar :wallet-display="$walletDisplay" />
+
+        <div class="hidden lg:block" data-storefront-shell="desktop-header">
         <flux:header
             sticky
             class="!block !p-0 fixed top-0 start-0 end-0 z-50 w-full transition-all duration-300"
             x-data="{ isScrolled: false }"
             x-init="window.addEventListener('scroll', () => { isScrolled = window.scrollY > 10;})"
         >
+            @guest
             <div
                 class="bg-accent px-3"
                 data-test="frontend-announcement-bar"
@@ -47,6 +53,7 @@
                     </p>
                 </div>
             </div>
+            @endguest
 
             <div
                 class="border-b border-zinc-200 bg-white px-3 py-3 transition-all duration-300 dark:border-zinc-700 dark:!bg-zinc-900"
@@ -478,8 +485,14 @@
                 </div>
             </div>
         </flux:header>
+        </div>{{-- desktop-header --}}
 
-        {{ $slot }}
+        <div class="storefront-shell-main" data-storefront-shell="main">
+            {{ $slot }}
+        </div>
+
+        <x-storefront.bottom-nav />
+
         <livewire:bugs.quick-report-button :key="'quick-report-frontend-'.auth()->id()" />
 
         <x-toaster-hub />

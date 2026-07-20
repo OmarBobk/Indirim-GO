@@ -784,24 +784,6 @@ new #[Layout('layouts::frontend')] class extends Component
                                 </span>
                             </div>
                         @endif
-                        @if ($cartPricesVisible && $this->walletAvailableToSpend !== null)
-                            <div
-                                class="flex items-center justify-between text-zinc-600 dark:text-zinc-300"
-                                data-test="cart-available-to-spend"
-                            >
-                                <span>{{ __('messages.cart_available_to_spend') }}</span>
-                                <span
-                                    @class([
-                                        'font-semibold tabular-nums',
-                                        'text-emerald-700 dark:text-emerald-400' => (float) $this->walletAvailableToSpend > 0,
-                                        'text-zinc-900 dark:text-zinc-100' => (float) $this->walletAvailableToSpend <= 0,
-                                    ])
-                                    dir="ltr"
-                                >
-                                    {{ $cartMoney->format((float) $this->walletAvailableToSpend, 'USD', 2) }}
-                                </span>
-                            </div>
-                        @endif
                     @endauth
                     <div class="flex items-center justify-between text-zinc-600 dark:text-zinc-300">
                         <span>{{ __('messages.subtotal') }}</span>
@@ -818,8 +800,8 @@ new #[Layout('layouts::frontend')] class extends Component
                     </div>
                     @endif
                     <div class="flex items-center justify-between text-zinc-600 dark:text-zinc-300">
-                        <span>{{ __('main.shipping') }}</span>
-                        <span class="font-semibold text-zinc-900 dark:text-zinc-100">{{ __('main.free_shipping') }}</span>
+                        <span>{{ __('messages.purchase_instant_delivery') }}</span>
+                        <span class="font-semibold text-emerald-700 dark:text-emerald-400">{{ __('main.free_shipping') }}</span>
                     </div>
                 </div>
 
@@ -839,7 +821,42 @@ new #[Layout('layouts::frontend')] class extends Component
                     {{ __('messages.amount') }}: {{ __('messages.estimated_total') }} (TRY, approx)
                 </p>
 
-                <div class="mt-4 space-y-3">
+                @auth
+                    @if ($cartPricesVisible && $this->walletAvailableToSpend !== null)
+                        <div
+                            class="mt-4"
+                            data-test="cart-affordability"
+                            x-data="{
+                                available: {{ (float) $this->walletAvailableToSpend }},
+                                get total() { return Number($store.cart.subtotal - $store.cart.loyaltyDiscount) || 0 },
+                                get shortfall() { return Math.max(0, this.total - this.available) },
+                                get needsMore() { return this.shortfall > 0.009 || {{ $checkoutNeedsFunds ? 'true' : 'false' }} },
+                                topupUrl() {
+                                    if (this.shortfall <= 0) return @js(route('wallet.topup'));
+                                    return @js(route('wallet.topup')) + '?amount=' + encodeURIComponent(this.shortfall.toFixed(2));
+                                },
+                            }"
+                        >
+                            <x-purchase.affordability
+                                :available="(float) $this->walletAvailableToSpend"
+                                :needs-funds="$checkoutNeedsFunds"
+                                compact
+                            />
+                            <a
+                                x-show="needsMore"
+                                x-cloak
+                                x-bind:href="topupUrl()"
+                                wire:navigate
+                                class="mt-2 block text-center text-xs font-semibold text-(--color-accent) hover:underline"
+                                data-test="cart-add-funds-shortfall"
+                            >
+                                {{ __('messages.cart_need_more_funds') }}
+                            </a>
+                        </div>
+                    @endif
+                @endauth
+
+                <div class="mt-4 hidden space-y-3 lg:block">
                     <flux:button
                         variant="primary"
                         class="w-full justify-center !bg-accent !text-accent-foreground hover:!bg-accent-hover"
@@ -849,7 +866,8 @@ new #[Layout('layouts::frontend')] class extends Component
                         wire:target="checkout"
                         data-test="cart-checkout"
                     >
-                        {{ __('main.proceed_to_checkout') }}
+                        <span wire:loading.remove wire:target="checkout">{{ __('main.proceed_to_checkout') }}</span>
+                        <span wire:loading wire:target="checkout">{{ __('main.checking_out') }}</span>
                     </flux:button>
                     @auth
                         @if ($checkoutNeedsFunds)
@@ -882,4 +900,61 @@ new #[Layout('layouts::frontend')] class extends Component
             </div>
         </aside>
     </div>
+
+    {{-- Mobile thumb-zone checkout bar --}}
+    <div
+        class="storefront-sticky-cta fixed inset-x-0 z-40 border-t border-zinc-200 bg-white/95 px-3 py-3 shadow-[0_-8px_24px_rgb(0_0_0/0.08)] backdrop-blur dark:border-zinc-700 dark:bg-zinc-900/95 lg:hidden"
+        x-show="$store.cart.count > 0"
+        x-cloak
+        data-test="cart-sticky-checkout"
+    >
+        <div class="mx-auto flex max-w-7xl flex-col gap-2">
+            <div class="flex items-center justify-between gap-3 text-sm">
+                <span class="font-medium text-zinc-600 dark:text-zinc-300">{{ __('messages.total') }}</span>
+                @if ($cartPricesVisible)
+                    <span class="text-lg font-bold tabular-nums text-(--color-accent)" dir="ltr" x-text="$store.cart.format($store.cart.subtotal - $store.cart.loyaltyDiscount)"></span>
+                @else
+                    <span class="text-lg font-semibold text-zinc-500">—</span>
+                @endif
+            </div>
+            @auth
+                @if ($checkoutNeedsFunds)
+                    <a
+                        href="{{ route('wallet.topup') }}"
+                        wire:navigate
+                        class="text-center text-xs font-semibold text-(--color-accent) hover:underline"
+                        data-test="cart-sticky-add-funds"
+                    >
+                        {{ __('messages.cart_need_more_funds') }}
+                    </a>
+                @endif
+            @endauth
+            <flux:button
+                variant="primary"
+                class="min-h-12 w-full justify-center !bg-accent !text-accent-foreground hover:!bg-accent-hover"
+                x-bind:disabled="$store.cart.count === 0 || $store.cart.hasMissingRequirements || $store.cart.hasCustomAmountErrors"
+                x-on:click="$wire.checkout($store.cart.checkoutItems)"
+                wire:loading.attr="disabled"
+                wire:target="checkout"
+                data-test="cart-checkout-sticky"
+            >
+                <span wire:loading.remove wire:target="checkout">{{ __('main.proceed_to_checkout') }}</span>
+                <span wire:loading wire:target="checkout">{{ __('main.checking_out') }}</span>
+            </flux:button>
+            <p
+                class="text-center text-xs text-zinc-500 dark:text-zinc-400"
+                x-show="$store.cart.hasMissingRequirements && ! $store.cart.showCartRequirementErrors"
+            >
+                {{ __('messages.requirements_required_checkout') }}
+            </p>
+        </div>
+    </div>
+    <div
+        class="lg:hidden"
+        style="height: calc(var(--storefront-sticky-offset) + 7rem);"
+        x-show="$store.cart.count > 0"
+        x-cloak
+        aria-hidden="true"
+        data-test="cart-sticky-spacer"
+    ></div>
 </div>

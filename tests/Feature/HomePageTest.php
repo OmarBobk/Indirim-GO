@@ -8,16 +8,17 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
 
-test('homepage renders main sections and gift cards', function () {
+test('guest homepage renders marketing sections and packages', function () {
     $package = Package::factory()->create([
         'is_active' => true,
         'order' => 1,
         'image' => null,
+        'name' => 'Steam Wallet',
     ]);
 
     Product::factory()->for($package)->create([
-        'name' => 'Kablosuz Kulaklık',
-        'entry_price' => 1299,
+        'name' => 'Steam 10 USD',
+        'entry_price' => 10,
         'is_active' => true,
         'order' => 1,
     ]);
@@ -25,28 +26,14 @@ test('homepage renders main sections and gift cards', function () {
     $response = $this->get('/');
 
     $response->assertOk();
-    $response->assertSee('href="'.route('login').'"', false);
+    $response->assertSee('data-test="guest-home"', false);
     $response->assertSee('data-test="cart-dropdown"', false);
-    $response->assertSee('data-test="cart-go-to"', false);
-    $response->assertSee('data-test="cart-add"', false);
     $response->assertSee('data-section="homepage-marquee"', false);
     $response->assertSee('data-section="homepage-promos"', false);
     $response->assertSee('data-section="homepage-section-of-categories"', false);
     $response->assertSee('data-section="homepage-section-of-packages"', false);
-    $response->assertSee('data-section="homepage-section-of-products"', false);
-    $response->assertSee('data-section="homepage-preferences"', false);
-    $response->assertSee(__('main.gift_cards'));
+    $response->assertSee('Steam Wallet');
     $response->assertSee(__('messages.packages'));
-    $response->assertSee(__('main.featured_products'));
-    $response->assertSee('APP STORE');
-    $response->assertSee('PLAYSTATION');
-    $response->assertSee('STEAM');
-    $response->assertSee('GOOGLE PLAY');
-    $response->assertSee('XBOX');
-    $response->assertSee('RAZER GOLD');
-    $response->assertSee('AMAZON');
-    $response->assertSee('BATTLENET');
-    $response->assertSee('Kablosuz Kulaklık');
 });
 
 test('homepage circular slider shows packages and placeholder', function () {

@@ -9,17 +9,26 @@ new class extends Component
 {
     public array $packages = [];
 
-    public function mount(): void
+    public ?int $limit = null;
+
+    public function mount(?int $limit = null): void
     {
+        $this->limit = $limit;
+
         $placeholderImage = asset('images/icons/category-placeholder.svg');
 
-        $this->packages = Package::query()
+        $query = Package::query()
             ->select(['id', 'name', 'image', 'order'])
             ->where('is_active', true)
             ->withCount(['products' => fn ($query) => $query->where('is_active', true)])
             ->orderBy('order')
-            ->orderBy('name')
-//            ->limit(8)
+            ->orderBy('name');
+
+        if ($this->limit !== null && $this->limit > 0) {
+            $query->limit($this->limit);
+        }
+
+        $this->packages = $query
             ->get()
             ->map(fn (Package $package): array => [
                 'id' => $package->id,
