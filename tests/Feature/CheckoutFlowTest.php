@@ -108,7 +108,11 @@ test('checkout fails when wallet balance is insufficient', function () {
     Livewire::actingAs($user)
         ->test('pages::frontend.cart')
         ->call('checkout', $payload)
-        ->assertSet('checkoutError', 'Insufficient wallet balance.');
+        ->assertSet('checkoutError', __('messages.wallet_spend_insufficient', [
+            'available' => '0.00',
+            'currency' => config('billing.currency', 'USD'),
+        ]))
+        ->assertSet('checkoutNeedsFunds', true);
 
     expect(Wallet::where('type', WalletType::Customer)->count())->toBe(1);
     expect(Order::count())->toBe(0);

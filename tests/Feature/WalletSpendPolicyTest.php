@@ -122,7 +122,10 @@ test('assertCanDebit returns decision when allowed and throws denied exception w
     } catch (WalletSpendDeniedException $exception) {
         expect($exception->reason())->toBe(WalletSpendFailureReason::InsufficientFunds)
             ->and($exception->decision->availableToSpend)->toBe('15.00')
-            ->and($exception->getMessage())->toBe('Insufficient wallet balance.');
+            ->and($exception->getMessage())->toBe(__('messages.wallet_spend_insufficient', [
+                'available' => '15.00',
+                'currency' => config('billing.currency', 'USD'),
+            ]));
     }
 });
 

@@ -18,11 +18,27 @@ new #[Layout('layouts::frontend')] class extends Component
     }
 
     #[Computed]
-    public function walletBalance(): float
+    public function customerWallet(): Wallet
     {
-        $wallet = Wallet::forUser(auth()->user());
+        return Wallet::forUser(auth()->user());
+    }
 
-        return $wallet ? (float) $wallet->balance : 0.0;
+    #[Computed]
+    public function walletAvailableToSpend(): float
+    {
+        return (float) $this->customerWallet->availableToSpend();
+    }
+
+    #[Computed]
+    public function walletOutstandingDebt(): ?float
+    {
+        $wallet = $this->customerWallet;
+
+        if (! $wallet->isOverdrawn()) {
+            return null;
+        }
+
+        return (float) $wallet->outstandingDebt();
     }
 
     #[Computed]
@@ -161,9 +177,32 @@ new #[Layout('layouts::frontend')] class extends Component
             <div class="min-w-0">
                 <flux:heading size="sm" class="text-zinc-900 dark:text-zinc-100">{{ __('main.wallet') }}</flux:heading>
                 @if(\App\Models\WebsiteSetting::getPricesVisible())
-                <flux:text class="text-sm text-zinc-600 dark:text-zinc-400">
-                    {{ $money->format((float) $this->walletBalance, 'USD', 2) }}
-                </flux:text>
+                    @if ($this->walletOutstandingDebt !== null)
+                        <flux:text class="text-sm font-medium text-red-700 dark:text-red-400" data-test="profile-wallet-debt">
+                            {{ __('messages.wallet_you_owe') }}:
+                            <span dir="ltr">{{ $money->format((float) $this->walletOutstandingDebt, 'USD', 2) }}</span>
+                        </flux:text>
+                    @else
+                        <flux:text
+                            @class([
+                                'text-sm font-medium',
+                                'text-emerald-700 dark:text-emerald-400' => $this->walletAvailableToSpend > 0,
+                                'text-zinc-600 dark:text-zinc-400' => $this->walletAvailableToSpend <= 0,
+                            ])
+                            data-test="profile-wallet-balance"
+                        >
+                            <span dir="ltr">{{ $money->format((float) $this->customerWallet->balance, 'USD', 2) }}</span>
+                        </flux:text>
+                    @endif
+                    <flux:text class="text-sm text-zinc-600 dark:text-zinc-400" data-test="profile-wallet-available">
+                        {{ __('messages.wallet_available_to_spend') }}:
+                        <span dir="ltr">{{ $money->format((float) $this->walletAvailableToSpend, 'USD', 2) }}</span>
+                    </flux:text>
+                    @if ($this->customerWallet->credit_enabled && $this->customerWallet->credit_status === \App\Enums\CreditFacilityStatus::Active)
+                        <flux:text class="text-xs text-zinc-500 dark:text-zinc-400" data-test="profile-wallet-credit-limit">
+                            {{ __('messages.wallet_nav_limit', ['amount' => $money->format((float) $this->customerWallet->credit_limit, 'USD', 2)]) }}
+                        </flux:text>
+                    @endif
                 @endif
             </div>
         </a>

@@ -1,15 +1,12 @@
 <!DOCTYPE html>
 @php
-    $money = \App\Support\FrontendMoney::for(auth()->user());
     $isRtl = app()->isLocale('ar');
     $direction = $isRtl ? 'rtl' : 'ltr';
-    $walletBalance = 0;
-    $walletCurrency = config('billing.currency', 'USD');
+    $walletDisplay = null;
 
     if (auth()->check()) {
         $wallet = \App\Models\Wallet::forUser(auth()->user());
-        $walletBalance = $wallet->balance ?? 0;
-        $walletCurrency = $wallet->currency ?? $walletCurrency;
+        $walletDisplay = \App\Support\CustomerWalletDisplay::for($wallet, auth()->user());
     }
 @endphp
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}" dir="{{ $direction }}" class="dark">
@@ -208,14 +205,15 @@
                                 href="{{ route('wallet') }}"
                                 wire:navigate
                                 class="inline-flex items-center gap-2 border-zinc-200 bg-white px-1 sm:px-3 py-2 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
-                                aria-label="{{ __('main.wallet') }}"
+                                aria-label="{{ __('main.wallet') }}{{ $walletDisplay ? ' — '.$walletDisplay->navTitle() : '' }}"
                                 data-test="wallet-balance"
                             >
                                 <flux:icon icon="wallet" class="size-4 text-zinc-500 dark:text-zinc-300" />
-                                @if(\App\Models\WebsiteSetting::getPricesVisible())
-                                <span class="text-zinc-900 dark:text-zinc-100 hidden sm:block" dir="ltr">
-                                    {{ $money->format((float) $walletBalance, 'USD', 2) }}
-                                </span>
+                                @if (\App\Models\WebsiteSetting::getPricesVisible() && $walletDisplay)
+                                    <x-wallet.nav-amount
+                                        :display="$walletDisplay"
+                                        class="hidden sm:inline-flex"
+                                    />
                                 @endif
                             </a>
                         @endauth
@@ -268,18 +266,23 @@
                                     <flux:navbar.item class="border !border-accent after:!h-0 {{request()->routeIs('orders.index') ? '!bg-accent hover:!bg-accent-hover !text-accent-foreground' : ''}}"
                                                       data-nav-active="{{ request()->routeIs('orders.index') ? 'true' : 'false' }}"
                                                       href="{{route('orders.index')}}">{{__('main.my_orders')}}</flux:navbar.item>
-                                    @if(\App\Models\WebsiteSetting::getPricesVisible())
+                                    @if (\App\Models\WebsiteSetting::getPricesVisible() && $walletDisplay)
                                     <flux:navbar.item class="border !border-accent after:!h-0 {{request()->routeIs('wallet') ? '!bg-accent hover:!bg-accent-hover !text-accent-foreground' : ''}}"
                                                       data-nav-active="{{ request()->routeIs('wallet') ? 'true' : 'false' }}"
                                                       href="{{route('wallet')}}"
-                                                      badge="{{ $money->format((float) $walletBalance, 'USD', 2) }}"
-                                                      badge:color="{{request()->routeIs('wallet') ? 'green' : 'sky'}}"
-                                                      badge:class="ms-3 whitespace-nowrap px-2 {{request()->routeIs('wallet') ? 'dark:!text-green-800' : ''}}"
+                                                      wire:navigate
+                                                      title="{{ $walletDisplay->navTitle() }}"
+                                                      badge="{{ $walletDisplay->formattedNavAmount() }}"
+                                                      badge:color="{{ $walletDisplay->badgeColor() }}"
+                                                      badge:class="ms-3 whitespace-nowrap px-2 tabular-nums"
+                                                      data-test="wallet-add-sufficient"
+                                                      data-wallet-tone="{{ $walletDisplay->tone() }}"
                                                       icon="plus">{{__('main.add_sufficient')}}</flux:navbar.item>
                                     @else
                                     <flux:navbar.item class="border !border-accent after:!h-0 {{request()->routeIs('wallet') ? '!bg-accent hover:!bg-accent-hover !text-accent-foreground' : ''}}"
                                                       data-nav-active="{{ request()->routeIs('wallet') ? 'true' : 'false' }}"
                                                       href="{{route('wallet')}}"
+                                                      wire:navigate
                                                       icon="plus">{{__('main.add_sufficient')}}</flux:navbar.item>
                                     @endif
                                     @if (auth()->user()?->loyaltyRole() !== null)

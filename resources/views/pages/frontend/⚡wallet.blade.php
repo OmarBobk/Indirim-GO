@@ -318,6 +318,8 @@ new #[Layout('layouts::frontend')] class extends Component
 
 @php
     $money = FrontendMoney::for(auth()->user());
+    $wallet = $this->wallet;
+    $pricesVisible = \App\Models\WebsiteSetting::getPricesVisible();
 @endphp
 
 <div class="mx-auto w-full max-w-4xl px-3 py-6 sm:px-0 sm:py-10" data-test="wallet-page">
@@ -340,38 +342,25 @@ new #[Layout('layouts::frontend')] class extends Component
             />
         @endif
 
-        <section class="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 sm:p-6">
-            <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                    <flux:heading size="lg" class="text-zinc-900 dark:text-zinc-100">
-                        {{ __('messages.wallet_balance') }}
-                    </flux:heading>
-                    <div class="mt-3 text-3xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-100" dir="ltr">
-                        @if(\App\Models\WebsiteSetting::getPricesVisible())
-                            {{ $money->format((float) $this->wallet->balance, 'USD', 2) }}
-                        @else
-                            —
-                        @endif
-                    </div>
-                    <flux:text class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
-                        {{ __('messages.wallet_balance_hint') }}
-                    </flux:text>
-                </div>
-                @unless ($this->hasPendingTopup)
-                    <flux:button
-                        as="a"
-                        href="{{ route('wallet.topup') }}"
-                        wire:navigate
-                        variant="primary"
-                        icon="plus"
-                        class="shrink-0 !bg-accent !text-accent-foreground hover:!bg-accent-hover"
-                        data-test="wallet-add-funds"
-                    >
-                        {{ __('messages.wallet_add_funds') }}
-                    </flux:button>
-                @endunless
-            </div>
-        </section>
+        <x-wallet.money-summary
+            :wallet="$wallet"
+            :money="$money"
+            :prices-visible="$pricesVisible"
+        >
+            @unless ($this->hasPendingTopup)
+                <flux:button
+                    as="a"
+                    href="{{ route('wallet.topup') }}"
+                    wire:navigate
+                    variant="primary"
+                    icon="plus"
+                    class="shrink-0 !bg-accent !text-accent-foreground hover:!bg-accent-hover"
+                    data-test="wallet-add-funds"
+                >
+                    {{ __('messages.wallet_add_funds') }}
+                </flux:button>
+            @endunless
+        </x-wallet.money-summary>
 
         @if ($this->hasPendingTopup && $this->pendingTopupRequest)
             <flux:callout variant="warning" icon="clock" data-test="wallet-pending-topup-banner">
@@ -597,6 +586,6 @@ new #[Layout('layouts::frontend')] class extends Component
             </div>
         </section>
 
-        <x-timeline :entity="$this->wallet" />
+        <x-timeline :entity="$this->wallet" audience="customer" />
     </div>
 </div>

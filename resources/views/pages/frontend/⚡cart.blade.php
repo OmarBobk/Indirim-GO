@@ -7,7 +7,9 @@ use App\Enums\OrderStatus;
 use App\Models\LoyaltySetting;
 use App\Models\LoyaltyTierConfig;
 use App\Models\Product;
+use App\Models\Wallet;
 use App\Services\LoyaltySpendService;
+use App\Support\FrontendMoney;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 use Livewire\Attributes\Computed;
@@ -22,13 +24,14 @@ new #[Layout('layouts::frontend')] class extends Component
     public ?string $checkoutError = null;
     public ?string $checkoutSuccess = null;
     public ?string $lastOrderNumber = null;
+    public bool $checkoutNeedsFunds = false;
     public array $requirementsByProduct = [];
     public array $cartRequirements = [];
     public array $customAmountPriceMeta = [];
 
     public function checkout(mixed $items): void
     {
-        $this->reset('checkoutError', 'checkoutSuccess', 'lastOrderNumber');
+        $this->reset('checkoutError', 'checkoutSuccess', 'lastOrderNumber', 'checkoutNeedsFunds');
 
         if (! auth()->check()) {
             $this->checkoutError = __('messages.sign_in_to_checkout');
@@ -71,6 +74,7 @@ new #[Layout('layouts::frontend')] class extends Component
         } catch (ValidationException $exception) {
             $this->checkoutError = collect($exception->errors())->flatten()->first()
                 ?? __('messages.checkout_validation_failed');
+            $this->checkoutNeedsFunds = array_key_exists('wallet', $exception->errors());
             $this->error($this->checkoutError);
         } catch (\Throwable) {
             $this->checkoutError = __('messages.something_went_wrong_checkout');
@@ -222,6 +226,34 @@ new #[Layout('layouts::frontend')] class extends Component
             return null;
         }
         return max(0.0, (float) $next->min_spend - $this->loyaltyRollingSpend);
+    }
+
+    #[Computed]
+    public function customerWallet(): ?Wallet
+    {
+        if (! auth()->check()) {
+            return null;
+        }
+
+        return Wallet::forUser(auth()->user());
+    }
+
+    #[Computed]
+    public function walletAvailableToSpend(): ?string
+    {
+        return $this->customerWallet?->availableToSpend();
+    }
+
+    #[Computed]
+    public function walletOutstandingDebt(): ?string
+    {
+        $wallet = $this->customerWallet;
+
+        if ($wallet === null || ! $wallet->isOverdrawn()) {
+            return null;
+        }
+
+        return $wallet->outstandingDebt();
     }
 
     public function render(): View
@@ -394,6 +426,8 @@ new #[Layout('layouts::frontend')] class extends Component
     $cartMaskThousands = $cartAmountMaskEn ? ',' : '.';
     $cartImageFallback = asset('images/promotions/promo-placeholder.svg');
     $cartInputClass = 'h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm text-zinc-700 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-(--color-accent) focus:ring-2 focus:ring-(--color-accent)/15 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500';
+    $cartMoney = FrontendMoney::for(auth()->user());
+    $cartPricesVisible = \App\Models\WebsiteSetting::getPricesVisible();
 @endphp
 
 <div
@@ -738,15 +772,46 @@ new #[Layout('layouts::frontend')] class extends Component
                 @endif
 
                 <div class="mt-4 space-y-3 text-sm">
+                    @auth
+                        @if ($cartPricesVisible && $this->walletOutstandingDebt !== null)
+                            <div
+                                class="flex items-center justify-between text-zinc-600 dark:text-zinc-300"
+                                data-test="cart-amount-you-owe"
+                            >
+                                <span>{{ __('messages.cart_amount_you_owe') }}</span>
+                                <span class="font-semibold tabular-nums text-red-700 dark:text-red-400" dir="ltr">
+                                    {{ $cartMoney->format((float) $this->walletOutstandingDebt, 'USD', 2) }}
+                                </span>
+                            </div>
+                        @endif
+                        @if ($cartPricesVisible && $this->walletAvailableToSpend !== null)
+                            <div
+                                class="flex items-center justify-between text-zinc-600 dark:text-zinc-300"
+                                data-test="cart-available-to-spend"
+                            >
+                                <span>{{ __('messages.cart_available_to_spend') }}</span>
+                                <span
+                                    @class([
+                                        'font-semibold tabular-nums',
+                                        'text-emerald-700 dark:text-emerald-400' => (float) $this->walletAvailableToSpend > 0,
+                                        'text-zinc-900 dark:text-zinc-100' => (float) $this->walletAvailableToSpend <= 0,
+                                    ])
+                                    dir="ltr"
+                                >
+                                    {{ $cartMoney->format((float) $this->walletAvailableToSpend, 'USD', 2) }}
+                                </span>
+                            </div>
+                        @endif
+                    @endauth
                     <div class="flex items-center justify-between text-zinc-600 dark:text-zinc-300">
                         <span>{{ __('messages.subtotal') }}</span>
-                        @if(\App\Models\WebsiteSetting::getPricesVisible())
+                        @if($cartPricesVisible)
                         <span class="font-semibold text-zinc-900 dark:text-zinc-100" dir="ltr" x-text="$store.cart.format($store.cart.subtotal)"></span>
                         @else
                         <span class="font-semibold text-zinc-500 dark:text-zinc-400">—</span>
                         @endif
                     </div>
-                    @if(\App\Models\WebsiteSetting::getPricesVisible())
+                    @if($cartPricesVisible)
                     <div class="flex items-center justify-between text-green-600 dark:text-green-400" x-show="$store.cart.loyaltyDiscount > 0" x-cloak>
                         <span>{{ __('messages.loyalty_discount') }} <span x-show="$store.cart.loyaltyTierName" x-text="'(' + $store.cart.loyaltyTierLabel + ')'"></span>:</span>
                         <span class="font-semibold" dir="ltr" x-text="'-' + $store.cart.format($store.cart.loyaltyDiscount)"></span>
@@ -760,7 +825,7 @@ new #[Layout('layouts::frontend')] class extends Component
 
                 <div class="mt-4 flex items-center justify-between border-t border-zinc-100 pt-4 text-base font-semibold dark:border-zinc-700">
                     <span class="text-zinc-900 dark:text-zinc-100">{{ __('messages.total') }}</span>
-                    @if(\App\Models\WebsiteSetting::getPricesVisible())
+                    @if($cartPricesVisible)
                     <span class="text-(--color-accent)" dir="ltr" x-text="$store.cart.format($store.cart.subtotal - $store.cart.loyaltyDiscount)"></span>
                     @else
                     <span class="text-zinc-500 dark:text-zinc-400">—</span>
@@ -786,6 +851,18 @@ new #[Layout('layouts::frontend')] class extends Component
                     >
                         {{ __('main.proceed_to_checkout') }}
                     </flux:button>
+                    @auth
+                        @if ($checkoutNeedsFunds)
+                            <a
+                                href="{{ route('wallet.topup') }}"
+                                wire:navigate
+                                class="block text-center text-xs font-medium text-(--color-accent) hover:underline"
+                                data-test="cart-add-funds-link"
+                            >
+                                {{ __('messages.cart_need_more_funds') }}
+                            </a>
+                        @endif
+                    @endauth
                     <p
                         class="text-xs text-zinc-500 dark:text-zinc-400"
                         x-show="$store.cart.hasMissingRequirements && ! $store.cart.showCartRequirementErrors"

@@ -76,8 +76,8 @@
       - Invite potential customers (store owners) to the group.
       - Introduce IndirimGo and ask members to review the website and compare the prices.
       - Collect feedback and suggestions from the group.
-  - ###TODO: Platform / Admin
-    - ###TODO: Implement an Admin Credit Management feature.
+  - ###DONE: Platform / Admin
+    - ###DONE: Implement an Admin Credit Management feature.
       - Allow admins to manually add credits to a user's account.
       - Record every credit transaction in the wallet/transaction history.
       - Include an optional reason/note for each credit adjustment.
@@ -102,13 +102,6 @@ now the idea is like this:
 - then he will see the fields on two side to side sections.
 - the left section will contain fields that filled with the product name, id, entry_price. (these fields disabled)
 - on the right section user can enter the new entry price..
-
-
-Admin Profit: 19.25 USD
-Salesperson Profit: 5.69 USD
-
-
-
 
 **🔒 Ticket → Audit → Fix → Lock**
 
