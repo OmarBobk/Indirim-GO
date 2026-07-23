@@ -82,6 +82,10 @@
       - Record every credit transaction in the wallet/transaction history.
       - Include an optional reason/note for each credit adjustment.
       - Log the action for auditing purposes.
+    - ###DONE: Customer wallet Credit Facility / overdraft (`/credit-facility`, `manage_wallet_credit`).
+      - Grant facility: `credit_enabled` + `credit_limit` + `payment_terms_days` + `credit_status` (Active/Suspended; null when not granted).
+      - Spend via `WalletSpendPolicy`; topups repay debt by arithmetic (no separate repay flow).
+      - Out of scope: debt write-off; purchase path still not on `WalletLedger`.
 
 - Frontend:
   - ###DONE wallet transaction in /wallets should be more described
@@ -271,7 +275,7 @@ Work like a staff engineer
 
 
 ## Non-negotiable invariants (karman.store)
-1. **Financial truth:** `wallet_transactions` + `wallets.balance` only. Never derive money from `system_events`.
+1. **Financial truth:** `wallet_transactions` + `wallets.balance` only. Never derive money from `system_events`. Customer balance may be negative under an Active credit facility; spend checks use `WalletSpendPolicy` / `availableToSpend()`.
 2. **No client-trusted pricing/totals** — server repricing via `app/Domain/Pricing/*` and existing Actions.
 3. **Money mutations:** DB transaction + `lockForUpdate` + idempotency keys + exactly one financial `system_events` row; side effects in `DB::afterCommit()`.
 4. **Custom amount:** `requested_amount`, quantity 1 semantics — preserve.

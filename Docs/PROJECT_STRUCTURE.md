@@ -10,8 +10,8 @@
 | Area | Purpose |
 |------|---------|
 | **Storefront** | Categories, packages, products, cart, buy-now, orders, wallet, loyalty, referrals |
-| **Backend** | Fulfillments, topups, refunds, settlements, commissions, users, catalog admin, **automation admin**, **Ops Assistant**, **price drift** |
-| **Financial core** | `wallets` + `wallet_transactions` as source of truth; `system_events` for audit |
+| **Backend** | Fulfillments, topups, refunds, settlements, commissions, users, catalog admin, **credit facility**, **automation admin**, **Ops Assistant**, **price drift** |
+| **Financial core** | `wallets` + `wallet_transactions` as source of truth (`balance` may be negative under Active credit facility); `system_events` for audit |
 | **Fulfillment automation** | Browser-driven supplier fulfillment via Node/Playwright worker + Laravel run orchestration |
 | **Supplier price scans** | Wasim catalog price comparison (`/price-drift`) + reactive flags from fulfillments |
 | **Realtime** | Laravel Reverb + Echo; Firebase FCM for push |
@@ -54,8 +54,9 @@ Domain mutations live in `app/Actions/{Domain}/{Verb}{Noun}.php` as invokable or
 
 ```text
 CheckoutFromPayload      → cart → order (returns CheckoutResult)
-PayOrderWithWallet       → wallet debit + fulfillments
-ApproveTopupRequest      → credit wallet + system event
+PayOrderWithWallet       → WalletSpendPolicy gate + wallet debit + fulfillments
+UpdateCreditFacility     → grant/update customer overdraft facility (no balance change)
+ApproveTopupRequest      → credit wallet + system event (also repays debt by arithmetic)
 CompleteFulfillment      → status transition + notifications
 ```
 
@@ -159,6 +160,7 @@ flowchart LR
 | `/admin/orders`, `/admin/orders/{order}` | orders admin | |
 | `/fulfillments`, `/refunds`, `/topups` | operations | |
 | `/customer-funds`, `/settlements` | finance | |
+| `/credit-facility` | credit facility / overdraft ops | `can:manage_wallet_credit` |
 | `/admin/commissions` | `CommissionsTable` | `can:manage_settlements` |
 | `/admin/payout-requests` | `PayoutRequestsTable` | `can:manage_settlements` |
 | `/admin/users`, `/admin/users/{user}`, `/admin/users/{user}/audit` | users | `can:manage_users` |
@@ -409,7 +411,7 @@ app/
 ├── Policies/          # Authorization (orders, fulfillments, FulfillmentAutomationRun, …)
 ├── Providers/         # App, Fortify, Telescope service providers
 ├── Services/          # Cross-cutting services (pricing, loyalty, push, settlements, price scans)
-├── Support/           # Helpers (money formatting, locales, CustomerDeliveredPayload, …)
+├── Support/           # Helpers (money formatting, locales, CustomerWalletDisplay, CustomerSystemEventPresenter, CustomerDeliveredPayload, …)
 └── View/Components/   # Blade view components (e.g. Timeline)
 ```
 
@@ -417,7 +419,8 @@ app/
 
 | Folder | Responsibility |
 |--------|----------------|
-| `Actions/Orders/` | Checkout (`CheckoutFromPayload`, **`CheckoutResult`**), wallet payment, refunds, admin order queries |
+| `Actions/Orders/` | Checkout (`CheckoutFromPayload`, **`CheckoutResult`**), wallet payment (`PayOrderWithWallet` + spend policy), refunds, admin order queries |
+| `Actions/Wallets/` | Credit facility (`UpdateCreditFacility`), wallet adjustments (`AdjustWallet`) |
 | `Actions/Fulfillments/` | Create, claim, start, complete, fail, retry; **automation**: reserve, dispatch, ingest, cancel, artifact storage, retry automation, **`ScheduleWasimOrderReconcile`** |
 | `Actions/SupplierPrices/` | Wasim price scan lifecycle, apply scanned prices, reactive flags, drift notifications |
 | `Actions/Dashboard/` | Admin exception counts for sidebar/dashboard badges |
@@ -443,7 +446,7 @@ app/
 | `Category`, `Package`, `Product` | Catalog hierarchy; package `fulfillment_provider`, `package_api` |
 | `PackageRequirement` | Dynamic fields required at checkout |
 | `Order`, `OrderItem` | Purchases; custom amount via `requested_amount` |
-| `Wallet`, `WalletTransaction` | **Financial source of truth** |
+| `Wallet`, `WalletTransaction` | **Financial source of truth**; customer wallets may overdraft when credit facility is Active (`credit_enabled`, `credit_limit`, `payment_terms_days`, `credit_status`) |
 | `TopupRequest`, `TopupProof` | Wallet funding with optional proof upload |
 | `Fulfillment`, `FulfillmentLog` | Post-payment delivery workflow |
 | `FulfillmentAutomationRun` | Browser automation attempt (status, artifacts, supplier, errors) |
@@ -464,6 +467,8 @@ app/
 | `PriceCalculator` | Server-side price computation |
 | `CustomerPriceService` | Per-user price resolution |
 | `SystemEventService` | Financial/system event recording |
+| `WalletSpendPolicy` | Pure spend gate for overdraft / available-to-spend (used by `PayOrderWithWallet`) |
+| `WalletLedger` | Idempotent ledger posts for some wallet paths; purchase overdraft **not** on ledger yet (still rejects negative resulting balance) |
 | `SettlementProfitCalculator` | Settlement profit math |
 | `LoyaltySpendService` | Loyalty spend tracking |
 | `SalespersonDashboardService` | Referral dashboard metrics |
@@ -476,7 +481,7 @@ app/
 
 ### Enums
 
-`OrderStatus`, `OrderItemStatus`, `FulfillmentStatus`, `FulfillmentAutomationRunStatus`, `FulfillmentLogLevel`, `TopupRequestStatus`, `TopupMethod`, `WalletType`, `WalletTransactionType`, `WalletTransactionDirection`, `CommissionStatus`, `PayoutRequestStatus`, `ProductAmountMode`, `LoyaltyTier`, `SystemEventSeverity`, `Timezone`
+`OrderStatus`, `OrderItemStatus`, `FulfillmentStatus`, `FulfillmentAutomationRunStatus`, `FulfillmentLogLevel`, `TopupRequestStatus`, `TopupMethod`, `WalletType`, `WalletTransactionType`, `WalletTransactionDirection`, `CreditFacilityStatus`, `WalletSpendFailureReason`, `CommissionStatus`, `PayoutRequestStatus`, `ProductAmountMode`, `LoyaltyTier`, `SystemEventSeverity`, `Timezone`
 
 ---
 
@@ -496,7 +501,7 @@ app/
 
 **Global web middleware:** `SetLocale`, `CaptureReferralFromQuery`, `EnsureAccountCanUseSession`.
 
-Backend permissions are defined in `config/permission.php` under `backend_permissions` (e.g. `view_dashboard`, `manage_fulfillments`, `manage_settlements`, `view_referrals`).
+Backend permissions are defined in `config/permission.php` under `backend_permissions` (e.g. `view_dashboard`, `manage_fulfillments`, `manage_settlements`, `manage_wallet_credit`, `adjust_wallets`, `view_referrals`).
 
 **Roles** (see `Docs/roles.md`): `admin`, `supervisor`, `salesperson`, `customer`.
 
@@ -626,12 +631,13 @@ Root: `README.md`, `NOTIFICATIONS.md`, **`SYSTEM_CONTEXT_CORE_v1.md`**, `CLAUDE.
 
 From project rules (`.cursor/rules/laravel-boost.mdc`, `CLAUDE.md`):
 
-1. **`wallet_transactions` + `wallets.balance`** are the only financial source of truth — not `system_events` alone.
+1. **`wallet_transactions` + `wallets.balance`** are the only financial source of truth — not `system_events` alone. Customer `balance` **may be negative** under an Active credit facility; platform wallets never overdraft.
 2. Balance mutations must be **transactional**, **idempotent**, and mirrored by financial `system_events`.
 3. Side effects and broadcasts use **`DB::afterCommit()`**.
 4. **Never trust client cart totals** — recompute server-side (`PriceCalculator`, `PricingEngine`).
 5. **Custom amount** lines use `requested_amount` with quantity treated as 1.
 6. Preserve referral/commission contracts on payment and refund flows.
+7. Purchase spend checks use **`WalletSpendPolicy` / `availableToSpend()`** (not raw `balance >= total`). Debt is repaid by ordinary credits/topups (no separate repayment flow). Debt forgiveness/write-off and purchase-on-`WalletLedger` remain out of scope.
 
 ---
 
@@ -641,7 +647,9 @@ From project rules (`.cursor/rules/laravel-boost.mdc`, `CLAUDE.md`):
 |------|----------------|
 | Browse & search | `pages/frontend/⚡main`, `SearchStorefrontCatalog`, API search controller |
 | Cart & checkout | `⚡cart`, `CheckoutFromPayload`, `CheckoutResult`, `CreateOrderFromCartPayload` |
-| Pay with wallet | `PayOrderWithWallet` |
+| Pay with wallet | `PayOrderWithWallet`, `WalletSpendPolicy` |
+| Credit facility (admin) | `/credit-facility`, `UpdateCreditFacility`, `pages/backend/credit-facility/⚡index` |
+| Customer wallet display | `CustomerWalletDisplay`, header/mobile chip, `CustomerSystemEventPresenter` (`audience=customer`) |
 | Topup wallet | `⚡wallet`, `CreateTopupRequestAction`, `TopupProofController` |
 | Fulfillment ops | `pages/backend/fulfillments`, `Actions/Fulfillments/*` |
 | **Browser automation** | `AutomationMonitor` (`/admin/automation`), `FulfillmentAutomationService`, `automation-worker/` |
@@ -670,7 +678,7 @@ Root companion: `SYSTEM_CONTEXT_CORE_v1.md` — condensed AI delivery context (i
 
 ## Workspace Notes (current branch)
 
-Shipped areas include fulfillment browser automation (Wasim purchase + reconcile), supplier price scans / price-drift UI, checkout repurchase idempotency, Ops Assistant + MCP, registration Turnstile/honeypot/rate limits, admin exception badge counts, `CustomerDeliveredPayload`, package fulfillment toggles, payment method uploads, and website settings extensions. Treat `storage/debugbar/`, worker screenshots/sessions, and compiled views as local/runtime artifacts — not part of the canonical structure.
+Shipped areas include fulfillment browser automation (Wasim purchase + reconcile), supplier price scans / price-drift UI, checkout repurchase idempotency, Ops Assistant + MCP, registration Turnstile/honeypot/rate limits, admin exception badge counts, `CustomerDeliveredPayload`, package fulfillment toggles, payment method uploads, website settings extensions, and **customer wallet credit facility / overdraft** (`manage_wallet_credit`, `/credit-facility`, spend policy). Treat `storage/debugbar/`, worker screenshots/sessions, and compiled views as local/runtime artifacts — not part of the canonical structure.
 
 ---
 

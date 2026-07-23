@@ -2,22 +2,27 @@
 
 ## Invariant: Ledger + Event Mirror Consistency
 
-**For every wallet balance mutation there is exactly one financial system_event** (one POSTED `wallet_transactions` row, one wallet balance change, one `system_events` row with `is_financial = true` and matching `event_type`). No balance change without event; no financial event without balance change.
+**For every wallet balance mutation there is exactly one financial system_event** (one POSTED `wallet_transactions` row, one wallet balance change, one `system_events` row with `is_financial = true` and matching `event_type`). No balance change without event.
 
-**Source of truth:** `wallet_transactions` and `wallets.balance`. `system_events` is observability only. No logic must derive balance or financial state from `system_events`.
+**Exception:** `wallet.credit_facility.updated` is recorded with `is_financial = true` for audit/timeline but does **not** change balance (facility config only).
+
+**Source of truth:** `wallet_transactions` and `wallets.balance`. `system_events` is observability only. No logic must derive balance or financial state from `system_events`. Customer `balance` may be negative under an Active credit facility.
 
 ---
 
 ## Financial Events (is_financial = true)
 
-**Recorded inside the same DB transaction as the balance change. Broadcast via `DB::afterCommit()`.**
+**Recorded inside the same DB transaction as the related write. Balance-changing events also update `wallets.balance`. Broadcast via `DB::afterCommit()`.**
 
 | event_type                  | Entity       | Actor    | Balance change                    | Hook |
 |----------------------------|-------------|----------|-----------------------------------|------|
-| `wallet.purchase.debited`  | Order       | User     | Wallet decrement (customer)       | PayOrderWithWallet |
+| `wallet.purchase.debited`  | Order       | User     | Wallet decrement (customer; may go negative under Active credit facility) | PayOrderWithWallet |
 | `wallet.refund.credited`   | WalletTransaction | Admin | Wallet increment (customer)       | ApproveRefundRequest |
-| `wallet.topup.posted`      | TopupRequest| Admin    | Wallet increment (customer)       | ApproveTopupRequest |
+| `wallet.topup.posted`      | TopupRequest| Admin    | Wallet increment (customer; also reduces outstanding debt by arithmetic) | ApproveTopupRequest |
 | `platform.profit.recorded` | Settlement  | null     | Platform wallet increment         | ProfitSettleCommand |
+| `wallet.credit_facility.updated` | Wallet | Admin | **No balance change** — facility grant/limit/terms/status audit (`previous_*` / `new_*`) | UpdateCreditFacility |
+
+**Note on `wallet.credit_facility.updated`:** recorded with `is_financial = true` for audit streaming / customer wallet timeline, but it does **not** mutate `wallets.balance`. It is facility config only.
 
 **Not financial (workflow only):** `profit.settlement.executed` → `is_financial = false` (recorded async after commit). Settlement execution is one balance change; only `platform.profit.recorded` mirrors it.
 

@@ -10,7 +10,7 @@ This document is the **complete testing playbook** for the store. Testers do **n
 |------|--------|
 | **Success message** | Green toast or positive text after saving. |
 | **Error message** | Red text or warning when something is wrong. |
-| **Wallet / balance** | Money stored in the customer account for purchases. |
+| **Wallet / balance** | Money stored in the customer account for purchases. Balance may show red/negative when the customer has an Active credit facility and has overdrawn. |
 | **Staff area** | Pages after login for **Admin**, **Salesperson**, or **Supervisor** (sidebar on the left). |
 | **Storefront** | The public shop (homepage, cart, wallet for customers). |
 
@@ -252,7 +252,7 @@ The system has four **roles**. Your menus depend on **permissions** your company
 
 **Who is acting:** Customer
 
-**Goal:** Add items and pay with wallet balance.
+**Goal:** Add items and pay with wallet balance (or available credit when a facility is Active).
 
 **Steps:**
 
@@ -264,8 +264,9 @@ The system has four **roles**. Your menus depend on **permissions** your company
 
 **Expected Result:**
 
-- Enough balance → **payment successful** and an **order number**.
-- Not enough balance → clear message; **no** successful payment.
+- Enough available to spend (prepaid balance and/or Active credit headroom) → **payment successful** and an **order number**.
+- Not enough available to spend → clear message; **no** successful payment.
+- With Active credit, balance may go negative after purchase; topups reduce debt automatically (no separate repay flow).
 
 **Validation:**
 
@@ -1270,8 +1271,9 @@ Quick **must-pass** list:
 
 - [ ] **Login** (customer + staff) and **logout**
 - [ ] **Homepage** and **Cart**
-- [ ] **Checkout** (success **or** clear “not enough balance”)
+- [ ] **Checkout** (success **or** clear insufficient-funds message)
 - [ ] **Wallet** + **top-up request** + **Admin** sees it
+- [ ] **Credit facility** (`/credit-facility`) grant/update when testing overdraft (permission `manage_wallet_credit`)
 - [ ] **Orders** (customer list + staff list)
 - [ ] **Pricing system**: custom amount min/max/step validation works, and totals are consistent
 - [ ] **Pricing precision**: decimal-heavy prices still match between checkout, order details, and wallet

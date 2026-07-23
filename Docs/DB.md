@@ -51,7 +51,9 @@
 Create The Wallets Model and wallet transactions model with these data:
 - wallets:
   - user_id
-  - balance (default 0)
+  - balance (default 0; **may be negative** for customer wallets with an Active credit facility)
+  - type (customer / platform)
+  - credit_enabled, credit_limit, payment_terms_days, credit_status (nullable Active/Suspended when granted)
   - timestamps
 - wallet_transactions
   - wallet_id
@@ -186,7 +188,7 @@ E) PayOrderWithWallet action (atomic + safe)
 - DB transaction
 - lock wallet row FOR UPDATE
 - ensure order.status is pending_payment
-- ensure wallet.balance >= order.total
+- **Current (2026-07):** gate spend with `WalletSpendPolicy` / `availableToSpend()` (customer credit facility may allow balance to go negative). Do **not** use raw `balance >= order.total` as the sole check.
 - create wallet_transaction:
     - type='purchase'
     - direction='debit'

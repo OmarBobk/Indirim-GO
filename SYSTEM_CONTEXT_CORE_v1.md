@@ -43,7 +43,7 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - **Domain actions:** `app/Actions/*` (Orders, Fulfillments, Topups, Refunds, Pricing, Users, Commissions, Packages, SupplierPrices, Dashboard, …).
 - **Pricing domain:** `app/Domain/Pricing/PricingEngine.php`, `CustomAmountValidator.php`, `PriceQuoteDTO.php`.
 - **Registration security domain:** `app/Domain/Security/*` (Turnstile, honeypot, registration rate limits) — public self-register only.
-- **Financial services:** `SystemEventService`, `OperationalIntelligenceService`.
+- **Financial services:** `SystemEventService`, `OperationalIntelligenceService`, `WalletSpendPolicy`, `WalletLedger`.
 - **Fulfillment automation:** `FulfillmentAutomationService`, `app/Actions/Fulfillments/*Automation*`, `app/Jobs/DispatchFulfillmentAutomationJob.php`, worker callbacks in `FulfillmentAutomationCallbackController`.
 - **Supplier price scans:** `SupplierPriceScanService`, `app/Actions/SupplierPrices/*`, admin UI `/price-drift`, worker price-scan callbacks.
 - **Browser worker (Node/Playwright):** `automation-worker/` — executes supplier drivers + price scans; Laravel owns all business state.
@@ -63,6 +63,7 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 7. Pricing-rule coverage must include computed custom-amount entry totals.
 8. Backend visibility must remain permission-based (no role-only shortcuts).
 9. Commission payouts are wallet credits (`commission_credit`) and must be idempotent by `commission_credit:{commission_id}`.
+10. Customer wallet balance **may be negative** under an Active credit facility; spend checks use `WalletSpendPolicy` / `availableToSpend()`, not raw `balance >= total`. Platform wallets never overdraft.
 
 ---
 
@@ -71,7 +72,7 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - **Fortify config reality:** `username` auth key, `lowercase_usernames=true`, `home='/'`, registration currently enabled in features array.
 - **Public registration security (self-register only):** `App\Http\Controllers\Auth\RegisteredUserController` runs `GuardRegistrationAttempt` before `CreateNewUser`. Controls: honeypot (`config('security.registration.honeypot_field')`), IP/email rate limits (`config/security.php` / `REGISTRATION_*` env), Cloudflare Turnstile (`config('services.turnstile')` / `TURNSTILE_*`). Local: set `TURNSTILE_ENABLED=false`. Admin/salesperson-created users bypass these guards.
 - **Backend gate:** `EnsureBackendAccess` checks `config('permission.backend_permissions')` and returns 404 when blocked.
-- **Backend permissions list:** `view_dashboard`, `manage_users`, `manage_sections`, `manage_products`, `manage_topups`, `view_referrals`, `create_orders`, `edit_orders`, `delete_orders`, `view_orders`, `view_fulfillments`, `manage_fulfillments`, `view_refunds`, `process_refunds`, `view_activities`, `manage_settlements`, `manage_bugs`, `update_product_prices`.
+- **Backend permissions list:** `view_dashboard`, `manage_users`, `manage_sections`, `manage_products`, `manage_topups`, `adjust_wallets`, `manage_wallet_credit`, `view_referrals`, `create_orders`, `edit_orders`, `delete_orders`, `view_orders`, `view_fulfillments`, `manage_fulfillments`, `view_refunds`, `process_refunds`, `view_activities`, `manage_settlements`, `manage_bugs`, `update_product_prices`.
 - **Important nuance:** `manage_user_prices` exists for per-user price overrides but is not itself a backend-entry permission.
 - **Roles:** admin, supervisor, salesperson, customer.
 
@@ -79,10 +80,10 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 
 ## 6. Role-based feature surface
 
-- **Customer:** browse catalog, cart, buy-now/custom amount, wallet + topups, orders/details, loyalty, referral link page when allowed by `view_referrals`, notifications, locale switch.
-- **Supervisor/operations:** fulfillment queues and claim workflow, refunds, topups, customer funds, settlements, bugs inbox.
+- **Customer:** browse catalog, cart, buy-now/custom amount, wallet + topups (balance may be negative when credit facility is active), orders/details, loyalty, referral link page when allowed by `view_referrals`, notifications, locale switch.
+- **Supervisor/operations:** fulfillment queues and claim workflow, refunds, topups, customer funds, settlements, bugs inbox; credit facility ops when granted `manage_wallet_credit`.
 - **Salesperson:** `view_referrals` dashboard, referral link, referral-driven order/commission analytics, eligible payout visibility.
-- **Admin:** all ops pages + system events + user management + commissions management + website settings + **fulfillment automation admin** (`/admin/automation`) + **Ops Assistant** (`/admin/assistant`, read-only AI lookups) + **Wasim price drift** (`/price-drift`, `can:update_product_prices`).
+- **Admin:** all ops pages + system events + user management + commissions management + website settings + **credit facility** (`/credit-facility`, `can:manage_wallet_credit`) + **fulfillment automation admin** (`/admin/automation`) + **Ops Assistant** (`/admin/assistant`, read-only AI lookups) + **Wasim price drift** (`/price-drift`, `can:update_product_prices`).
 
 ---
 
@@ -101,7 +102,7 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 
 ---
 
-## 8. Financial core (wallet, topup, refund, settlement)
+## 8. Financial core (wallet, topup, refund, settlement, credit facility)
 
 - **Wallet ledger:** posted tx sum mirrors stored balance; reconcile command validates and fixes drift.
 - **Transaction types:** topup, purchase, refund, adjustment, settlement, **commission_credit**.
@@ -110,6 +111,23 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - **Topup proof UI behavior:** wallet page gates file requirement with `attachProof`; proof optional when disabled.
 - **Refund posting:** `ApproveRefundRequest` enforces duplicate-refund protection before posting credit.
 - **Settlement:** `profit:settle` posts platform settlement transactions idempotently.
+
+### Credit facility / overdraft (customer wallets)
+
+- **Model:** one customer wallet per user; `wallets.balance` **may go negative** when a credit facility is granted and Active. Platform wallets never have a credit facility (effective limit always `0`).
+- **Debt repayment:** topups/credits increase balance via normal arithmetic — there is **no** separate repayment flow. Paying down debt is just posting credits.
+- **Fields (keep both grant + operational status):**
+  - `credit_enabled` — facility granted (bool)
+  - `credit_limit` — max overdraft ceiling (decimal)
+  - `payment_terms_days` — Net N terms (nullable when not granted)
+  - `credit_status` — nullable `Active`/`Suspended` when granted; **must be `null` when not granted**
+- **Invalid combos forbidden:** disabled ⇒ `credit_status` null; enabled ⇒ `Active`|`Suspended` only. Do **not** consolidate `credit_enabled` into status.
+- **Wallet helpers:** `effectiveCreditLimit()`, `minimumAllowedBalance()`, `availableToSpend()`, `availableCredit()`, `outstandingDebt()`, `isOverdrawn()`. Effective limit requires customer type + `credit_enabled` + status `Active` (Suspended / disabled / platform ⇒ `0.00`).
+- **Spend gate:** `WalletSpendPolicy` + `WalletSpendDecision` + `WalletSpendFailureReason` + `WalletSpendDeniedException`. `PayOrderWithWallet` calls the policy after wallet lock (`assertCanDebit` vs `availableToSpend`). Purchase path still posts via direct balance decrement + `WalletTransaction` — **not** migrated onto `WalletLedger` yet. `WalletLedger` still rejects debits that would go below zero (no overdraft floor in ledger for this milestone).
+- **Admin UI:** `/credit-facility` (`can:manage_wallet_credit`) — ops list with filters (relevant/granted/active/suspended/overdrawn/not_granted), review-before-save confirm, `UpdateCreditFacility` action. Limit cannot be set below outstanding debt. Audit: activity + system event `wallet.credit_facility.updated` with `previous_*` / `new_*` props (limit, terms, enabled, status).
+- **Customer UX:** `CustomerWalletDisplay` — stacked header balance (green positive / red debt), Limit/Available secondary when facility Active; mobile header chip surfaces limit/available without opening wallet. Wallet timeline humanized via `CustomerSystemEventPresenter` when timeline `audience="customer"`.
+- **Config:** `billing.wallet_credit_limit_max`, `billing.wallet_payment_terms_days` (`config/billing.php`).
+- **Out of scope (still true):** debt forgiveness / write-off; migrating purchase debits onto `WalletLedger`.
 
 ---
 
@@ -216,7 +234,7 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - **2026-05-02:** commission payout batching/wallet crediting and `view_sales` -> `view_referrals` permission migration (`f7d0d97`, `10cbfbb`).
 - **2026-05-28 to 2026-06-02:** browser fulfillment automation — worker service, run model, dispatch/sweep commands, HMAC callbacks, admin automation page, package fulfillment toggles, `WebsiteSetting::automation_enabled` kill switch.
 - **2026-06:** Wasim **two-phase** automation (purchase `submitted` → reconcile on supplier orders page); Wasim admin credentials + worker session clear; checkout **`cart_hash`** idempotency limited to pending + short paid window (`CheckoutResult`); **Ops Assistant** admin chat (`/admin/assistant`, sidebar nav, read-only order/wallet/fulfillment lookups).
-- **2026-07:** **Supplier price scans** + `/price-drift` UI, reactive fulfillment price flags, stale-scan sweep; **admin exception counts** (`GetAdminExceptionCounts`) for dashboard/sidebar badges; **`CustomerDeliveredPayload`** for safe customer-facing delivered payload rendering (incl. image URLs); **registration security** — Cloudflare Turnstile + honeypot + registration rate limits (`app/Domain/Security/*`).
+- **2026-07:** **Supplier price scans** + `/price-drift` UI, reactive fulfillment price flags, stale-scan sweep; **admin exception counts** (`GetAdminExceptionCounts`) for dashboard/sidebar badges; **`CustomerDeliveredPayload`** for safe customer-facing delivered payload rendering (incl. image URLs); **registration security** — Cloudflare Turnstile + honeypot + registration rate limits (`app/Domain/Security/*`); **wallet credit facility / overdraft** — `credit_enabled` + `credit_limit` + `payment_terms_days` + `credit_status`, `WalletSpendPolicy`, `/credit-facility` (`manage_wallet_credit`), customer header/wallet display + humanized facility timeline events.
 
 ---
 
@@ -224,7 +242,7 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 
 - **Public:** `/`, `/categories/{category:slug}`, `/cart`, `/contact`, `/404`, `language/{locale}`.
 - **Auth+verified (storefront):** `/profile`, `/wallet`, `/loyalty`, `/referral-link`, `/orders`, `/orders/{order_number}`, `/notifications`, `/topup-proofs/{proof}`, `/bug-attachments/{attachment}`, `POST /api/pricing/buy-now-custom-amount-quote`.
-- **Backend:** `/dashboard` (`can:view_dashboard`), `/salesperson-dashboard` (`can:view_referrals`), `/categories`, `/packages`, `/products`, `/product-entry-prices` (`can:update_product_prices`), **`/price-drift`** (`can:update_product_prices`), `/pricing-rules`, `/loyalty-tiers`, `/admin/orders/*`, `/admin/users/*`, `/admin/users/{user}/audit`, `/fulfillments`, `/refunds`, `/topups`, `/customer-funds`, `/settlements`, `/admin/commissions` (`can:manage_settlements`), `/admin/notifications`, `/admin/bugs/*`, `/admin/website-settings` (admin only), **`/admin/automation`** (admin only), **`/admin/assistant`** (admin only, throttled).
+- **Backend:** `/dashboard` (`can:view_dashboard`), `/salesperson-dashboard` (`can:view_referrals`), `/categories`, `/packages`, `/products`, `/product-entry-prices` (`can:update_product_prices`), **`/price-drift`** (`can:update_product_prices`), `/pricing-rules`, `/loyalty-tiers`, `/admin/orders/*`, `/admin/users/*`, `/admin/users/{user}/audit`, `/fulfillments`, `/refunds`, `/topups`, `/customer-funds`, **`/credit-facility`** (`can:manage_wallet_credit`), `/settlements`, `/admin/commissions` (`can:manage_settlements`), `/admin/notifications`, `/admin/bugs/*`, `/admin/website-settings` (admin only), **`/admin/automation`** (admin only), **`/admin/assistant`** (admin only, throttled).
 - **Automation (internal):** `POST /internal/automation/runs/{uuid}/result`, `POST /internal/automation/runs/{uuid}/artifacts`, **`POST /internal/automation/price-scans/{uuid}/result`** (HMAC-signed, CSRF exempt). Worker: `POST /v1/runs`, **`POST /v1/sessions/clear`**, **`POST /v1/price-scans`** (HMAC).
 - **AI/MCP:** `POST /mcp/ops-assistant` (admin MCP server for read-only ops tools).
 
@@ -235,6 +253,11 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - `routes/web.php`, `routes/automation.php`, `routes/channels.php`, `routes/console.php`, `routes/ai.php`
 - `config/permission.php`, `config/fortify.php`, `config/referral.php`, **`config/fulfillment_automation.php`** (incl. `price_scan`), **`config/billing.php`**, **`config/security.php`**, `config/services.php` (`turnstile`, `openai`)
 - `app/Actions/Orders/CheckoutFromPayload.php`, **`CheckoutResult.php`**, `CreateOrderFromCartPayload.php`, `PayOrderWithWallet.php`
+- `app/Actions/Wallets/UpdateCreditFacility.php`, `AdjustWallet.php`
+- `app/Services/WalletSpendPolicy.php`, `WalletLedger.php`
+- `app/Models/Wallet.php` (credit helpers), `app/Enums/CreditFacilityStatus.php`, `WalletSpendFailureReason.php`
+- `app/DTOs/WalletSpendDecision.php`, `app/Exceptions/WalletSpendDeniedException.php`
+- `app/Support/CustomerWalletDisplay.php`, `CustomerSystemEventPresenter.php`
 - `app/Actions/Commissions/CreatePayoutBatch.php`
 - `app/Actions/Refunds/ApproveRefundRequest.php`
 - `app/Actions/Fulfillments/ClaimFulfillment.php`, `CreateFulfillmentsForOrder.php`, **`DispatchFulfillmentAutomationRun.php`**, **`IngestFulfillmentAutomationResult.php`**, **`ScheduleWasimOrderReconcile.php`**, **`RetryFulfillmentAutomation.php`**
@@ -250,7 +273,8 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - `app/Ai/Agents/OpsAssistant.php`, `app/Mcp/Servers/OpsAssistantServer.php`, `app/Livewire/Admin/AssistantChat.php`, `app/Livewire/Admin/AutomationMonitor.php`
 - `app/Models/FulfillmentAutomationRun.php`, `SupplierPriceScan.php`, `WebsiteSetting.php` (`automation_enabled`, **`wasim_automation_*`**)
 - `resources/views/livewire/admin/automation-monitor.blade.php`, `resources/views/livewire/admin/assistant-chat.blade.php`, `resources/views/pages/backend/fulfillments/⚡index.blade.php`, `resources/views/pages/backend/price-drift/⚡index.blade.php`
-- `resources/views/layouts/app/sidebar.blade.php` (Automation + Ops Assistant + price-drift nav)
+- `resources/views/layouts/app/sidebar.blade.php` (Automation + Ops Assistant + price-drift + credit-facility nav)
+- `resources/views/pages/backend/credit-facility/⚡index.blade.php`
 - `resources/views/flux/modal/index.blade.php`, `resources/css/app.css`
 - `automation-worker/README.md`, `automation-worker/src/drivers/wasim/*`, `automation-worker/src/server.ts` (`/v1/sessions/clear`)
 - `resources/js/app.js`
