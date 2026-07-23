@@ -29,7 +29,6 @@ new #[Layout('layouts::frontend')] class extends Component
 
         $this->order = $order->load([
             'items.fulfillments',
-            'items.product',
             'items.package.requirements',
         ]);
     }
@@ -62,7 +61,6 @@ new #[Layout('layouts::frontend')] class extends Component
         $fulfillment->refresh();
         $this->order->load([
             'items.fulfillments',
-            'items.product',
             'items.package.requirements',
         ]);
         $this->actionMessage = $fulfillment->status === FulfillmentStatus::Queued
@@ -93,7 +91,6 @@ new #[Layout('layouts::frontend')] class extends Component
 
         $this->order->load([
             'items.fulfillments',
-            'items.product',
             'items.package.requirements',
         ]);
         $this->actionMessage = __('messages.refund_waiting_approval');
@@ -239,7 +236,7 @@ new #[Layout('layouts::frontend')] class extends Component
                     <div class="flex flex-wrap items-center justify-between gap-3">
                         <div class="space-y-1">
                             <div class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                                {{ $item->product?->name ?? $item->name }}
+                                {{ $item->name }}
                             </div>
                             <div class="space-y-1 text-xs text-zinc-500 dark:text-zinc-400">
                                 @if (($item->amount_mode ?? \App\Enums\ProductAmountMode::Fixed) === \App\Enums\ProductAmountMode::Custom && $item->requested_amount !== null)

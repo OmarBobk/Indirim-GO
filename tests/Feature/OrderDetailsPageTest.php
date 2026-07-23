@@ -122,6 +122,29 @@ test('order details page renders for owner', function () {
         ->assertSee('data-test="back-button"', false);
 });
 
+test('customer order list and details use the purchased item name', function () {
+    $user = User::factory()->create();
+    $payload = makeCompletedOrder($user, ['code' => 'ABC-12345']);
+    $purchasedName = 'Purchased Snapshot Name';
+    $currentProductName = 'Renamed Catalog Product';
+
+    $payload['item']->update(['name' => $purchasedName]);
+    Product::query()->findOrFail($payload['item']->product_id)->update([
+        'name' => $currentProductName,
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('orders.index'))
+        ->assertOk()
+        ->assertSee($purchasedName)
+        ->assertDontSee($currentProductName);
+
+    $this->get(route('orders.show', $payload['order']->order_number))
+        ->assertOk()
+        ->assertSee($purchasedName)
+        ->assertDontSee($currentProductName);
+});
+
 test('order details page is forbidden for other users', function () {
     $owner = User::factory()->create();
     $payload = makeCompletedOrder($owner, ['code' => 'ABC-12345']);
