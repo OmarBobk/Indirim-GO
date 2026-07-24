@@ -13,7 +13,7 @@ class GetPackageDetails
         }
 
         return Package::query()
-            ->select(['id', 'category_id', 'name', 'slug', 'description', 'is_active', 'order', 'icon', 'image'])
+            ->select(['id', 'category_id', 'name', 'slug', 'description', 'is_active', 'fulfillment_provider', 'package_api', 'order', 'icon', 'image'])
             ->with('category:id,name,slug')
             ->find($packageId);
     }

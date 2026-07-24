@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Str;
 
 class Order extends Model
@@ -76,5 +77,13 @@ class Order extends Model
     public function fulfillments(): HasMany
     {
         return $this->hasMany(Fulfillment::class);
+    }
+
+    /**
+     * @return HasOne<Commission, $this>
+     */
+    public function commission(): HasOne
+    {
+        return $this->hasOne(Commission::class);
     }
 }

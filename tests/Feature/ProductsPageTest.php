@@ -68,6 +68,29 @@ test('product can be created from manager form', function () {
     ]);
 });
 
+test('product api can be saved from manager form', function () {
+    $user = User::factory()->create();
+    $user->assignRole('admin');
+    $package = Package::factory()->create();
+
+    $this->actingAs($user);
+
+    Livewire::test('pages::backend.products.index')
+        ->set('productPackageId', $package->id)
+        ->set('productName', 'Wasim Product')
+        ->set('productEntryPrice', '12.00')
+        ->set('productOrder', 2)
+        ->set('productIsActive', true)
+        ->set('productApi', 'Customer/Home/ProductRequest?productId=274')
+        ->call('saveProduct')
+        ->assertHasNoErrors();
+
+    $this->assertDatabaseHas('products', [
+        'name' => 'Wasim Product',
+        'product_api' => 'Customer/Home/ProductRequest?productId=274',
+    ]);
+});
+
 test('product can be created as custom amount from manager form', function () {
     $user = User::factory()->create();
     $user->assignRole('admin');

@@ -78,6 +78,27 @@ class Fulfillment extends Model
         return $this->hasMany(FulfillmentLog::class);
     }
 
+    public function automationRuns(): HasMany
+    {
+        return $this->hasMany(FulfillmentAutomationRun::class);
+    }
+
+    public function isBrowserAutomated(): bool
+    {
+        return str_starts_with($this->provider, 'browser:');
+    }
+
+    public function browserSupplierKey(): ?string
+    {
+        if (! $this->isBrowserAutomated()) {
+            return null;
+        }
+
+        $key = substr($this->provider, strlen('browser:'));
+
+        return $key !== '' ? $key : null;
+    }
+
     public function settlements(): BelongsToMany
     {
         return $this->belongsToMany(Settlement::class, 'settlement_fulfillments')

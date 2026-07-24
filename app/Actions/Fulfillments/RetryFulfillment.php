@@ -9,11 +9,13 @@ use App\Enums\FulfillmentStatus;
 use App\Enums\OrderStatus;
 use App\Enums\WalletTransactionType;
 use App\Events\FulfillmentListChanged;
+use App\Jobs\DispatchFulfillmentAutomationJob;
 use App\Models\Fulfillment;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\User;
 use App\Models\WalletTransaction;
+use App\Services\FulfillmentAutomationService;
 use Illuminate\Support\Facades\DB;
 
 class RetryFulfillment
@@ -66,7 +68,11 @@ class RetryFulfillment
                 return $lockedFulfillment;
             }
 
+            app(CancelFulfillmentAutomationRun::class)->handle($lockedFulfillment, 'retry');
+
             $retryCount = (int) data_get($lockedFulfillment->meta, 'retry_count', 0) + 1;
+            $meta = $lockedFulfillment->meta ?? [];
+            unset($meta['automation']);
             $statusFrom = $lockedFulfillment->status;
 
             $lockedFulfillment->fill([
@@ -76,7 +82,7 @@ class RetryFulfillment
                 'last_error' => null,
                 'processed_at' => null,
                 'completed_at' => null,
-                'meta' => array_merge($lockedFulfillment->meta ?? [], [
+                'meta' => array_merge($meta, [
                     'retry_count' => $retryCount,
                     'last_retry_at' => now()->toIso8601String(),
                     'last_retry_by' => $actorId,
@@ -117,6 +123,10 @@ class RetryFulfillment
             $fulfillmentId = $lockedFulfillment->id;
             DB::afterCommit(static function () use ($fulfillmentId): void {
                 event(new FulfillmentListChanged($fulfillmentId, 'created'));
+                $fulfillment = Fulfillment::query()->find($fulfillmentId);
+                if ($fulfillment !== null && app(FulfillmentAutomationService::class)->isEligible($fulfillment)) {
+                    DispatchFulfillmentAutomationJob::dispatch($fulfillmentId);
+                }
             });
 
             return $lockedFulfillment->refresh();

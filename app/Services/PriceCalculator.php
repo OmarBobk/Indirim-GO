@@ -5,25 +5,24 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Models\PricingRule;
+use App\Models\User;
+use App\Models\UserPricingRule;
 use Illuminate\Support\Facades\Cache;
 use InvalidArgumentException;
 
 /**
  * Single source of truth for deriving retail and wholesale prices from entry price.
- * Uses active pricing rules (min_price <= entry_price < max_price, first match by priority).
+ * Uses per-user pricing rules when present, otherwise active global pricing rules.
  * Applies bankers rounding (round half to even) to final prices.
- *
- * When no rule matches, throws InvalidArgumentException.
- * Ensure a default rule (e.g. 0 to 999999.99) exists so every entry price is covered.
  */
 class PriceCalculator
 {
     /**
-     * @return array{retail_price: float, wholesale_price: float}
+     * @return array{retail_price: float, wholesale_price: float, uses_user_pricing: bool}
      */
-    public function calculate(float $entryPrice, int $roundingScale = 2): array
+    public function calculate(float $entryPrice, int $roundingScale = 2, ?User $user = null): array
     {
-        $rule = $this->resolveRule($entryPrice);
+        [$rule, $usesUserPricing] = $this->resolveRule($entryPrice, $user);
 
         if ($rule === null) {
             throw new InvalidArgumentException(
@@ -46,29 +45,58 @@ class PriceCalculator
         return [
             'retail_price' => $retailPrice,
             'wholesale_price' => $wholesalePrice,
+            'uses_user_pricing' => $usesUserPricing,
         ];
     }
 
-    /**
-     * Bankers rounding: round half to even (PHP_ROUND_HALF_EVEN).
-     */
     private function applyBankersRounding(float $value, int $decimals = 2): float
     {
         return round($value, $decimals, PHP_ROUND_HALF_EVEN);
     }
 
-    private function resolveRule(float $entryPrice): ?PricingRule
+    /**
+     * @return array{0: PricingRule|UserPricingRule|null, 1: bool}
+     */
+    private function resolveRule(float $entryPrice, ?User $user): array
     {
-        $entryKey = number_format($entryPrice, 6, '.', '');
-        $cacheKey = 'pricing_rule_'.$entryKey;
+        $userId = $user?->id;
 
-        return Cache::remember($cacheKey, 60, function () use ($entryPrice): ?PricingRule {
-            return PricingRule::query()
+        if ($userId !== null) {
+            return $this->lookupRule($entryPrice, $userId);
+        }
+
+        $entryKey = number_format($entryPrice, 6, '.', '');
+        $cacheKey = "pricing_rule_{$entryKey}";
+
+        return Cache::remember($cacheKey, 60, fn (): array => $this->lookupRule($entryPrice, null));
+    }
+
+    /**
+     * @return array{0: PricingRule|UserPricingRule|null, 1: bool}
+     */
+    private function lookupRule(float $entryPrice, ?int $userId): array
+    {
+        if ($userId !== null) {
+            $userRule = UserPricingRule::query()
+                ->where('user_id', $userId)
                 ->where('is_active', true)
                 ->where('min_price', '<=', $entryPrice)
                 ->where('max_price', '>', $entryPrice)
                 ->orderBy('priority')
                 ->first();
-        });
+
+            if ($userRule !== null) {
+                return [$userRule, true];
+            }
+        }
+
+        $globalRule = PricingRule::query()
+            ->where('is_active', true)
+            ->where('min_price', '<=', $entryPrice)
+            ->where('max_price', '>', $entryPrice)
+            ->orderBy('priority')
+            ->first();
+
+        return [$globalRule, false];
     }
 }

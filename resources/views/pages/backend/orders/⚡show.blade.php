@@ -160,7 +160,8 @@ new class extends Component
                 </div>
                 <div class="mt-2 space-y-2 text-sm text-zinc-700 dark:text-zinc-300">
                     <div>{{ __('messages.order_number') }}: {{ $order->order_number }}</div>
-                    <div>{{ __('messages.user') }}: {{ $order->user?->email ?? '—' }}</div>
+                    <div>{{ __('messages.username') }}: {{ $order->user?->username ?? '—' }}</div>
+                    <div>{{ __('messages.email') }}: {{ $order->user?->email ?? '—' }}</div>
                     <div>{{ __('messages.created') }}: {{ $order->created_at?->format('M d, Y H:i') ?? '—' }}</div>
                     <div>{{ __('messages.paid_at') }}: {{ $order->paid_at?->format('M d, Y H:i') ?? '—' }}</div>
                 </div>

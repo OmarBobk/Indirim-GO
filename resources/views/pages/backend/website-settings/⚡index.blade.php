@@ -1,12 +1,17 @@
 <?php
 
+use App\Actions\PaymentMethods\UpsertPaymentMethod;
+use App\Models\PaymentMethod;
 use App\Models\WebsiteSetting;
 use Illuminate\Contracts\View\View;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
 use Livewire\Component;
+use Livewire\WithFileUploads;
 
 new class extends Component
 {
+    use WithFileUploads;
     private const ALLOWED_COUNTRY_CODES = ['+90', '+963'];
 
     public string $contactEmail = '';
@@ -22,6 +27,24 @@ new class extends Component
     public bool $pricesVisible = true;
 
     public ?string $usdTryRate = null;
+    public int $commissionPayoutWaitDays = 3;
+    public ?string $commissionPayoutMinAmount = '200.00';
+    public ?string $defaultCommissionRatePercent = '20.00';
+
+    public ?int $editingPaymentMethodId = null;
+
+    public string $paymentMethodName = '';
+
+    public string $paymentMethodAccountText = '';
+
+    public int $paymentMethodSortOrder = 0;
+
+    public bool $paymentMethodIsActive = true;
+
+    /** @var \Illuminate\Http\UploadedFile|null */
+    public $paymentMethodImageFile = null;
+
+    public bool $removePaymentMethodImage = false;
 
     public function mount(): void
     {
@@ -32,6 +55,9 @@ new class extends Component
         [$this->secondaryCountryCode, $this->secondaryPhone] = $this->parsePhone($settings->secondary_phone ?? '');
         $this->pricesVisible = (bool) $settings->prices_visible;
         $this->usdTryRate = $settings->usd_try_rate !== null ? number_format((float) $settings->usd_try_rate, 6, '.', '') : null;
+        $this->commissionPayoutWaitDays = max(0, (int) ($settings->commission_payout_wait_days ?? 3));
+        $this->commissionPayoutMinAmount = number_format((float) ($settings->commission_payout_min_amount ?? 200), 2, '.', '');
+        $this->defaultCommissionRatePercent = number_format((float) ($settings->default_commission_rate_percent ?? 20), 2, '.', '');
     }
 
     /**
@@ -75,6 +101,9 @@ new class extends Component
             'secondaryCountryCode' => ['nullable', 'string', 'in:+90,+963'],
             'secondaryPhone' => ['nullable', 'string', 'max:30'],
             'usdTryRate' => ['nullable', 'numeric', 'gt:0'],
+            'commissionPayoutWaitDays' => ['required', 'integer', 'min:0', 'max:365'],
+            'commissionPayoutMinAmount' => ['required', 'numeric', 'min:0', 'max:9999999999.99'],
+            'defaultCommissionRatePercent' => ['required', 'numeric', 'min:0.01', 'max:100'],
         ]);
 
         WebsiteSetting::instance()->update([
@@ -84,6 +113,9 @@ new class extends Component
             'prices_visible' => $this->pricesVisible,
             'usd_try_rate' => $this->usdTryRate !== null && $this->usdTryRate !== '' ? (float) $this->usdTryRate : null,
             'usd_try_rate_updated_at' => now(),
+            'commission_payout_wait_days' => $this->commissionPayoutWaitDays,
+            'commission_payout_min_amount' => (float) $this->commissionPayoutMinAmount,
+            'default_commission_rate_percent' => (float) $this->defaultCommissionRatePercent,
         ]);
 
         $this->dispatch('website-settings-saved');
@@ -114,6 +146,71 @@ new class extends Component
         } catch (\Throwable) {
             $this->addError('usdTryRate', __('messages.something_went_wrong_checkout'));
         }
+    }
+
+    public function startCreatePaymentMethod(): void
+    {
+        $this->resetPaymentMethodForm();
+        $this->editingPaymentMethodId = 0;
+    }
+
+    public function editPaymentMethod(int $paymentMethodId): void
+    {
+        $method = PaymentMethod::query()->findOrFail($paymentMethodId);
+
+        $this->editingPaymentMethodId = $method->id;
+        $this->paymentMethodName = $method->name;
+        $this->paymentMethodAccountText = $method->account_text;
+        $this->paymentMethodSortOrder = $method->sort_order;
+        $this->paymentMethodIsActive = $method->is_active;
+        $this->paymentMethodImageFile = null;
+        $this->removePaymentMethodImage = false;
+    }
+
+    public function resetPaymentMethodForm(): void
+    {
+        $this->editingPaymentMethodId = null;
+        $this->paymentMethodName = '';
+        $this->paymentMethodAccountText = '';
+        $this->paymentMethodSortOrder = 0;
+        $this->paymentMethodIsActive = true;
+        $this->paymentMethodImageFile = null;
+        $this->removePaymentMethodImage = false;
+        $this->resetValidation();
+    }
+
+    public function savePaymentMethod(): void
+    {
+        $this->validate([
+            'paymentMethodName' => ['required', 'string', 'max:255'],
+            'paymentMethodAccountText' => ['required', 'string', 'max:5000'],
+            'paymentMethodSortOrder' => ['required', 'integer', 'min:0', 'max:9999'],
+            'paymentMethodIsActive' => ['boolean'],
+            'paymentMethodImageFile' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp,gif', 'max:5120'],
+        ]);
+
+        app(UpsertPaymentMethod::class)->handle(
+            $this->editingPaymentMethodId > 0 ? $this->editingPaymentMethodId : null,
+            [
+                'name' => $this->paymentMethodName,
+                'account_text' => $this->paymentMethodAccountText,
+                'is_active' => $this->paymentMethodIsActive,
+                'sort_order' => $this->paymentMethodSortOrder,
+            ],
+            $this->paymentMethodImageFile,
+            $this->removePaymentMethodImage,
+        );
+
+        $this->resetPaymentMethodForm();
+        $this->dispatch('payment-methods-saved');
+    }
+
+    /**
+     * @return Collection<int, PaymentMethod>
+     */
+    public function getPaymentMethodsProperty(): Collection
+    {
+        return PaymentMethod::query()->ordered()->get();
     }
 
     public function render(): View
@@ -202,6 +299,24 @@ new class extends Component
                 <flux:text class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{{ __('messages.website_usd_try_rate_hint') }}</flux:text>
                 <flux:error name="usdTryRate" />
             </flux:field>
+            <flux:field>
+                <flux:label>{{ __('messages.commission_payout_wait_days') }}</flux:label>
+                <flux:input wire:model.defer="commissionPayoutWaitDays" type="number" min="0" max="365" class="w-full max-w-xs" class:input="focus:!border-(--color-accent) focus:!border-1 focus:!ring-0 focus:!outline-none focus:!ring-offset-0" />
+                <flux:text class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{{ __('messages.commission_payout_wait_days_hint') }}</flux:text>
+                <flux:error name="commissionPayoutWaitDays" />
+            </flux:field>
+            <flux:field>
+                <flux:label>{{ __('messages.commission_payout_min_amount') }}</flux:label>
+                <flux:input wire:model.defer="commissionPayoutMinAmount" type="number" min="0" step="0.01" class="w-full max-w-xs" class:input="focus:!border-(--color-accent) focus:!border-1 focus:!ring-0 focus:!outline-none focus:!ring-offset-0" />
+                <flux:text class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{{ __('messages.commission_payout_min_amount_hint') }}</flux:text>
+                <flux:error name="commissionPayoutMinAmount" />
+            </flux:field>
+            <flux:field>
+                <flux:label>{{ __('messages.website_default_commission_rate_percent') }}</flux:label>
+                <flux:input wire:model.defer="defaultCommissionRatePercent" type="number" min="0.01" max="100" step="0.01" class="w-full max-w-xs" class:input="focus:!border-(--color-accent) focus:!border-1 focus:!ring-0 focus:!outline-none focus:!ring-offset-0" />
+                <flux:text class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{{ __('messages.website_default_commission_rate_percent_hint') }}</flux:text>
+                <flux:error name="defaultCommissionRatePercent" />
+            </flux:field>
             <div class="flex flex-wrap items-center gap-2">
                 <flux:button type="submit" variant="primary" wire:loading.attr="disabled">
                     {{ __('messages.save') }}
@@ -210,4 +325,6 @@ new class extends Component
             </div>
         </form>
     </section>
+
+    @include('pages.backend.website-settings._payment-methods')
 </div>

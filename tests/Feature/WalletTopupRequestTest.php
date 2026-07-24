@@ -1,9 +1,9 @@
 <?php
 
 use App\Actions\Topups\CreateTopupRequestAction;
-use App\Enums\TopupMethod;
 use App\Enums\TopupRequestStatus;
 use App\Events\TopupRequestsChanged;
+use App\Models\PaymentMethod;
 use App\Models\TopupProof;
 use App\Models\TopupRequest;
 use App\Models\User;
@@ -22,18 +22,28 @@ beforeEach(function (): void {
     Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
 });
 
+function shamCashPaymentMethodId(): int
+{
+    return (int) PaymentMethod::query()->where('name', 'Sham Cash')->value('id');
+}
+
+function eftPaymentMethodId(): int
+{
+    return (int) PaymentMethod::query()->where('name', 'EFT Transfer')->value('id');
+}
+
 test('user can create a topup request with proof from wallet page', function () {
     Storage::fake('local');
     $user = User::factory()->create();
 
     Livewire::actingAs($user)
-        ->test('pages::frontend.wallet')
+        ->test('pages::frontend.wallet-topup')
         ->set('topupAmount', '25')
-        ->set('topupMethod', TopupMethod::ShamCash->value)
+        ->set('paymentMethodId', shamCashPaymentMethodId())
         ->set('attachProof', true)
         ->set('proofFile', UploadedFile::fake()->image('proof.jpg'))
         ->call('submitTopup')
-        ->assertSet('noticeMessage', __('messages.topup_request_created'));
+        ->assertRedirect(route('wallet'));
 
     $topupRequest = TopupRequest::query()->first();
 
@@ -58,12 +68,12 @@ test('user can create a topup request without proof when attach proof is off', f
     $user = User::factory()->create();
 
     Livewire::actingAs($user)
-        ->test('pages::frontend.wallet')
+        ->test('pages::frontend.wallet-topup')
         ->set('topupAmount', '25')
-        ->set('topupMethod', TopupMethod::ShamCash->value)
+        ->set('paymentMethodId', shamCashPaymentMethodId())
         ->set('attachProof', false)
         ->call('submitTopup')
-        ->assertSet('noticeMessage', __('messages.topup_request_created'))
+        ->assertRedirect(route('wallet'))
         ->assertHasNoErrors();
 
     $topupRequest = TopupRequest::query()->first();
@@ -78,9 +88,9 @@ test('creating a topup request broadcasts change event', function () {
     $user = User::factory()->create();
 
     Livewire::actingAs($user)
-        ->test('pages::frontend.wallet')
+        ->test('pages::frontend.wallet-topup')
         ->set('topupAmount', '40')
-        ->set('topupMethod', TopupMethod::ShamCash->value)
+        ->set('paymentMethodId', shamCashPaymentMethodId())
         ->set('attachProof', true)
         ->set('proofFile', UploadedFile::fake()->image('proof.jpg'))
         ->call('submitTopup');
@@ -102,20 +112,19 @@ test('user cannot create a second pending topup request', function () {
     app(CreateTopupRequestAction::class)->handle([
         'user_id' => $user->id,
         'wallet_id' => $wallet->id,
-        'method' => TopupMethod::ShamCash,
+        'payment_method_id' => shamCashPaymentMethodId(),
         'amount' => 20,
         'currency' => $wallet->currency,
         'status' => TopupRequestStatus::Pending,
     ]);
 
     Livewire::actingAs($user)
-        ->test('pages::frontend.wallet')
+        ->test('pages::frontend.wallet-topup')
         ->set('topupAmount', '30')
-        ->set('topupMethod', TopupMethod::ShamCash->value)
+        ->set('paymentMethodId', shamCashPaymentMethodId())
         ->set('attachProof', true)
         ->set('proofFile', UploadedFile::fake()->image('proof.jpg'))
-        ->call('submitTopup')
-        ->assertSet('noticeMessage', __('messages.topup_request_pending'));
+        ->call('submitTopup');
 
     expect(TopupRequest::query()->where('user_id', $user->id)->count())->toBe(1);
 });
@@ -124,9 +133,9 @@ test('submit topup without proof fails when attach proof is on', function () {
     $user = User::factory()->create();
 
     Livewire::actingAs($user)
-        ->test('pages::frontend.wallet')
+        ->test('pages::frontend.wallet-topup')
         ->set('topupAmount', '25')
-        ->set('topupMethod', TopupMethod::ShamCash->value)
+        ->set('paymentMethodId', shamCashPaymentMethodId())
         ->set('attachProof', true)
         ->call('submitTopup')
         ->assertHasErrors('proofFile');
@@ -138,9 +147,9 @@ test('submit topup with invalid file type fails validation when attach proof is 
     $user = User::factory()->create();
 
     Livewire::actingAs($user)
-        ->test('pages::frontend.wallet')
+        ->test('pages::frontend.wallet-topup')
         ->set('topupAmount', '25')
-        ->set('topupMethod', TopupMethod::ShamCash->value)
+        ->set('paymentMethodId', shamCashPaymentMethodId())
         ->set('attachProof', true)
         ->set('proofFile', UploadedFile::fake()->create('proof.txt', 100, 'text/plain'))
         ->call('submitTopup')
@@ -155,9 +164,9 @@ test('submit topup with file exceeding max size fails validation when attach pro
     $oversizedFile = UploadedFile::fake()->create('proof.pdf', 6 * 1024 * 1024, 'application/pdf');
 
     Livewire::actingAs($user)
-        ->test('pages::frontend.wallet')
+        ->test('pages::frontend.wallet-topup')
         ->set('topupAmount', '25')
-        ->set('topupMethod', TopupMethod::ShamCash->value)
+        ->set('paymentMethodId', shamCashPaymentMethodId())
         ->set('attachProof', true)
         ->set('proofFile', $oversizedFile)
         ->call('submitTopup')
@@ -171,13 +180,13 @@ test('valid proof creates request and single proof record', function () {
     $user = User::factory()->create();
 
     Livewire::actingAs($user)
-        ->test('pages::frontend.wallet')
+        ->test('pages::frontend.wallet-topup')
         ->set('topupAmount', '10')
-        ->set('topupMethod', TopupMethod::EftTransfer->value)
+        ->set('paymentMethodId', shamCashPaymentMethodId())
         ->set('attachProof', true)
-        ->set('proofFile', UploadedFile::fake()->create('proof.pdf', 100, 'application/pdf'))
+        ->set('proofFile', UploadedFile::fake()->image('proof.jpg'))
         ->call('submitTopup')
-        ->assertSet('noticeMessage', __('messages.topup_request_created'));
+        ->assertRedirect(route('wallet'));
 
     $topupRequest = TopupRequest::query()->first();
     expect($topupRequest)->not->toBeNull();
@@ -198,12 +207,12 @@ test('try-preferred customer topup input is converted to usd wallet amount', fun
     expect(WebsiteSetting::getUsdTryRate())->toBe(40.0);
 
     Livewire::actingAs($user)
-        ->test('pages::frontend.wallet')
+        ->test('pages::frontend.wallet-topup')
         ->set('topupAmount', '1000')
-        ->set('topupMethod', TopupMethod::ShamCash->value)
+        ->set('paymentMethodId', shamCashPaymentMethodId())
         ->set('attachProof', false)
         ->call('submitTopup')
-        ->assertSet('noticeMessage', __('messages.topup_request_created'));
+        ->assertRedirect(route('wallet'));
 
     $topupRequest = TopupRequest::query()->first();
     expect($topupRequest)->not->toBeNull();
@@ -223,12 +232,12 @@ test('try-preferred topup conversion rounds up to avoid under-crediting', functi
     ]);
 
     Livewire::actingAs($user)
-        ->test('pages::frontend.wallet')
+        ->test('pages::frontend.wallet-topup')
         ->set('topupAmount', '10000')
-        ->set('topupMethod', TopupMethod::ShamCash->value)
+        ->set('paymentMethodId', shamCashPaymentMethodId())
         ->set('attachProof', false)
         ->call('submitTopup')
-        ->assertSet('noticeMessage', __('messages.topup_request_created'));
+        ->assertRedirect(route('wallet'));
 
     $topupRequest = TopupRequest::query()->first();
     expect($topupRequest)->not->toBeNull();

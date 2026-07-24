@@ -111,15 +111,16 @@ new #[Layout('layouts::frontend')] class extends Component
 };
 ?>
 
-<div class="mx-auto w-full max-w-4xl px-3 py-6 sm:px-0 sm:py-10">
-    <div class="mb-4 flex items-center">
-        <x-back-button />
-    </div>
+<x-storefront.page width="work">
+    <x-storefront.page-header
+        :title="__('messages.loyalty_tier')"
+        :description="__('messages.loyalty_page_intro')"
+        :show-back="true"
+        :back-fallback="route('account')"
+    />
 
-    <section class="mb-6 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 sm:p-6">
-        <flux:heading size="lg" class="text-zinc-900 dark:text-zinc-100">{{ __('messages.loyalty_tier') }}</flux:heading>
-        <flux:text class="mt-2 text-zinc-600 dark:text-zinc-400">{{ __('messages.loyalty_page_intro') }}</flux:text>
-        <flux:text class="mt-2 block text-sm text-zinc-500 dark:text-zinc-400">
+    <x-storefront.card class="mb-6">
+        <flux:text class="storefront-type-meta block">
             {{ __('messages.loyalty_evaluation_window', ['days' => \App\Models\LoyaltySetting::getRollingWindowDays()]) }}
         </flux:text>
 
@@ -134,7 +135,7 @@ new #[Layout('layouts::frontend')] class extends Component
                 </ul>
             </flux:callout.text>
         </flux:callout>
-    </section>
+    </x-storefront.card>
 
     @if ($this->loyaltyCurrentTierConfig !== null)
         <div class="grid gap-6 lg:grid-cols-2">
@@ -161,4 +162,4 @@ new #[Layout('layouts::frontend')] class extends Component
             </section>
         </div>
     @endif
-</div>
+</x-storefront.page>

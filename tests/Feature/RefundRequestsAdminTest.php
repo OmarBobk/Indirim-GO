@@ -4,11 +4,13 @@ use App\Actions\Fulfillments\RetryFulfillment;
 use App\Actions\Orders\RefundOrderItem;
 use App\Actions\Refunds\ApproveRefundRequest;
 use App\Actions\Refunds\RejectRefundRequest;
+use App\Enums\CommissionStatus;
 use App\Enums\FulfillmentStatus;
 use App\Enums\OrderItemStatus;
 use App\Enums\OrderStatus;
 use App\Enums\WalletTransactionDirection;
 use App\Enums\WalletTransactionType;
+use App\Models\Commission;
 use App\Models\Fulfillment;
 use App\Models\Order;
 use App\Models\OrderItem;
@@ -102,6 +104,16 @@ test('admin can approve refund request and credit wallet once', function () {
         ->assertOk();
 
     $refundTx = (new RefundOrderItem)->handle($payload['fulfillment'], $user->id);
+    $commission = Commission::query()->create([
+        'order_id' => $payload['order']->id,
+        'fulfillment_id' => $payload['fulfillment']->id,
+        'salesperson_id' => User::factory()->create()->id,
+        'customer_id' => $user->id,
+        'referral_code' => 'REFCODE1',
+        'order_total' => 30,
+        'commission_amount' => 6,
+        'status' => CommissionStatus::Pending,
+    ]);
 
     $action = new ApproveRefundRequest;
     $action->handle($refundTx->id, $admin->id);
@@ -110,11 +122,13 @@ test('admin can approve refund request and credit wallet once', function () {
     $wallet->refresh();
     $refundTx->refresh();
     $payload['order']->refresh();
+    $commission->refresh();
 
     expect((float) $wallet->balance)->toBe(30.0);
     expect($refundTx->status)->toBe(WalletTransaction::STATUS_POSTED);
     expect($refundTx->idempotency_key)->toBe('refund:fulfillment:'.$payload['fulfillment']->id);
     expect($payload['order']->status)->toBe(OrderStatus::Refunded);
+    expect($commission->status)->toBe(CommissionStatus::Failed);
     expect(
         WalletTransaction::query()
             ->where('idempotency_key', 'refund:fulfillment:'.$payload['fulfillment']->id)

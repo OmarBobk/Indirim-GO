@@ -11,6 +11,7 @@ use App\Actions\Users\UpdateUser;
 use App\Actions\Users\VerifyUserEmail;
 use App\Models\User;
 use Illuminate\Support\Collection;
+use Illuminate\Validation\ValidationException;
 use Livewire\Component;
 use Masmerise\Toaster\Toastable;
 use Spatie\Permission\Models\Permission;
@@ -21,6 +22,9 @@ class UserModals extends Component
     use Toastable;
 
     private const ALLOWED_COUNTRY_CODES = ['+963', '+90'];
+
+    /** When true, create/edit only manage users referred by the current salesperson (no roles, permissions, or commission). */
+    public bool $referredOnly = false;
 
     public bool $showCreate = false;
 
@@ -50,6 +54,8 @@ class UserModals extends Component
 
     public ?string $newCountryCode = null;
 
+    public ?string $newCommissionRatePercent = null;
+
     /** @var array<int, string> */
     public array $newRoles = [];
 
@@ -68,11 +74,17 @@ class UserModals extends Component
 
     public ?string $editCountryCode = null;
 
+    public ?string $editCommissionRatePercent = null;
+
     /** @var array<int, string> */
     public array $editRoles = [];
 
     /** @var array<int, string> */
     public array $editPermissions = [];
+
+    public string $editPassword = '';
+
+    public string $editPasswordConfirmation = '';
 
     public ?int $deleteUserId = null;
 
@@ -121,15 +133,23 @@ class UserModals extends Component
             'password_confirmation' => $this->newPasswordConfirmation,
             'phone' => $this->newPhone,
             'country_code' => $this->normalizeCountryCode($this->newCountryCode),
+            'commission_rate_percent' => $this->normalizeCommissionRatePercent($this->newCommissionRatePercent),
             'roles' => $this->newRoles,
             'permissions' => $this->newPermissions,
         ];
 
         try {
-            app(CreateUser::class)->handle($input, (int) auth()->id());
+            if ($this->referredOnly) {
+                $input['roles'] = ['customer'];
+                $input['permissions'] = [];
+                $input['commission_rate_percent'] = null;
+                app(CreateUser::class)->handle($input, (int) auth()->id(), (int) auth()->id());
+            } else {
+                app(CreateUser::class)->handle($input, (int) auth()->id());
+            }
         } catch (\Illuminate\Validation\ValidationException $e) {
             $v = $e->validator;
-            foreach (['name' => 'newName', 'username' => 'newUsername', 'email' => 'newEmail', 'password' => 'newPassword', 'phone' => 'newPhone', 'country_code' => 'newCountryCode'] as $actionKey => $prop) {
+            foreach (['name' => 'newName', 'username' => 'newUsername', 'email' => 'newEmail', 'password' => 'newPassword', 'phone' => 'newPhone', 'country_code' => 'newCountryCode', 'commission_rate_percent' => 'newCommissionRatePercent'] as $actionKey => $prop) {
                 if ($v->errors()->has($actionKey)) {
                     $this->addError($prop, $v->errors()->first($actionKey));
                 }
@@ -157,14 +177,19 @@ class UserModals extends Component
         $this->editCountryCode = $user->country_code && in_array($user->country_code, self::ALLOWED_COUNTRY_CODES, true)
             ? $user->country_code
             : null;
+        $this->editCommissionRatePercent = $user->commission_rate_percent !== null
+            ? number_format((float) $user->commission_rate_percent, 2, '.', '')
+            : null;
         $this->editRoles = $user->getRoleNames()->all();
         $this->editPermissions = $user->getDirectPermissions()->pluck('name')->all();
+        $this->editPassword = '';
+        $this->editPasswordConfirmation = '';
         $this->showEdit = true;
     }
 
     public function closeEdit(): void
     {
-        $this->reset(['editingUserId', 'editName', 'editUsername', 'editEmail', 'editPhone', 'editCountryCode', 'editRoles', 'editPermissions', 'showEdit']);
+        $this->reset(['editingUserId', 'editName', 'editUsername', 'editEmail', 'editPhone', 'editCountryCode', 'editCommissionRatePercent', 'editRoles', 'editPermissions', 'editPassword', 'editPasswordConfirmation', 'showEdit']);
         $this->resetValidation();
     }
 
@@ -179,15 +204,18 @@ class UserModals extends Component
             'email' => $this->editEmail,
             'phone' => $this->editPhone ?: null,
             'country_code' => $this->normalizeCountryCode($this->editCountryCode),
-            'roles' => $this->editRoles,
-            'permissions' => $this->editPermissions,
         ];
+        if (! $this->referredOnly) {
+            $input['commission_rate_percent'] = $this->normalizeCommissionRatePercent($this->editCommissionRatePercent);
+            $input['roles'] = $this->editRoles;
+            $input['permissions'] = $this->editPermissions;
+        }
 
         try {
-            app(UpdateUser::class)->handle($user, $input, (int) auth()->id());
-        } catch (\Illuminate\Validation\ValidationException $e) {
+            app(UpdateUser::class)->handle($user, $input, (int) auth()->id(), $this->referredOnly);
+        } catch (ValidationException $e) {
             $v = $e->validator;
-            foreach (['name' => 'editName', 'username' => 'editUsername', 'email' => 'editEmail', 'phone' => 'editPhone', 'country_code' => 'editCountryCode'] as $actionKey => $prop) {
+            foreach (['name' => 'editName', 'username' => 'editUsername', 'email' => 'editEmail', 'phone' => 'editPhone', 'country_code' => 'editCountryCode', 'commission_rate_percent' => 'editCommissionRatePercent'] as $actionKey => $prop) {
                 if ($v->errors()->has($actionKey)) {
                     $this->addError($prop, $v->errors()->first($actionKey));
                 }
@@ -195,6 +223,24 @@ class UserModals extends Component
             $this->error(__('messages.validation_failed'));
 
             return;
+        }
+
+        if ($this->referredOnly && trim($this->editPassword) !== '') {
+            $user->refresh();
+            $this->authorize('resetPassword', $user);
+            try {
+                app(AdminResetUserPassword::class)->handle($user, [
+                    'password' => $this->editPassword,
+                    'password_confirmation' => $this->editPasswordConfirmation,
+                ], (int) auth()->id());
+            } catch (ValidationException $e) {
+                if ($e->validator->errors()->has('password')) {
+                    $this->addError('editPassword', $e->validator->errors()->first('password'));
+                }
+                $this->error(__('messages.validation_failed'));
+
+                return;
+            }
         }
 
         $this->success(__('messages.user_updated'));
@@ -209,6 +255,15 @@ class UserModals extends Component
         }
 
         return in_array($value, self::ALLOWED_COUNTRY_CODES, true) ? $value : null;
+    }
+
+    private function normalizeCommissionRatePercent(?string $value): ?string
+    {
+        if ($value === null || trim($value) === '') {
+            return null;
+        }
+
+        return number_format((float) $value, 2, '.', '');
     }
 
     public function confirmDelete(int $userId): void
@@ -368,7 +423,7 @@ class UserModals extends Component
     {
         $this->reset([
             'newName', 'newUsername', 'newEmail', 'newPassword', 'newPasswordConfirmation',
-            'newPhone', 'newCountryCode', 'newRoles', 'newPermissions',
+            'newPhone', 'newCountryCode', 'newCommissionRatePercent', 'newRoles', 'newPermissions',
         ]);
         $this->resetValidation();
     }
@@ -403,12 +458,12 @@ class UserModals extends Component
             'catalog' => [
                 'label' => __('messages.permission_group_catalog'),
                 'icon' => 'squares-2x2',
-                'permissions' => ['manage_sections', 'manage_products', 'manage_topups', 'manage_settlements'],
+                'permissions' => ['manage_sections', 'manage_products', 'manage_topups', 'adjust_wallets', 'manage_wallet_credit', 'manage_settlements'],
             ],
             'orders' => [
                 'label' => __('messages.permission_group_orders'),
                 'icon' => 'shopping-cart',
-                'permissions' => ['view_sales', 'view_orders', 'create_orders', 'edit_orders', 'delete_orders'],
+                'permissions' => ['view_referrals', 'view_orders', 'create_orders', 'edit_orders', 'delete_orders'],
             ],
             'fulfillments' => [
                 'label' => __('messages.permission_group_fulfillments'),

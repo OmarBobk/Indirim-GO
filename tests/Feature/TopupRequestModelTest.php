@@ -1,10 +1,10 @@
 <?php
 
 use App\Actions\Topups\CreateTopupRequestAction;
-use App\Enums\TopupMethod;
 use App\Enums\TopupRequestStatus;
 use App\Enums\WalletTransactionDirection;
 use App\Enums\WalletTransactionType;
+use App\Models\PaymentMethod;
 use App\Models\TopupProof;
 use App\Models\TopupRequest;
 use App\Models\User;
@@ -20,7 +20,7 @@ test('topup requests table has expected columns', function () {
         'id',
         'user_id',
         'wallet_id',
-        'method',
+        'payment_method_id',
         'amount',
         'currency',
         'status',
@@ -43,7 +43,7 @@ test('topup request belongs to user and wallet', function () {
     $request = app(CreateTopupRequestAction::class)->handle([
         'user_id' => $user->id,
         'wallet_id' => $wallet->id,
-        'method' => TopupMethod::ShamCash,
+        'payment_method_id' => PaymentMethod::query()->where('name', 'Sham Cash')->value('id'),
         'amount' => 25,
         'currency' => 'USD',
         'status' => TopupRequestStatus::Pending,
@@ -64,7 +64,7 @@ test('topup request has many proofs', function () {
     $request = app(CreateTopupRequestAction::class)->handle([
         'user_id' => $user->id,
         'wallet_id' => $wallet->id,
-        'method' => TopupMethod::EftTransfer,
+        'payment_method_id' => PaymentMethod::query()->where('name', 'EFT Transfer')->value('id'),
         'amount' => 40,
         'currency' => 'USD',
         'status' => TopupRequestStatus::Pending,
@@ -89,7 +89,7 @@ test('creating a topup request creates a pending wallet transaction', function (
     $request = app(CreateTopupRequestAction::class)->handle([
         'user_id' => $user->id,
         'wallet_id' => $wallet->id,
-        'method' => TopupMethod::ShamCash,
+        'payment_method_id' => PaymentMethod::query()->where('name', 'Sham Cash')->value('id'),
         'amount' => 75,
         'currency' => 'USD',
         'status' => TopupRequestStatus::Pending,

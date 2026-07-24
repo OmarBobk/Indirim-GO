@@ -19,7 +19,7 @@ class CheckoutFromPayload
      * @param  array<int, array<string, mixed>>  $items
      * @param  array<string, mixed>  $meta
      */
-    public function handle(User $user, array $items, array $meta = [], bool $useTransaction = true): Order
+    public function handle(User $user, array $items, array $meta = [], bool $useTransaction = true): CheckoutResult
     {
         if ($items === [] || array_is_list($items) === false) {
             throw ValidationException::withMessages([
@@ -30,36 +30,41 @@ class CheckoutFromPayload
         $wallet = Wallet::forUser($user);
         $cartHash = $this->cartHash($items);
 
-        $operation = function () use ($user, $wallet, $items, $meta, $cartHash): Order {
+        $operation = function () use ($user, $wallet, $items, $meta, $cartHash): CheckoutResult {
             $lockedWallet = Wallet::query()
                 ->whereKey($wallet->id)
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            $existingOrder = Order::query()
-                ->where('user_id', $user->id)
-                ->whereIn('status', [OrderStatus::PendingPayment, OrderStatus::Paid])
-                ->latest('id')
-                ->limit(5)
-                ->get()
-                ->first(fn (Order $order) => data_get($order->meta, 'cart_hash') === $cartHash);
+            $existingOrder = $this->findReusableOrder($user, $cartHash);
 
             if ($existingOrder !== null) {
                 if ($existingOrder->status === OrderStatus::Paid) {
-                    return $existingOrder;
+                    return new CheckoutResult($existingOrder, true);
                 }
 
-                return app(PayOrderWithWallet::class)->handle($existingOrder, $lockedWallet, false);
+                $paidOrder = app(PayOrderWithWallet::class)->handle($existingOrder, $lockedWallet, false);
+
+                return new CheckoutResult($paidOrder, true);
+            }
+
+            $metaForCreate = array_merge($meta, ['cart_hash' => $cartHash]);
+            $referralPayload = $this->referralPayloadFromCookie($user)
+                ?? $this->referralPayloadFromReferredByUser($user);
+            if ($referralPayload !== null) {
+                $metaForCreate['referral'] = $referralPayload;
             }
 
             $order = app(CreateOrderFromCartPayload::class)->handle(
                 $user,
                 $items,
-                array_merge($meta, ['cart_hash' => $cartHash]),
+                $metaForCreate,
                 false
             );
 
-            return app(PayOrderWithWallet::class)->handle($order, $lockedWallet, false);
+            $paidOrder = app(PayOrderWithWallet::class)->handle($order, $lockedWallet, false);
+
+            return new CheckoutResult($paidOrder, false);
         };
 
         try {
@@ -82,6 +87,94 @@ class CheckoutFromPayload
             $user->notify(PaymentFailedNotification::forUser($user, $e->getMessage(), null));
             throw $e;
         }
+    }
+
+    private function findReusableOrder(User $user, string $cartHash): ?Order
+    {
+        $idempotencyMinutes = max(1, (int) config('billing.checkout_paid_idempotency_minutes', 5));
+        $paidCutoff = now()->subMinutes($idempotencyMinutes);
+
+        return Order::query()
+            ->where('user_id', $user->id)
+            ->where(function ($query) use ($paidCutoff): void {
+                $query->where('status', OrderStatus::PendingPayment)
+                    ->orWhere(function ($query) use ($paidCutoff): void {
+                        $query->where('status', OrderStatus::Paid)
+                            ->where('paid_at', '>=', $paidCutoff);
+                    });
+            })
+            ->latest('id')
+            ->get()
+            ->first(fn (Order $order) => data_get($order->meta, 'cart_hash') === $cartHash);
+    }
+
+    /**
+     * Server-side referral from cookie (never trust client meta). Cookie wins when present.
+     *
+     * @return array{code: string, salesperson_id: int}|null
+     */
+    private function referralPayloadFromCookie(User $buyer): ?array
+    {
+        $cookieName = (string) config('referral.cookie_name', 'karman_ref');
+        $raw = request()->cookie($cookieName);
+
+        if (! is_string($raw) || trim($raw) === '') {
+            return null;
+        }
+
+        $code = strtoupper(trim($raw));
+
+        if ($code === '' || strlen($code) > 16) {
+            return null;
+        }
+
+        $referrer = User::findByReferralCode($code);
+
+        if ($referrer === null) {
+            return null;
+        }
+
+        if ($referrer->id === $buyer->id) {
+            return null;
+        }
+
+        return [
+            'code' => $code,
+            'salesperson_id' => $referrer->id,
+        ];
+    }
+
+    /**
+     * When the buyer has no referral cookie, attribute to their permanent referrer (e.g. salesperson-created account).
+     * Only users who may earn referral commissions (`view_referrals`) are used.
+     *
+     * @return array{code: string, salesperson_id: int}|null
+     */
+    private function referralPayloadFromReferredByUser(User $buyer): ?array
+    {
+        $referrerId = $buyer->referred_by_user_id;
+        if ($referrerId === null || (int) $referrerId <= 0) {
+            return null;
+        }
+
+        $referrer = User::query()->select(['id', 'referral_code'])->find((int) $referrerId);
+        if ($referrer === null || (int) $referrer->id === (int) $buyer->id) {
+            return null;
+        }
+
+        if (! $referrer->can('view_referrals')) {
+            return null;
+        }
+
+        $code = strtoupper(trim((string) $referrer->referral_code));
+        if ($code === '' || strlen($code) > 16) {
+            return null;
+        }
+
+        return [
+            'code' => $code,
+            'salesperson_id' => (int) $referrer->id,
+        ];
     }
 
     /**

@@ -1,0 +1,25 @@
+{
+  "name": "karman-automation-worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "node dist/server.js",
+    "build": "tsc && node --input-type=module -e \"import fs from 'fs'; const s = fs.readFileSync('dist/server.js','utf8'); if (!s.includes('wasim_submit_purchase')) { console.error('Build verify failed: dist/server.js is outdated. Run git pull then npm run build again.'); process.exit(1); } const b = fs.readFileSync('dist/build.js','utf8'); const m = b.match(/WORKER_BUILD = '([^']+)'/); console.log('Build OK:', m?.[1] ?? 'wasim-submit');\"",
+    "test:parse-money": "tsx src/utils/parseMoney.selfcheck.ts",
+    "test:parse-swal": "tsx src/drivers/wasim/parseSwalPurchase.selfcheck.ts",
+    "test:orders-date": "tsx src/drivers/wasim/ordersPageHelpers.selfcheck.ts",
+    "postinstall": "playwright install chromium"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "playwright": "^1.52.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.1",
+    "@types/node": "^22.15.3",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3"
+  }
+}

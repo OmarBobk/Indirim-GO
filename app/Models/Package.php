@@ -24,6 +24,8 @@ class Package extends Model
         'slug',
         'description',
         'is_active',
+        'fulfillment_provider',
+        'package_api',
         'order',
         'icon',
         'image',
@@ -71,5 +73,11 @@ class Package extends Model
     public function products(): HasMany
     {
         return $this->hasMany(Product::class);
+    }
+
+    public function isBrowserAutomated(): bool
+    {
+        return is_string($this->fulfillment_provider)
+            && str_starts_with($this->fulfillment_provider, 'browser:');
     }
 }

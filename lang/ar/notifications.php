@@ -56,4 +56,17 @@ return [
     'bug_recorded_message' => 'تم إرسال بلاغ رقم :id (:scenario، :severity).',
     'order_price_floored_title' => 'تم تطبيق حد سعر التكلفة على الطلب',
     'order_price_floored_message' => 'الطلب :order_number يحتوي على :count عنصر/عناصر تم تثبيت سعرها عند سعر الدخول لمنع الخسارة.',
+
+    'commission_credited_title' => 'تم إيداع العمولة',
+    'commission_credited_message' => ':amount_display — تم إيداع عمولتك في محفظتك.',
+
+    'salesperson_payout_requested_title' => 'طلب صرف عمولة',
+    'salesperson_payout_requested_message' => ':name طلب صرفًا (#:id، المؤهل: :eligible_display). راجع طلبات الصرف.',
+
+    'wasim_price_drift_review_title' => 'أسعار واسم تحتاج مراجعة',
+    'wasim_price_drift_review_message' => ':count منتج/منتجات لها أسعار دخول تختلف عن آخر مسح لوسيم. افتح صفحة انحراف الأسعار للمراجعة.',
+
+    'wasim_price_reactive_flag_title' => 'تنبيه سعر واسم من التنفيذ',
+    'wasim_price_reactive_flag_margin_message' => ':product (#:product_id) تم وسمه أثناء التنفيذ — الهامش غير كافٍ. راجع صفحة انحراف الأسعار.',
+    'wasim_price_reactive_flag_mismatch_message' => ':product (#:product_id) سعر واسم المباشر يختلف عن سعر الدخول. راجع صفحة انحراف الأسعار.',
 ];

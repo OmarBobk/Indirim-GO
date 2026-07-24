@@ -8,7 +8,7 @@ use App\Models\Package;
 use App\Models\PricingRule;
 use App\Models\Product;
 use App\Models\User;
-use App\Models\UserProductPrice;
+use App\Models\UserPricingRule;
 use App\Support\BuyNowClientPricingContext;
 
 it('preview matches pricing engine for tiered custom amounts', function (): void {
@@ -54,12 +54,12 @@ it('preview matches pricing engine for tiered custom amounts', function (): void
     }
 });
 
-it('is not client pricable when user has product price override', function (): void {
+it('uses user pricing rules in client context when present', function (): void {
     PricingRule::create([
         'min_price' => 0,
         'max_price' => 999999.99,
         'wholesale_percentage' => 0,
-        'retail_percentage' => 0,
+        'retail_percentage' => 20,
         'priority' => 0,
         'is_active' => true,
     ]);
@@ -72,13 +72,24 @@ it('is not client pricable when user has product price override', function (): v
         'entry_price' => 0.01,
     ]);
 
-    UserProductPrice::query()->create([
+    UserPricingRule::query()->create([
         'user_id' => $user->id,
-        'product_id' => $product->id,
-        'price' => 1.5,
+        'min_price' => 0,
+        'max_price' => 999999.99,
+        'retail_percentage' => 5,
+        'wholesale_percentage' => 1,
+        'priority' => 0,
+        'is_active' => true,
     ]);
 
     $context = BuyNowClientPricingContext::build($user, $product);
-    expect($context['client_pricable'])->toBeFalse()
-        ->and(BuyNowClientPricingContext::previewFinalPrice(1000, $context))->toBeNull();
+    expect($context['uses_user_pricing'])->toBeTrue()
+        ->and($context['rules'][0]['retail_pct'])->toBe(5.0);
+
+    $engine = app(PricingEngine::class);
+    $quote = $engine->quote($product, 1, 1000, $user);
+    $preview = BuyNowClientPricingContext::previewFinalPrice(1000, $context);
+
+    expect($preview)->not->toBeNull()
+        ->and(abs((float) $preview - (float) $quote->finalTotal))->toBeLessThan(0.0001);
 });

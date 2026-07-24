@@ -17,7 +17,7 @@ class GetTopupRequests
                 'id',
                 'user_id',
                 'wallet_id',
-                'method',
+                'payment_method_id',
                 'amount',
                 'currency',
                 'status',
@@ -25,7 +25,7 @@ class GetTopupRequests
                 'approved_by',
                 'approved_at',
             ])
-            ->with(['user:id,name,email', 'proofs'])
+            ->with(['user:id,name,email', 'paymentMethod:id,name', 'proofs'])
             ->latest('created_at');
 
         if ($statusFilter !== 'all') {

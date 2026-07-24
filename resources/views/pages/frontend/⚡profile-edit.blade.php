@@ -102,15 +102,15 @@ new #[Layout('layouts::frontend')] class extends Component
 };
 ?>
 
-<div class="mx-auto w-full max-w-4xl px-3 py-6 sm:px-0 sm:py-10">
-    <div class="mb-4 flex items-center">
-        <x-back-button :fallback="route('profile')" />
-    </div>
+<x-storefront.page width="work">
+    <x-storefront.page-header
+        :title="__('messages.update_your_profile_information')"
+        :description="__('messages.profile')"
+        :show-back="true"
+        :back-fallback="route('profile')"
+    />
 
-    <section class="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 sm:p-6">
-        <flux:heading size="lg" class="mb-2 text-zinc-900 dark:text-zinc-100">{{ __('messages.update_your_profile_information') }}</flux:heading>
-        <flux:text class="mb-6 block text-sm text-zinc-600 dark:text-zinc-400">{{ __('messages.profile') }}</flux:text>
-
+    <x-storefront.card>
         <form wire:submit="updateProfileInformation" class="space-y-6">
             <div class="grid gap-4 md:grid-cols-2">
                 <flux:field>
@@ -190,5 +190,5 @@ new #[Layout('layouts::frontend')] class extends Component
                 </flux:button>
             </div>
         </form>
-    </section>
-</div>
+    </x-storefront.card>
+</x-storefront.page>

@@ -8,16 +8,20 @@ The system covers catalog browsing, wallet-based checkout, fulfillment workflows
 - Customer storefront with categories, packages, products, cart, orders, wallet, loyalty, and notifications.
 - Wallet-first checkout pipeline with server-side validation and fulfillment creation.
 - Operations backend for fulfillments, topups, refunds, customer funds, settlements, users, activities, and system events.
+- Browser fulfillment automation (Wasim) plus supplier price-drift monitoring (`/price-drift`).
+- Ops Assistant admin chat + MCP (`/admin/assistant`, `/mcp/ops-assistant`) for read-only ops lookups.
 - Permission-driven access control with Spatie roles/permissions and hidden backend routes for unauthorized users.
 - Realtime + push stack (Reverb/Echo and Firebase FCM) for operational and user notifications.
+- Public registration protected by Cloudflare Turnstile, honeypot, and rate limits.
 
 ## Tech Stack
 
 - PHP 8.2+ (`8.4.x` recommended in project context)
 - Laravel 12
-- Livewire 4 + Flux (free components)
-- Tailwind CSS 4 + Alpine.js + Vite 7
+- Livewire 4 + Flux (free components only)
+- Tailwind CSS 4.1 + Alpine.js + Vite 7
 - Fortify (auth/2FA), Reverb (broadcast), Spatie Permission/Activitylog/Backup
+- `laravel/ai` + `laravel/mcp` (Ops Assistant)
 - Pest 3 + PHPUnit 11
 
 ## Quick Start (Local)
@@ -100,6 +104,9 @@ Start from `.env.example`:
 - Defaults are SQLite + database-backed queue/session/cache.
 - `BROADCAST_CONNECTION=log` by default; switch to Reverb/Pusher when enabling realtime broadcasts.
 - Firebase/FCM variables are present for admin push notifications (`FIREBASE_*`, `VITE_FIREBASE_*`, `VITE_FIREBASE_VAPID_KEY`).
+- Registration bot protection: `TURNSTILE_*` (local: `TURNSTILE_ENABLED=false`) and optional `REGISTRATION_*` rate-limit overrides.
+- Ops Assistant: `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_BASE_URL`.
+- Fulfillment automation + price scans: see `FULFILLMENT_AUTOMATION_*` and `config/fulfillment_automation.php`.
 
 For production-like behavior, review:
 
@@ -108,8 +115,12 @@ For production-like behavior, review:
 - `config/queue.php`
 - `config/firebase.php`
 - `config/permission.php`
+- `config/security.php`
+- `config/services.php` (Turnstile / OpenAI)
 
 ## Architecture Overview
+
+See **[`SYSTEM_CONTEXT_CORE_v1.md`](SYSTEM_CONTEXT_CORE_v1.md)** for condensed AI delivery context, and **[`Docs/PROJECT_STRUCTURE.md`](Docs/PROJECT_STRUCTURE.md)** for the full Laravel project map (skeleton, route table, Actions/Livewire conventions, models, and financial guardrails).
 
 ```text
 app/Actions/          Domain application actions (Orders, Fulfillments, Topups, Refunds, Pricing...)
@@ -138,6 +149,8 @@ Docs/                 Deeper project docs
 
 Reference docs:
 
+- [`SYSTEM_CONTEXT_CORE_v1.md`](SYSTEM_CONTEXT_CORE_v1.md) — AI/feature delivery context (invariants, routes, automation)
+- [`Docs/PROJECT_STRUCTURE.md`](Docs/PROJECT_STRUCTURE.md) — Laravel 12 layout, routes, conventions, domain map
 - [`Docs/roles.md`](Docs/roles.md)
 - [`Docs/DB.md`](Docs/DB.md)
 - [`Docs/system_events_map.md`](Docs/system_events_map.md)

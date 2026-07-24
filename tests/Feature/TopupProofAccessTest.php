@@ -1,8 +1,8 @@
 <?php
 
 use App\Actions\Topups\CreateTopupRequestAction;
-use App\Enums\TopupMethod;
 use App\Enums\TopupRequestStatus;
+use App\Models\PaymentMethod;
 use App\Models\TopupProof;
 use App\Models\User;
 use App\Models\Wallet;
@@ -20,7 +20,7 @@ test('other user cannot access proof', function () {
     $topupRequest = app(CreateTopupRequestAction::class)->handle([
         'user_id' => $owner->id,
         'wallet_id' => $wallet->id,
-        'method' => TopupMethod::ShamCash,
+        'payment_method_id' => PaymentMethod::query()->where('name', 'Sham Cash')->value('id'),
         'amount' => 50,
         'currency' => $wallet->currency,
         'status' => TopupRequestStatus::Pending,
@@ -50,7 +50,7 @@ test('owner can access own proof', function () {
     $topupRequest = app(CreateTopupRequestAction::class)->handle([
         'user_id' => $owner->id,
         'wallet_id' => $wallet->id,
-        'method' => TopupMethod::ShamCash,
+        'payment_method_id' => PaymentMethod::query()->where('name', 'Sham Cash')->value('id'),
         'amount' => 50,
         'currency' => $wallet->currency,
         'status' => TopupRequestStatus::Pending,
@@ -82,7 +82,7 @@ test('admin can access any proof', function () {
     $topupRequest = app(CreateTopupRequestAction::class)->handle([
         'user_id' => $owner->id,
         'wallet_id' => $wallet->id,
-        'method' => TopupMethod::ShamCash,
+        'payment_method_id' => PaymentMethod::query()->where('name', 'Sham Cash')->value('id'),
         'amount' => 50,
         'currency' => $wallet->currency,
         'status' => TopupRequestStatus::Pending,

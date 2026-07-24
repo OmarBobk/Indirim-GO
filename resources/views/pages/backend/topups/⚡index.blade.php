@@ -3,13 +3,13 @@
 use App\Actions\Topups\ApproveTopupRequest;
 use App\Actions\Topups\GetTopupRequests;
 use App\Actions\Topups\RejectTopupRequest;
-use App\Enums\TopupMethod;
 use App\Enums\TopupRequestStatus;
 use App\Models\TopupProof;
 use App\Models\TopupRequest;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\View\View;
 use Livewire\Attributes\On;
+use Livewire\Attributes\Url;
 use Livewire\Component;
 use Livewire\WithPagination;
 use Masmerise\Toaster\Toastable;
@@ -19,6 +19,7 @@ new class extends Component
     use Toastable;
     use WithPagination;
 
+    #[Url]
     public string $statusFilter = 'all';
     public int $perPage = 10;
 
@@ -254,11 +255,7 @@ new class extends Component
                                         {{ $topupRequest->amount }} {{ $topupRequest->currency }}
                                     </td>
                                     <td class="px-5 py-4 text-zinc-600 dark:text-zinc-300">
-                                        @if ($topupRequest->method === TopupMethod::ShamCash)
-                                            {{ __('messages.topup_method_sham_cash') }}
-                                        @else
-                                            {{ __('messages.topup_method_eft_transfer') }}
-                                        @endif
+                                        {{ $topupRequest->paymentMethod?->name ?? '—' }}
                                     </td>
                                     <td class="px-5 py-4 text-zinc-600 dark:text-zinc-300">
                                         {{ $topupRequest->created_at?->format('M d, Y') ?? '—' }}

@@ -18,17 +18,37 @@ class UserPolicy
 
     public function view(User $user, User $model): bool
     {
-        return $this->canManageUsers($user);
+        if ($this->canManageUsers($user)) {
+            return true;
+        }
+
+        return $user->can('manage_referred_users')
+            && (int) $model->referred_by_user_id === (int) $user->id;
     }
 
     public function create(User $user): bool
     {
-        return $this->canManageUsers($user);
+        return $this->canManageUsers($user) || $user->can('manage_referred_users');
     }
 
     public function update(User $user, User $model): bool
     {
-        return $this->canManageUsers($user);
+        if ($this->canManageUsers($user)) {
+            return true;
+        }
+
+        return $user->can('manage_referred_users')
+            && (int) $model->referred_by_user_id === (int) $user->id;
+    }
+
+    public function resetPassword(User $user, User $model): bool
+    {
+        if ($this->canManageUsers($user)) {
+            return true;
+        }
+
+        return $user->can('manage_referred_users')
+            && (int) $model->referred_by_user_id === (int) $user->id;
     }
 
     public function delete(User $user, User $model): bool
@@ -66,11 +86,6 @@ class UserPolicy
     }
 
     public function unblock(User $user, User $model): bool
-    {
-        return $this->canManageUsers($user);
-    }
-
-    public function resetPassword(User $user, User $model): bool
     {
         return $this->canManageUsers($user);
     }

@@ -1,15 +1,12 @@
 <!DOCTYPE html>
 @php
-    $money = \App\Support\FrontendMoney::for(auth()->user());
     $isRtl = app()->isLocale('ar');
     $direction = $isRtl ? 'rtl' : 'ltr';
-    $walletBalance = 0;
-    $walletCurrency = config('billing.currency', 'USD');
+    $walletDisplay = null;
 
     if (auth()->check()) {
         $wallet = \App\Models\Wallet::forUser(auth()->user());
-        $walletBalance = $wallet->balance ?? 0;
-        $walletCurrency = $wallet->currency ?? $walletCurrency;
+        $walletDisplay = \App\Support\CustomerWalletDisplay::for($wallet, auth()->user());
     }
 @endphp
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}" dir="{{ $direction }}" class="dark">
@@ -17,7 +14,7 @@
         @include('partials.frontend.head')
     </head>
     <body
-        class="min-h-screen bg-white dark:bg-zinc-900"
+        class="storefront-shell min-h-screen bg-white dark:bg-zinc-900"
         style="--bg-pattern: url('{{ asset('images/background-pattern.jpg') }}'); --bg-pattern-dark: url('{{ asset('images/background-pattern-dark.jpg') }}');"
         x-data
         x-on:cart-custom-amount-priced.window="
@@ -28,14 +25,20 @@
                 $store.cart.setCustomAmountError($event.detail);
             }
         "
+        data-storefront-shell="root"
     >
         <script>window.__addToCartMessageTemplate = @json(__('main.add_to_cart_for'));</script>
+
+        <x-storefront.mobile-top-bar />
+
+        <div class="hidden lg:block" data-storefront-shell="desktop-header">
         <flux:header
             sticky
             class="!block !p-0 fixed top-0 start-0 end-0 z-50 w-full transition-all duration-300"
             x-data="{ isScrolled: false }"
             x-init="window.addEventListener('scroll', () => { isScrolled = window.scrollY > 10;})"
         >
+            @guest
             <div
                 class="bg-accent px-3"
                 data-test="frontend-announcement-bar"
@@ -50,6 +53,7 @@
                     </p>
                 </div>
             </div>
+            @endguest
 
             <div
                 class="border-b border-zinc-200 bg-white px-3 py-3 transition-all duration-300 dark:border-zinc-700 dark:!bg-zinc-900"
@@ -58,103 +62,50 @@
                 <div class="mx-auto w-full h-full [:where(&)]:max-w-7xl  items-center">
 
 
-                <div class="flex flex-wrap sm:flex-nowrap justify-between gap-2 sm:gap-4 items-center w-full mb-3 sm:mb-0">
+                <div class="flex flex-nowrap items-center justify-between gap-3 sm:gap-4 w-full mb-3 sm:mb-0">
                     <!-- Logo -->
-                    <a href="{{ route('home') }}" wire:navigate class="flex items-center shrink-0 order-1">
-                        <span class="text-3xl font-bold leading-none">
-                            <span class="text-(--color-accent)">İndirim</span><span class="text-(--color-zinc-900) dark:text-(--color-zinc-100)">Go</span>
-                        </span>
-                    </a>
+                    <x-app-brand-logo wire:navigate class="order-1 shrink-0" />
 
-                    <!-- Search Bar -->
-                    <div class=" w-full max-w-3xl mx-auto sm:order-2 order-3">
-                        <flux:input
-                            placeholder="{{__('main.search_for_games_and_products_...')}}"
-                            icon-leading="magnifying-glass"
-                            class:input=" focus:!border-(--color-accent) focus:!border-1 focus:!ring-0 focus:!outline-none focus:!ring-offset-0"
-                        />
-                    </div>
+                    {{-- Authenticated home: Command Zone owns search (single owner). --}}
+                    @unless (auth()->check() && request()->routeIs('home'))
+                        <!-- Search Bar (Alpine + JSON API; packages only, inline results) -->
+                        <div class="min-w-0 flex-1 max-w-3xl mx-auto order-3 sm:order-2" data-test="desktop-header-package-search">
+                            <x-storefront.package-search />
+                        </div>
+                    @endunless
 
                     <!-- Action Icons -->
-                    <div class="flex items-center sm:gap-2 shrink-0 sm:order-3 order-2">
+                    <div class="storefront-shell-utilities order-2 sm:order-3" data-test="desktop-shell-utilities">
                         <x-admin.usd-try-rate-panel variant="storefront" />
-                        <!-- Wishlist Icon -->
-{{--                        <flux:button--}}
-{{--                            variant="ghost"--}}
-{{--                            icon="heart"--}}
-{{--                            class="!h-10 !w-10 !p-0 [&>div>svg]:size-5 !text-zinc-700 dark:!text-zinc-300--}}
-{{--                            hover:!bg-zinc-200 hover:cursor-pointer dark:hover:!bg-zinc-800 rounded-full"--}}
-{{--                            aria-label="Favoriler"--}}
-{{--                        />--}}
 
-                        <!-- Shopping Cart Icon with Badge -->
                         <livewire:cart.dropdown />
 
                         @auth
-                        <!-- Notifications Bell -->
                         <livewire:notification-bell-dropdown />
                         @endauth
 
-                        <!-- User Profile Icon -->
                         <div x-data x-on:scroll.window="const p = $el.querySelector('[popover]'); if (p) { try { p.hidePopover(); } catch (_) {} }">
                         <flux:dropdown position="bottom" align="end">
                             <flux:button
                                 variant="ghost"
                                 icon="user"
-                                class="!h-10 !w-10 !p-0 [&>div>svg]:size-5 !text-zinc-700 dark:!text-zinc-300
+                                class="storefront-shell-icon-btn !h-10 !w-10 !p-0 [&>div>svg]:size-5 !text-zinc-700 dark:!text-zinc-300
                                 hover:cursor-pointer hover:!bg-zinc-200 dark:hover:!bg-zinc-800 rounded-full transition-colors
                                 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--color-accent)/40 focus-visible:ring-offset-2
                                 focus-visible:ring-offset-white dark:focus-visible:ring-offset-zinc-900"
-                                aria-label="Kullanıcı"
+                                aria-label="{{ __('main.account_menu') }}"
                             />
                             <flux:navmenu class="min-w-48 rounded-xl border border-zinc-200 bg-white p-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
                                 @auth
                                     <flux:navmenu.item
                                         icon="user"
-                                        href="{{ route('profile') }}"
+                                        href="{{ route('account') }}"
+                                        wire:navigate
                                         class="rounded-lg !text-zinc-700 hover:!bg-zinc-100 focus-visible:!bg-zinc-100 dark:!text-zinc-200 dark:hover:!bg-zinc-800 dark:focus-visible:!bg-zinc-800"
+                                        data-test="desktop-account-hub"
                                     >
-                                        {{ __('main.profile') }}
+                                        {{ __('main.account') }}
                                     </flux:navmenu.item>
-                                    <flux:navmenu.item
-                                        icon="bell"
-                                        href="{{ route('notifications.index') }}"
-                                        class="rounded-lg !text-zinc-700 hover:!bg-zinc-100 focus-visible:!bg-zinc-100 dark:!text-zinc-200 dark:hover:!bg-zinc-800 dark:focus-visible:!bg-zinc-800"
-                                    >
-                                        {{ __('messages.notifications') }}
-                                    </flux:navmenu.item>
-                                    <flux:navmenu.item
-                                        icon="wallet"
-                                        href="{{ route('wallet') }}"
-                                        class="rounded-lg !text-zinc-700 hover:!bg-zinc-100 focus-visible:!bg-zinc-100 dark:!text-zinc-200 dark:hover:!bg-zinc-800 dark:focus-visible:!bg-zinc-800"
-                                    >
-                                        {{ __('main.wallet') }}
-                                    </flux:navmenu.item>
-                                    <flux:navmenu.item
-                                        icon="shopping-bag"
-                                        href="{{ route('orders.index') }}"
-                                        class="rounded-lg !text-zinc-700 hover:!bg-zinc-100 focus-visible:!bg-zinc-100 dark:!text-zinc-200 dark:hover:!bg-zinc-800 dark:focus-visible:!bg-zinc-800"
-                                    >
-                                        {{ __('main.my_orders') }}
-                                    </flux:navmenu.item>
-                                    @if (auth()->user()?->loyaltyRole() !== null)
-                                        <flux:navmenu.item
-                                            icon="sparkles"
-                                            href="{{ route('loyalty') }}"
-                                            class="rounded-lg !text-zinc-700 hover:!bg-zinc-100 focus-visible:!bg-zinc-100 dark:!text-zinc-200 dark:hover:!bg-zinc-800 dark:focus-visible:!bg-zinc-800"
-                                        >
-                                            {{ __('main.loyalty') }}
-                                        </flux:navmenu.item>
-                                    @endif
-                                    @can('view_dashboard')
-                                        <flux:navmenu.item
-                                            icon="home"
-                                            href="{{ route('dashboard') }}"
-                                            class="rounded-lg !text-zinc-700 hover:!bg-zinc-100 focus-visible:!bg-zinc-100 dark:!text-zinc-200 dark:hover:!bg-zinc-800 dark:focus-visible:!bg-zinc-800"
-                                        >
-                                            {{ __('main.dashboard') }}
-                                        </flux:navmenu.item>
-                                    @endcan
                                     <form method="POST" action="{{ route('logout') }}" class="w-full">
                                         @csrf
                                         <flux:menu.item
@@ -190,33 +141,95 @@
                         </flux:dropdown>
                         </div>
 
-
                         @auth
-                            <a
-                                href="{{ route('wallet') }}"
-                                wire:navigate
-                                class="inline-flex items-center gap-2 border-zinc-200 bg-white px-1 sm:px-3 py-2 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
-                                aria-label="{{ __('main.wallet') }}"
-                                data-test="wallet-balance"
-                            >
-                                <flux:icon icon="wallet" class="size-4 text-zinc-500 dark:text-zinc-300" />
-                                @if(\App\Models\WebsiteSetting::getPricesVisible())
-                                <span class="text-zinc-900 dark:text-zinc-100 hidden sm:block" dir="ltr">
-                                    {{ $money->format((float) $walletBalance, 'USD', 2) }}
-                                </span>
-                                @endif
-                            </a>
+                            <span class="storefront-shell-utilities__divider" aria-hidden="true"></span>
+                            @if (\App\Models\WebsiteSetting::getPricesVisible() && $walletDisplay)
+                                <div
+                                    class="relative shrink-0"
+                                    x-data="{ open: false }"
+                                    x-on:keydown.escape.window="open = false"
+                                    x-on:scroll.window="open = false"
+                                    x-on:click.outside="open = false"
+                                >
+                                    <button
+                                        type="button"
+                                        class="storefront-shell-icon-btn inline-flex shrink-0 items-center justify-center rounded-md px-1.5 py-0.5 transition hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--color-accent)/40 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:hover:bg-zinc-800 dark:focus-visible:ring-offset-zinc-900"
+                                        aria-label="{{ __('main.wallet') }} — {{ $walletDisplay->navTitle() }}"
+                                        aria-expanded="false"
+                                        aria-haspopup="dialog"
+                                        x-bind:aria-expanded="open.toString()"
+                                        x-on:click="open = ! open"
+                                        data-test="wallet-balance"
+                                        data-wallet-tone="{{ $walletDisplay->tone() }}"
+                                        data-wallet-cta-badge="{{ $walletDisplay->formattedCtaBadge() }}"
+                                    >
+                                        <x-wallet.nav-amount
+                                            :display="$walletDisplay"
+                                            stacked
+                                            class="min-w-0"
+                                        />
+                                    </button>
+                                    <div
+                                        x-cloak
+                                        x-show="open"
+                                        x-transition.opacity.duration.150ms
+                                        class="absolute end-0 top-full z-50 mt-2 w-64 max-w-[min(16rem,calc(100vw-1.5rem))] rounded-xl border border-zinc-200 bg-white p-3 shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
+                                        role="dialog"
+                                        aria-label="{{ __('main.wallet') }}"
+                                        data-test="wallet-chrome-popover"
+                                    >
+                                        <x-wallet.chrome-summary :display="$walletDisplay" />
+                                        <div class="mt-3">
+                                            <flux:button
+                                                href="{{ route('wallet') }}"
+                                                variant="primary"
+                                                size="sm"
+                                                class="w-full justify-center !bg-accent !text-accent-foreground hover:!bg-accent-hover"
+                                                wire:navigate
+                                                data-test="wallet-chrome-open"
+                                            >
+                                                {{ __('main.add_sufficient') }}
+                                            </flux:button>
+                                        </div>
+                                    </div>
+                                </div>
+                            @else
+                                <a
+                                    href="{{ route('wallet') }}"
+                                    wire:navigate
+                                    class="storefront-shell-icon-btn inline-flex size-10 items-center justify-center rounded-full text-zinc-700 transition hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--color-accent)/40 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                                    aria-label="{{ __('main.wallet') }}"
+                                    data-test="wallet-balance"
+                                >
+                                    <flux:icon icon="wallet" class="size-4 text-zinc-500 dark:text-zinc-300" />
+                                </a>
+                            @endif
                         @endauth
 
-                        <flux:button x-data x-on:click="$flux.dark = ! $flux.dark" icon="moon" variant="subtle" aria-label="Toggle dark mode" />
+                        <span class="storefront-shell-utilities__divider" aria-hidden="true"></span>
+                        <flux:button
+                            x-data
+                            x-on:click="$flux.dark = ! $flux.dark"
+                            icon="moon"
+                            variant="subtle"
+                            class="storefront-shell-icon-btn shrink-0"
+                            aria-label="{{ __('main.toggle_theme') }}"
+                            data-test="desktop-theme-toggle"
+                        />
                     </div>
                 </div>
                 <flux:separator class="my-3 sm:block hidden" />
 
+                @php
+                    $browseNavItems = \App\Support\StorefrontShell::browseNavItems();
+                @endphp
                 <nav
                     x-data="categoryNav()"
                     x-init="init()"
                     class=" border-zinc-200 dark:border-zinc-800 dark:bg-zinc-900"
+                    aria-label="{{ __('main.browse_navigation') }}"
+                    data-test="storefront-browse-nav"
+                    data-storefront-shell="browse-nav"
                 >
                     <div class="mx-auto max-w-7xl ">
                         <div class="relative">
@@ -248,53 +261,29 @@
                                 x-on:scroll="update()"
                                 class="overflow-x-auto scrollbar-hide sm:mx-12"
                             >
-                                <!-- Add side padding on desktop so arrows don't overlap items -->
-                                <flux:navbar class="gap-4 !py-0 ltr:lg:pr-12 rtl:lg:pl-12 justify-start sm:justify-center">
-                                    <flux:navbar.item class="border !border-accent  after:!h-0 {{request()->routeIs('home') ? '!bg-accent hover:!bg-accent-hover !text-accent-foreground' : ''}}"
-                                                      data-nav-active="{{ request()->routeIs('home') ? 'true' : 'false' }}"
-                                                      href="{{route('home')}}" icon="home">{{__('main.home')}}</flux:navbar.item>
-                                    <flux:navbar.item class="border !border-accent after:!h-0 {{request()->routeIs('orders.index') ? '!bg-accent hover:!bg-accent-hover !text-accent-foreground' : ''}}"
-                                                      data-nav-active="{{ request()->routeIs('orders.index') ? 'true' : 'false' }}"
-                                                      href="{{route('orders.index')}}">{{__('main.my_orders')}}</flux:navbar.item>
-                                    @if(\App\Models\WebsiteSetting::getPricesVisible())
-                                    <flux:navbar.item class="border !border-accent after:!h-0 {{request()->routeIs('wallet') ? '!bg-accent hover:!bg-accent-hover !text-accent-foreground' : ''}}"
-                                                      data-nav-active="{{ request()->routeIs('wallet') ? 'true' : 'false' }}"
-                                                      href="{{route('wallet')}}"
-                                                      badge="{{ $money->format((float) $walletBalance, 'USD', 2) }}"
-                                                      badge:color="{{request()->routeIs('wallet') ? 'green' : 'sky'}}"
-                                                      badge:class="ms-3 whitespace-nowrap px-2 {{request()->routeIs('wallet') ? 'dark:!text-green-800' : ''}}"
-                                                      icon="plus">{{__('main.add_sufficient')}}</flux:navbar.item>
-                                    @else
-                                    <flux:navbar.item class="border !border-accent after:!h-0 {{request()->routeIs('wallet') ? '!bg-accent hover:!bg-accent-hover !text-accent-foreground' : ''}}"
-                                                      data-nav-active="{{ request()->routeIs('wallet') ? 'true' : 'false' }}"
-                                                      href="{{route('wallet')}}"
-                                                      icon="plus">{{__('main.add_sufficient')}}</flux:navbar.item>
-                                    @endif
-                                    @if (auth()->user()?->loyaltyRole() !== null)
-                                        <flux:navbar.item class="border !border-accent after:!h-0 {{ request()->routeIs('loyalty') ? '!bg-accent hover:!bg-accent-hover !text-accent-foreground' : '' }}"
-                                                          data-nav-active="{{ request()->routeIs('loyalty') ? 'true' : 'false' }}"
-                                                          href="{{ route('loyalty') }}"
-                                                          wire:navigate
-                                                          icon="sparkles">{{ __('main.loyalty') }}</flux:navbar.item>
-                                    @endif
-                                    @auth
-                                        <flux:navbar.item class="border !border-accent after:!h-0 {{ request()->routeIs('profile') ? '!bg-accent hover:!bg-accent-hover !text-accent-foreground' : '' }}"
-                                                          data-nav-active="{{ request()->routeIs('profile') ? 'true' : 'false' }}"
-                                                          href="{{ route('profile') }}"
-                                                          wire:navigate
-                                                          icon="user">{{ __('main.profile') }}</flux:navbar.item>
-                                    @endauth
-                                    <flux:navbar.item class="border !border-accent after:!h-0 {{ request()->routeIs('contact') ? '!bg-accent hover:!bg-accent-hover !text-accent-foreground' : '' }}" data-nav-active="{{ request()->routeIs('contact') ? 'true' : 'false' }}"
-                                                      href="{{ route('contact') }}" wire:navigate>{{ __('main.contact_us') }}</flux:navbar.item>
-
-                                    <!-- <flux:dropdown class="border !border-accent rounded-lg">
-                                        <flux:navbar.item icon:trailing="chevron-down" class="!border-accent">Account</flux:navbar.item>
-                                        <flux:navmenu class="!border-accent">
-                                            <flux:navmenu.item href="#">Profile</flux:navmenu.item>
-                                            <flux:navmenu.item href="#">Settings</flux:navmenu.item>
-                                            <flux:navmenu.item href="#">Billing</flux:navmenu.item>
-                                        </flux:navmenu>
-                                    </flux:dropdown> -->
+                                <flux:navbar class="gap-3 !py-0 pe-4 ps-1 sm:gap-4 sm:pe-0 sm:ps-0 ltr:lg:pr-12 rtl:lg:pl-12 justify-start sm:justify-center">
+                                    @foreach ($browseNavItems as $browseItem)
+                                        @if ($browseItem['icon'])
+                                            <flux:navbar.item
+                                                wire:key="browse-nav-{{ $browseItem['key'] }}"
+                                                class="border !border-accent after:!h-0 {{ $browseItem['active'] ? '!bg-accent hover:!bg-accent-hover !text-accent-foreground' : '' }}"
+                                                data-nav-active="{{ $browseItem['active'] ? 'true' : 'false' }}"
+                                                data-test="browse-nav-{{ $browseItem['key'] }}"
+                                                href="{{ $browseItem['href'] }}"
+                                                wire:navigate
+                                                icon="{{ $browseItem['icon'] }}"
+                                            >{{ $browseItem['label'] }}</flux:navbar.item>
+                                        @else
+                                            <flux:navbar.item
+                                                wire:key="browse-nav-{{ $browseItem['key'] }}"
+                                                class="border !border-accent after:!h-0 {{ $browseItem['active'] ? '!bg-accent hover:!bg-accent-hover !text-accent-foreground' : '' }}"
+                                                data-nav-active="{{ $browseItem['active'] ? 'true' : 'false' }}"
+                                                data-test="browse-nav-{{ $browseItem['key'] }}"
+                                                href="{{ $browseItem['href'] }}"
+                                                wire:navigate
+                                            >{{ $browseItem['label'] }}</flux:navbar.item>
+                                        @endif
+                                    @endforeach
                                 </flux:navbar>
                             </div>
 
@@ -418,11 +407,19 @@
                 </div>
             </div>
         </flux:header>
+        </div>{{-- desktop-header --}}
 
-        {{ $slot }}
+        <div class="storefront-shell-main" data-storefront-shell="main">
+            {{ $slot }}
+        </div>
+
+        <x-storefront.bottom-nav />
+
         <livewire:bugs.quick-report-button :key="'quick-report-frontend-'.auth()->id()" />
 
         <x-toaster-hub />
+
+        <livewire:main.buy-now-modal />
 
         @RegisterServiceWorkerScript
         @fluxScripts

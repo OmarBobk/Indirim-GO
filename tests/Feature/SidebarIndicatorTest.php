@@ -3,7 +3,6 @@
 use App\Enums\FulfillmentStatus;
 use App\Enums\OrderItemStatus;
 use App\Enums\OrderStatus;
-use App\Enums\TopupMethod;
 use App\Enums\TopupRequestStatus;
 use App\Livewire\Sidebar\FulfillmentIndicator;
 use App\Livewire\Sidebar\NotificationIndicator;
@@ -12,6 +11,7 @@ use App\Models\Fulfillment;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Package;
+use App\Models\PaymentMethod;
 use App\Models\Product;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -110,7 +110,7 @@ test('topup indicator updates when pending topups exist', function () {
     app(\App\Actions\Topups\CreateTopupRequestAction::class)->handle([
         'user_id' => $requestOwner->id,
         'wallet_id' => null,
-        'method' => TopupMethod::ShamCash,
+        'payment_method_id' => PaymentMethod::query()->where('name', 'Sham Cash')->value('id'),
         'amount' => 40,
         'currency' => 'USD',
         'status' => TopupRequestStatus::Pending,
@@ -120,6 +120,143 @@ test('topup indicator updates when pending topups exist', function () {
         ->assertSet('count', 1)
         ->assertSee('bg-amber-500')
         ->assertSee('1');
+});
+
+test('refund indicator refreshes from admin ops inbox event', function () {
+    Role::firstOrCreate(['name' => 'admin']);
+    Permission::firstOrCreate(['name' => 'view_refunds']);
+    $this->admin->givePermissionTo('view_refunds');
+
+    actingAs($this->admin);
+
+    $component = Livewire::test(\App\Livewire\Sidebar\RefundIndicator::class)
+        ->assertSet('count', 0);
+
+    $user = User::factory()->create();
+    \App\Models\Wallet::forUser($user);
+    $package = Package::factory()->create();
+    $product = Product::factory()->create(['package_id' => $package->id, 'entry_price' => 20]);
+    $order = Order::create([
+        'user_id' => $user->id,
+        'order_number' => Order::temporaryOrderNumber(),
+        'currency' => 'USD',
+        'subtotal' => 20,
+        'fee' => 0,
+        'total' => 20,
+        'status' => OrderStatus::Paid,
+    ]);
+    $item = OrderItem::create([
+        'order_id' => $order->id,
+        'product_id' => $product->id,
+        'package_id' => $package->id,
+        'name' => $product->name,
+        'unit_price' => 20,
+        'quantity' => 1,
+        'line_total' => 20,
+        'status' => OrderItemStatus::Failed,
+    ]);
+    $fulfillment = Fulfillment::create([
+        'order_id' => $order->id,
+        'order_item_id' => $item->id,
+        'provider' => 'manual',
+        'status' => FulfillmentStatus::Failed,
+        'attempts' => 1,
+    ]);
+    (new \App\Actions\Orders\RefundOrderItem)->handle($fulfillment, $user->id);
+
+    $component->call('refreshCount')
+        ->assertSet('count', 1)
+        ->assertSee('bg-red-500');
+});
+
+test('dashboard ops indicator shows variant scoped total', function () {
+    Role::firstOrCreate(['name' => 'admin']);
+    Permission::firstOrCreate(['name' => 'view_dashboard']);
+    Permission::firstOrCreate(['name' => 'view_refunds']);
+    $this->admin->givePermissionTo(['view_dashboard', 'view_refunds']);
+
+    actingAs($this->admin);
+
+    $user = User::factory()->create();
+    \App\Models\Wallet::forUser($user);
+    $package = Package::factory()->create();
+    $product = Product::factory()->create(['package_id' => $package->id, 'entry_price' => 20]);
+    $order = Order::create([
+        'user_id' => $user->id,
+        'order_number' => Order::temporaryOrderNumber(),
+        'currency' => 'USD',
+        'subtotal' => 20,
+        'fee' => 0,
+        'total' => 20,
+        'status' => OrderStatus::Paid,
+    ]);
+    $item = OrderItem::create([
+        'order_id' => $order->id,
+        'product_id' => $product->id,
+        'package_id' => $package->id,
+        'name' => $product->name,
+        'unit_price' => 20,
+        'quantity' => 1,
+        'line_total' => 20,
+        'status' => OrderItemStatus::Failed,
+    ]);
+    $fulfillment = Fulfillment::create([
+        'order_id' => $order->id,
+        'order_item_id' => $item->id,
+        'provider' => 'manual',
+        'status' => FulfillmentStatus::Failed,
+        'attempts' => 1,
+    ]);
+    (new \App\Actions\Orders\RefundOrderItem)->handle($fulfillment, $user->id);
+
+    Livewire::test(\App\Livewire\Sidebar\DashboardOpsIndicator::class)
+        ->call('refreshCount')
+        ->assertSet('count', 1)
+        ->dispatch('admin-ops-inbox-updated')
+        ->assertSet('count', 1);
+});
+
+test('dashboard ops indicator ignores stale failed fulfillments', function () {
+    Role::firstOrCreate(['name' => 'admin']);
+    Permission::firstOrCreate(['name' => 'view_dashboard']);
+    Permission::firstOrCreate(['name' => 'view_fulfillments']);
+    $this->admin->givePermissionTo(['view_dashboard', 'view_fulfillments']);
+
+    actingAs($this->admin);
+
+    $user = User::factory()->create();
+    $package = Package::factory()->create();
+    $product = Product::factory()->create(['package_id' => $package->id, 'entry_price' => 20]);
+    $order = Order::create([
+        'user_id' => $user->id,
+        'order_number' => Order::temporaryOrderNumber(),
+        'currency' => 'USD',
+        'subtotal' => 20,
+        'fee' => 0,
+        'total' => 20,
+        'status' => OrderStatus::Paid,
+    ]);
+    $item = OrderItem::create([
+        'order_id' => $order->id,
+        'product_id' => $product->id,
+        'package_id' => $package->id,
+        'name' => $product->name,
+        'unit_price' => 20,
+        'quantity' => 1,
+        'line_total' => 20,
+        'status' => OrderItemStatus::Failed,
+    ]);
+    Fulfillment::create([
+        'order_id' => $order->id,
+        'order_item_id' => $item->id,
+        'provider' => 'manual',
+        'status' => FulfillmentStatus::Failed,
+        'attempts' => 1,
+    ]);
+
+    Livewire::test(\App\Livewire\Sidebar\DashboardOpsIndicator::class)
+        ->call('refreshCount')
+        ->assertSet('count', 0);
 });
 
 test('notification indicator shows unread notifications count', function () {

@@ -260,6 +260,7 @@ new class extends Component
                                 <th class="px-5 py-3 text-start font-semibold">{{ __('messages.email') }}</th>
                                 <th class="px-5 py-3 text-start font-semibold">{{ __('messages.phone') }}</th>
                                 <th class="px-5 py-3 text-start font-semibold">{{ __('messages.username') }}</th>
+                                <th class="px-5 py-3 text-start font-semibold">{{ __('messages.user_registration') }}</th>
                                 <th class="px-5 py-3 text-start font-semibold">{{ __('messages.roles') }}</th>
                                 <th class="px-5 py-3 text-start font-semibold">{{ __('messages.status') }}</th>
                                 <th class="px-5 py-3 text-start font-semibold">{{ __('messages.email_verified') }}</th>
@@ -278,6 +279,9 @@ new class extends Component
                                     <td class="px-5 py-4 text-zinc-600 dark:text-zinc-300">{{ $u->email }}</td>
                                     <td class="px-5 py-4 text-zinc-600 dark:text-zinc-300" dir="ltr">{{ ($u->country_code || $u->phone) ? trim(($u->country_code ?? '') . ' ' . ($u->phone ?? '')) : '—' }}</td>
                                     <td class="px-5 py-4 text-zinc-600 dark:text-zinc-300">{{ $u->username }}</td>
+                                    <td class="max-w-xs px-5 py-4 text-xs leading-snug text-zinc-600 dark:text-zinc-300">
+                                        {{ $u->registration_summary ?: '—' }}
+                                    </td>
                                     <td class="px-5 py-4 text-zinc-600 dark:text-zinc-300">
                                         {{
                                             $u->roles

@@ -86,6 +86,7 @@ test('create user creates user and logs activity', function () {
         ->set('newEmail', 'newuser@example.com')
         ->set('newPassword', 'Password123!@#')
         ->set('newPasswordConfirmation', 'Password123!@#')
+        ->set('newCommissionRatePercent', '17.50')
         ->call('saveCreate')
         ->assertHasNoErrors();
 
@@ -93,12 +94,56 @@ test('create user creates user and logs activity', function () {
         'name' => 'New User',
         'username' => 'newuser',
         'email' => 'newuser@example.com',
+        'commission_rate_percent' => 17.50,
     ]);
 
     $this->assertDatabaseHas('activity_log', [
         'event' => 'user.created',
         'log_name' => 'admin',
     ]);
+});
+
+test('admin users index shows registration source for admin-created user', function () {
+    $admin = User::factory()->create(['username' => 'creator_admin']);
+    $admin->assignRole('admin');
+
+    Livewire::actingAs($admin)
+        ->test(UserModals::class)
+        ->call('openCreate')
+        ->set('newName', 'Listed User')
+        ->set('newUsername', 'listeduser')
+        ->set('newEmail', 'listed@example.com')
+        ->set('newPassword', 'Password123!@#')
+        ->set('newPasswordConfirmation', 'Password123!@#')
+        ->set('newCommissionRatePercent', '5')
+        ->call('saveCreate')
+        ->assertHasNoErrors();
+
+    Livewire::actingAs($admin)
+        ->test('pages::backend.users.index')
+        ->set('search', 'listed@example.com')
+        ->call('applyFilters')
+        ->assertSee(__('messages.user_registration_by_admin', ['name' => 'creator_admin']), false);
+});
+
+test('admin users index shows self-registered when registration activity exists', function () {
+    $admin = User::factory()->create();
+    $admin->assignRole('admin');
+
+    $self = User::factory()->create(['username' => 'self_signup', 'email' => 'self@example.com']);
+
+    activity()
+        ->inLog('admin')
+        ->event('user.registered')
+        ->performedOn($self)
+        ->causedBy($self)
+        ->log('User registered');
+
+    Livewire::actingAs($admin)
+        ->test('pages::backend.users.index')
+        ->set('search', 'self@example.com')
+        ->call('applyFilters')
+        ->assertSee(__('messages.user_registration_self'), false);
 });
 
 test('update user updates profile and logs activity', function () {
@@ -112,6 +157,7 @@ test('update user updates profile and logs activity', function () {
         ->set('editName', 'Updated Name')
         ->set('editUsername', 'updateduser')
         ->set('editEmail', 'updated@example.com')
+        ->set('editCommissionRatePercent', '24.75')
         ->call('saveEdit')
         ->assertHasNoErrors();
 
@@ -119,6 +165,7 @@ test('update user updates profile and logs activity', function () {
     expect($target->name)->toBe('Updated Name');
     expect($target->username)->toBe('updateduser');
     expect($target->email)->toBe('updated@example.com');
+    expect((float) $target->commission_rate_percent)->toBe(24.75);
 
     $this->assertDatabaseHas('activity_log', [
         'event' => 'user.updated',
@@ -253,7 +300,7 @@ test('assign roles and permissions on create logs roles_updated when changed', f
     $admin = User::factory()->create();
     $admin->assignRole('admin');
     Role::firstOrCreate(['name' => 'salesperson']);
-    Permission::firstOrCreate(['name' => 'view_sales']);
+    Permission::firstOrCreate(['name' => 'view_referrals']);
 
     Livewire::actingAs($admin)
         ->test(UserModals::class)
@@ -264,13 +311,13 @@ test('assign roles and permissions on create logs roles_updated when changed', f
         ->set('newPassword', 'Password123!@#')
         ->set('newPasswordConfirmation', 'Password123!@#')
         ->set('newRoles', ['salesperson'])
-        ->set('newPermissions', ['view_sales'])
+        ->set('newPermissions', ['view_referrals'])
         ->call('saveCreate')
         ->assertHasNoErrors();
 
     $user = User::query()->where('email', 'roleuser@example.com')->firstOrFail();
     expect($user->getRoleNames()->all())->toContain('salesperson');
-    expect($user->getDirectPermissions()->pluck('name')->all())->toContain('view_sales');
+    expect($user->getDirectPermissions()->pluck('name')->all())->toContain('view_referrals');
 
     $this->assertDatabaseHas('activity_log', ['event' => 'user.created', 'log_name' => 'admin']);
 });

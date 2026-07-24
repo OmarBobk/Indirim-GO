@@ -7,7 +7,6 @@ use App\Services\PriceCalculator;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
 
 class Product extends Model
@@ -40,7 +39,13 @@ class Product extends Model
         'custom_amount_max',
         'custom_amount_step',
         'slug',
+        'product_api',
         'entry_price',
+        'supplier_scanned_price',
+        'supplier_scanned_at',
+        'supplier_scan_error',
+        'supplier_price_flag_reason',
+        'supplier_price_flagged_at',
         'retail_price',
         'wholesale_price',
         'is_active',
@@ -61,6 +66,9 @@ class Product extends Model
             'custom_amount_max' => 'integer',
             'custom_amount_step' => 'integer',
             'entry_price' => 'decimal:8',
+            'supplier_scanned_price' => 'decimal:8',
+            'supplier_scanned_at' => 'datetime',
+            'supplier_price_flagged_at' => 'datetime',
             'retail_price' => 'decimal:2',
             'wholesale_price' => 'decimal:2',
             'is_active' => 'boolean',
@@ -123,15 +131,5 @@ class Product extends Model
     public function package(): BelongsTo
     {
         return $this->belongsTo(Package::class);
-    }
-
-    /**
-     * Per-user price overrides for this product.
-     *
-     * @return HasMany<UserProductPrice, $this>
-     */
-    public function userProductPrices(): HasMany
-    {
-        return $this->hasMany(UserProductPrice::class);
     }
 }

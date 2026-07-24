@@ -22,6 +22,17 @@ if (import.meta.env.VITE_REVERB_APP_KEY && window.Laravel?.userId) {
     });
 }
 
+if (import.meta.env.VITE_REVERB_APP_KEY && window.Laravel?.canViewDashboard) {
+    window.Echo.private('admin.ops-dashboard').listen('.AdminOpsInboxChanged', (payload) => {
+        if (window.Livewire?.dispatch) {
+            window.Livewire.dispatch('admin-ops-inbox-updated', payload ?? {});
+            return;
+        }
+
+        window.dispatchEvent(new CustomEvent('admin-ops-inbox-updated', { detail: payload || {} }));
+    });
+}
+
 if (import.meta.env.VITE_REVERB_APP_KEY && window.Laravel?.canViewFulfillments) {
     window.Echo.private('admin.fulfillments').listen('.FulfillmentListChanged', (payload) => {
         if (window.Livewire?.dispatch) {
@@ -34,6 +45,15 @@ if (import.meta.env.VITE_REVERB_APP_KEY && window.Laravel?.canViewFulfillments) 
 }
 
 if (import.meta.env.VITE_REVERB_APP_KEY && window.Laravel?.isAdmin) {
+    window.Echo.private('admin.automation').listen('.AutomationRunChanged', (payload) => {
+        if (window.Livewire?.dispatch) {
+            window.Livewire.dispatch('automation-run-updated', payload ?? {});
+            return;
+        }
+
+        window.dispatchEvent(new CustomEvent('automation-run-updated', { detail: payload || {} }));
+    });
+
     window.Echo.private('admin.topups').listen('.TopupRequestsChanged', (payload) => {
         if (window.Livewire?.dispatch) {
             window.Livewire.dispatch('topup-list-updated', payload ?? {});

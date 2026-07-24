@@ -1,13 +1,7 @@
 @php
-    $pendingRefundsCount = 0;
-    $dashboardHref = auth()->user()?->can('view_dashboard') ? route('dashboard') : route('home');
-    if (auth()->check() && auth()->user()?->can('view_refunds')) {
-        $pendingRefundsCount = \App\Models\WalletTransaction::query()
-            ->where('type', \App\Enums\WalletTransactionType::Refund)
-            ->where('status', \App\Models\WalletTransaction::STATUS_PENDING)
-            ->count();
-    }
-
+    $dashboardHref = auth()->user()?->can('view_dashboard')
+        ? route('dashboard')
+        : (auth()->user()?->can('view_referrals') ? route('salesperson.dashboard') : route('home'));
 @endphp
 <!DOCTYPE html>
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}" dir="{{ app()->getLocale() === 'ar' ? 'rtl' : 'ltr' }}" class="dark">
@@ -24,16 +18,31 @@
             <x-admin.usd-try-rate-panel variant="sidebar" />
 
             <flux:sidebar.nav>
-                @can('view_dashboard')
+                @if (auth()->user()?->can('view_dashboard') || auth()->user()?->can('view_referrals'))
                     <flux:sidebar.group :heading="__('messages.nav_overview')" class="grid">
-                        <flux:sidebar.item icon="home" :href="route('dashboard')" :current="request()->routeIs('dashboard')" wire:navigate>
-                            {{ __('messages.dashboard') }}
-                        </flux:sidebar.item>
+                        @can('view_dashboard')
+                            <flux:sidebar.item icon="home" :href="route('dashboard')" :current="request()->routeIs('dashboard')" wire:navigate>
+                                <span class="flex items-center gap-2">
+                                    {{ __('messages.dashboard') }}
+                                    <livewire:sidebar.dashboard-ops-indicator :key="'sidebar-dashboard-ops-indicator'" />
+                                </span>
+                            </flux:sidebar.item>
+                        @endcan
+                        @can('view_referrals')
+                            <flux:sidebar.item icon="chart-bar" :href="route('salesperson.dashboard')" :current="request()->routeIs('salesperson.dashboard')" wire:navigate>
+                                {{ __('messages.salesperson_dashboard') }}
+                            </flux:sidebar.item>
+                        @endcan
+                        @can('manage_referred_users')
+                            <flux:sidebar.item icon="users" :href="route('salesperson.users.index')" :current="request()->routeIs('salesperson.users.*')" wire:navigate>
+                                {{ __('messages.nav_my_customers') }}
+                            </flux:sidebar.item>
+                        @endcan
                     </flux:sidebar.group>
-                @endcan
+                @endif
 
                 @if (auth()->user()?->can('manage_products') || auth()->user()?->can('manage_sections') || auth()->user()?->can('manage_loyalty_tiers') || auth()->user()?->can('update_product_prices'))
-                <flux:sidebar.group expandable :expanded="(request()->routeIs('categories')) or (request()->routeIs('packages')) or (request()->routeIs('products')) or (request()->routeIs('product-entry-prices')) or (request()->routeIs('pricing-rules')) or (request()->routeIs('loyalty-tiers'))" :heading="__('messages.nav_content_management')" class="grid">
+                <flux:sidebar.group expandable :expanded="(request()->routeIs('categories')) or (request()->routeIs('packages')) or (request()->routeIs('products')) or (request()->routeIs('product-entry-prices')) or (request()->routeIs('price-drift')) or (request()->routeIs('pricing-rules')) or (request()->routeIs('loyalty-tiers'))" :heading="__('messages.nav_content_management')" class="grid">
                     @can('manage_sections')
                     <flux:sidebar.item icon="tag" :href="route('categories')" :current="(request()->routeIs('categories'))" wire:navigate>
                         {{ __('messages.categories') }}
@@ -50,6 +59,9 @@
                     <flux:sidebar.item icon="pencil-square" :href="route('product-entry-prices')" :current="request()->routeIs('product-entry-prices')" wire:navigate>
                         {{ __('messages.product_entry_prices') }}
                     </flux:sidebar.item>
+                    <flux:sidebar.item icon="scale" :href="route('price-drift')" :current="request()->routeIs('price-drift')" wire:navigate>
+                        {{ __('messages.price_drift') }}
+                    </flux:sidebar.item>
                     @endcan
                     <flux:sidebar.item icon="currency-dollar" :href="route('pricing-rules')" :current="(request()->routeIs('pricing-rules'))" wire:navigate>
                         {{ __('messages.pricing_rules') }}
@@ -64,7 +76,7 @@
                 @endif
 
                 <livewire:sidebar.operations-group
-                    :expanded="(request()->routeIs('fulfillments')) || (request()->routeIs('admin.orders.*')) || (request()->routeIs('admin.notifications.index'))"
+                    :expanded="(request()->routeIs('fulfillments')) || (request()->routeIs('admin.orders.*')) || (request()->routeIs('admin.notifications.index')) || (request()->routeIs('admin.automation.*')) || (request()->routeIs('admin.assistant.*'))"
                     :heading="__('messages.nav_operations')"
                     :key="'sidebar-operations-group'"
                 >
@@ -82,6 +94,17 @@
                         </span>
                     </flux:sidebar.item>
                     @endcan
+                    @role('admin')
+                    <flux:sidebar.item icon="cpu-chip" :href="route('admin.automation.index')" :current="request()->routeIs('admin.automation.*')" wire:navigate>
+                        <span class="flex items-center gap-2">
+                            {{ __('messages.automation_admin') }}
+                            <livewire:sidebar.automation-review-indicator :key="'sidebar-automation-review-indicator'" />
+                        </span>
+                    </flux:sidebar.item>
+                    <flux:sidebar.item icon="chat-bubble-left-right" :href="route('admin.assistant.index')" :current="request()->routeIs('admin.assistant.*')" wire:navigate>
+                        {{ __('messages.assistant_page_title') }}
+                    </flux:sidebar.item>
+                    @endrole
                     @can('view_orders')
                     <flux:sidebar.item icon="shopping-bag" :href="route('admin.orders.index')" :current="request()->routeIs('admin.orders.*')" wire:navigate>
                         {{ __('messages.orders') }}
@@ -91,17 +114,15 @@
                     <flux:sidebar.item icon="receipt-refund" :href="route('refunds')" :current="request()->routeIs('refunds')" wire:navigate>
                         <span class="flex items-center gap-2">
                             {{ __('messages.refund_requests') }}
-                            @if ($pendingRefundsCount > 0)
-                                <span class="size-2 shrink-0 rounded-full bg-red-500" aria-hidden="true"></span>
-                            @endif
+                            <livewire:sidebar.refund-indicator :key="'sidebar-refund-indicator'" />
                         </span>
                     </flux:sidebar.item>
                     @endcan
                 </livewire:sidebar.operations-group>
 
-                @if (auth()->user()?->can('manage_topups') || auth()->user()?->can('manage_settlements'))
+                @if (auth()->user()?->can('manage_topups') || auth()->user()?->can('manage_settlements') || auth()->user()?->can('adjust_wallets') || auth()->user()?->can('manage_wallet_credit'))
                     <livewire:sidebar.financials-group
-                        :expanded="request()->routeIs('topups') || request()->routeIs('settlements') || request()->routeIs('customer-funds')"
+                        :expanded="request()->routeIs('topups') || request()->routeIs('settlements') || request()->routeIs('customer-funds') || request()->routeIs('wallet-adjustments') || request()->routeIs('credit-facility') || request()->routeIs('admin.commissions') || request()->routeIs('admin.payout-requests')"
                         :heading="__('messages.nav_financials')"
                         :key="'sidebar-financials-group'"
                     >
@@ -118,59 +139,78 @@
                             {{ __('messages.customer_funds') }}
                         </flux:sidebar.item>
                         @endcan
+                        @can('adjust_wallets')
+                        <flux:sidebar.item icon="plus-circle" :href="route('wallet-adjustments')" :current="request()->routeIs('wallet-adjustments')" wire:navigate>
+                            {{ __('messages.wallet_adjustments') }}
+                        </flux:sidebar.item>
+                        @endcan
+                        @can('manage_wallet_credit')
+                        <flux:sidebar.item icon="credit-card" :href="route('credit-facility')" :current="request()->routeIs('credit-facility')" wire:navigate>
+                            {{ __('messages.credit_facility') }}
+                        </flux:sidebar.item>
+                        @endcan
                         @can('manage_settlements')
                         <flux:sidebar.item icon="currency-dollar" :href="route('settlements')" :current="request()->routeIs('settlements')" wire:navigate>
                             {{ __('messages.settlements') }}
+                        </flux:sidebar.item>
+                        <flux:sidebar.item icon="document-text" :href="route('admin.commissions')" :current="request()->routeIs('admin.commissions')" wire:navigate>
+                            {{ __('messages.commissions') }}
+                        </flux:sidebar.item>
+                        <flux:sidebar.item icon="inbox-arrow-down" :href="route('admin.payout-requests')" :current="request()->routeIs('admin.payout-requests')" wire:navigate>
+                            <span class="flex items-center gap-2">
+                                {{ __('messages.payout_requests') }}
+                                <livewire:sidebar.payout-indicator :key="'sidebar-payout-indicator'" />
+                            </span>
                         </flux:sidebar.item>
                         @endcan
                     </livewire:sidebar.financials-group>
                 @endif
 
-                <flux:sidebar.group :heading="__('messages.nav_audit_monitoring')" class="grid">
-                    @can('view_activities')
-                    <flux:sidebar.item icon="clock" :href="route('admin.activities.index')" :current="request()->routeIs('admin.activities.*')" wire:navigate>
-                        {{ __('messages.activities') }}
-                    </flux:sidebar.item>
-                    <flux:sidebar.item icon="list-bullet" :href="route('admin.system-events.index')" :current="request()->routeIs('admin.system-events.*')" wire:navigate>
-                        {{ __('messages.system_events') }}
-                    </flux:sidebar.item>
-                    @endcan
-                    @can('manage_users')
-                    <flux:sidebar.item icon="users" :href="route('admin.users.index')" :current="request()->routeIs('admin.users.index')" wire:navigate>
-                        {{ __('messages.users') }}
-                    </flux:sidebar.item>
-                    @if ((request()->routeIs('admin.users.show') || request()->routeIs('admin.users.audit')) && request()->route('user'))
-                    <flux:sidebar.item icon="clock" :href="route('admin.users.audit', request()->route('user'))" :current="request()->routeIs('admin.users.audit')" wire:navigate>
-                        {{ __('messages.audit_timeline') }}
-                    </flux:sidebar.item>
-                    @endif
-                    @endcan
-                </flux:sidebar.group>
-
-                <flux:sidebar.group :heading="__('messages.nav_website_settings')" class="grid">
-                    @can('manage_bugs')
-                        <flux:sidebar.item icon="bug-ant" :href="route('admin.bugs.index')" :current="request()->routeIs('admin.bugs.*')" wire:navigate>
-                            <span class="flex items-center gap-2">
-                                {{ __('Bug Reports') }}
-                                <livewire:sidebar.bug-reports-indicator :key="'sidebar-bug-reports-indicator'" />
-                            </span>
+                @if (auth()->user()?->can('view_activities') || auth()->user()?->can('manage_users'))
+                    <flux:sidebar.group :heading="__('messages.nav_audit_monitoring')" class="grid">
+                        @can('view_activities')
+                        <flux:sidebar.item icon="clock" :href="route('admin.activities.index')" :current="request()->routeIs('admin.activities.*')" wire:navigate>
+                            {{ __('messages.activities') }}
                         </flux:sidebar.item>
-                    @endcan
-                    @role('admin')
-                    <flux:sidebar.item icon="globe-alt" :href="route('admin.website-settings')" :current="request()->routeIs('admin.website-settings')" wire:navigate>
-                        {{ __('messages.website_settings') }}
-                    </flux:sidebar.item>
-                    @endrole
-                </flux:sidebar.group>
+                        <flux:sidebar.item icon="list-bullet" :href="route('admin.system-events.index')" :current="request()->routeIs('admin.system-events.*')" wire:navigate>
+                            {{ __('messages.system_events') }}
+                        </flux:sidebar.item>
+                        @endcan
+                        @can('manage_users')
+                        <flux:sidebar.item icon="users" :href="route('admin.users.index')" :current="request()->routeIs('admin.users.index')" wire:navigate>
+                            {{ __('messages.users') }}
+                        </flux:sidebar.item>
+                        @if ((request()->routeIs('admin.users.show') || request()->routeIs('admin.users.audit')) && request()->route('user'))
+                        <flux:sidebar.item icon="clock" :href="route('admin.users.audit', request()->route('user'))" :current="request()->routeIs('admin.users.audit')" wire:navigate>
+                            {{ __('messages.audit_timeline') }}
+                        </flux:sidebar.item>
+                        @endif
+                        @endcan
+                    </flux:sidebar.group>
+                @endif
+
+                @if (auth()->user()?->can('manage_bugs') || auth()->user()?->hasRole('admin'))
+                    <flux:sidebar.group :heading="__('messages.nav_website_settings')" class="grid">
+                        @can('manage_bugs')
+                            <flux:sidebar.item icon="bug-ant" :href="route('admin.bugs.index')" :current="request()->routeIs('admin.bugs.*')" wire:navigate>
+                                <span class="flex items-center gap-2">
+                                    {{ __('Bug Reports') }}
+                                    <livewire:sidebar.bug-reports-indicator :key="'sidebar-bug-reports-indicator'" />
+                                </span>
+                            </flux:sidebar.item>
+                        @endcan
+                        @role('admin')
+                        <flux:sidebar.item icon="globe-alt" :href="route('admin.website-settings')" :current="request()->routeIs('admin.website-settings')" wire:navigate>
+                            {{ __('messages.website_settings') }}
+                        </flux:sidebar.item>
+                        @endrole
+                    </flux:sidebar.group>
+                @endif
             </flux:sidebar.nav>
 
             <flux:spacer />
 
             <flux:sidebar.nav>
-                <flux:sidebar.item icon="folder-git-2" href="https://github.com/laravel/livewire-starter-kit" target="_blank">
-                    {{ __('messages.repository') }}
-                </flux:sidebar.item>
-
                 <flux:sidebar.item icon="book-open-text" href="{{route('home')}}" target="_blank">
                     {{ __('messages.homepage') }}
                 </flux:sidebar.item>
@@ -218,6 +258,7 @@
 
                     <flux:menu.separator />
 
+                    @can('view_dashboard')
                     <flux:menu.radio.group>
                         <flux:menu.item :href="route('profile.edit')" icon="cog" wire:navigate>
                             {{ __('messages.settings') }}
@@ -225,6 +266,7 @@
                     </flux:menu.radio.group>
 
                     <flux:menu.separator />
+                    @endcan
 
                     <form method="POST" action="{{ route('logout') }}" class="w-full">
                         @csrf

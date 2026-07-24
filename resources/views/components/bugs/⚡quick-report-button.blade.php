@@ -26,7 +26,11 @@ new class extends Component
 ?>
 
 @if ($canReport)
-    <div class="fixed bottom-4 end-4 z-[70]" x-on:bug-report-saved.window="$wire.hide()">
+    <div
+        class="storefront-fab fixed end-4 z-[70]"
+        x-on:bug-report-saved.window="$wire.hide()"
+        data-test="storefront-bug-fab"
+    >
         <flux:button variant="primary" icon="bug-ant" wire:click="show">
             {{ __('Report Bug') }}
         </flux:button>

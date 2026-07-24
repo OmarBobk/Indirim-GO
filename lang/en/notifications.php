@@ -56,4 +56,17 @@ return [
     'bug_recorded_message' => 'Bug #:id (:scenario, :severity) was submitted.',
     'order_price_floored_title' => 'Order price hit entry-price floor',
     'order_price_floored_message' => 'Order :order_number had :count item(s) clamped to entry price to prevent loss.',
+
+    'commission_credited_title' => 'Commission credited',
+    'commission_credited_message' => ':amount_display — Your commission has been credited to your wallet.',
+
+    'salesperson_payout_requested_title' => 'Payout requested',
+    'salesperson_payout_requested_message' => ':name requested a payout (#:id, eligible: :eligible_display). Review payout requests.',
+
+    'wasim_price_drift_review_title' => 'Wasim prices need review',
+    'wasim_price_drift_review_message' => ':count product(s) have entry prices that differ from the latest Wasim scan. Open price drift to review.',
+
+    'wasim_price_reactive_flag_title' => 'Wasim price alert from fulfillment',
+    'wasim_price_reactive_flag_margin_message' => ':product (#:product_id) was flagged during fulfillment — margin blocked. Review on price drift.',
+    'wasim_price_reactive_flag_mismatch_message' => ':product (#:product_id) live Wasim price differs from entry price. Review on price drift.',
 ];

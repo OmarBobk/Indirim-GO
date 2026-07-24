@@ -23,7 +23,10 @@ class RolesAndPermissionsSeeder extends Seeder
             'manage_products',
             'manage_loyalty_tiers',
             'manage_topups',
-            'view_sales',
+            'adjust_wallets',
+            'manage_wallet_credit',
+            'view_referrals',
+            'manage_referred_users',
             'create_orders',
             'customer_profile',
             'edit_orders',
@@ -51,20 +54,21 @@ class RolesAndPermissionsSeeder extends Seeder
         $admin = Role::firstOrCreate(['name' => 'admin']);
         $admin->givePermissionTo(Permission::all());
 
-        // Salesperson: can view and manage orders, view sales
+        // Salesperson: referral link + salesperson dashboard, orders
         $salesperson = Role::firstOrCreate(['name' => 'salesperson']);
         $salesperson->syncPermissions([
-            'view_sales',
+            'view_referrals',
+            'manage_referred_users',
             'view_orders',
             'create_orders',
             'edit_orders',
         ]);
 
-        // Supervisor: can view sales and orders, create orders (no edit)
+        // Supervisor: dashboard, referrals, orders, create orders (no edit)
         $supervisor = Role::firstOrCreate(['name' => 'supervisor']);
         $supervisor->syncPermissions([
             'view_dashboard',
-            'view_sales',
+            'view_referrals',
             'view_orders',
             'create_orders',
         ]);

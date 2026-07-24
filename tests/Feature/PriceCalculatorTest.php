@@ -128,3 +128,33 @@ test('caches pricing rule lookup for same entry price', function () {
 
     expect($queries->count())->toBe(1);
 });
+
+test('user pricing rules take precedence over global rules', function () {
+    PricingRule::query()->create([
+        'min_price' => 0,
+        'max_price' => 999999.99,
+        'wholesale_percentage' => 2,
+        'retail_percentage' => 10,
+        'priority' => 0,
+        'is_active' => true,
+    ]);
+
+    $user = \App\Models\User::factory()->create();
+
+    \App\Models\UserPricingRule::query()->create([
+        'user_id' => $user->id,
+        'min_price' => 0,
+        'max_price' => 999999.99,
+        'wholesale_percentage' => 3,
+        'retail_percentage' => 5,
+        'priority' => 0,
+        'is_active' => true,
+    ]);
+
+    $calculator = app(PriceCalculator::class);
+    $result = $calculator->calculate(100.0, 2, $user);
+
+    expect($result['retail_price'])->toBe(105.0);
+    expect($result['wholesale_price'])->toBe(103.0);
+    expect($result['uses_user_pricing'])->toBeTrue();
+});

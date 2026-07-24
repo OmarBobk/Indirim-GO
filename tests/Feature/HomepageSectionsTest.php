@@ -28,6 +28,8 @@ it('renders homepage sliders', function () {
         ->assertSee('group-hover:border-accent')
         ->assertSee('data-test="circular-slider-item"', false)
         ->assertSee('onerror="this.onerror=null; this.src=', false)
+        ->assertSee('data-test="homepage-categories-grid"', false)
+        ->assertSee('grid grid-cols-2', false)
         ->assertSee('data-test="homepage-category-card"', false)
         ->assertSee('Console Cards')
         ->assertSee(route('categories.show', ['category' => $category->slug]), false)

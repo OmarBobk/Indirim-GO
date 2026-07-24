@@ -15,11 +15,14 @@ class Timeline extends Component
 {
     /**
      * Create a new component instance.
+     *
+     * @param  'admin'|'customer'  $audience
      */
     public function __construct(
         public Model $entity,
         public int $limit = 50,
         public bool $showHeading = true,
+        public string $audience = 'admin',
     ) {}
 
     /**
@@ -44,6 +47,7 @@ class Timeline extends Component
     {
         return view('components.timeline', [
             'events' => $this->events(),
+            'isCustomerAudience' => $this->audience === 'customer',
         ]);
     }
 }

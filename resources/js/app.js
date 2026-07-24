@@ -1,4 +1,7 @@
 import '../../vendor/masmerise/livewire-toaster/resources/js';
+import ApexCharts from 'apexcharts';
+
+window.ApexCharts = ApexCharts;
 
 document.addEventListener('alpine:init', () => {
     const { Alpine } = window;
@@ -6,6 +9,387 @@ document.addEventListener('alpine:init', () => {
     if (! Alpine) {
         return;
     }
+
+    Alpine.data('dashboardHeroChart', ({ chartSeries, activeRange, chartPresets, initialChartFilter }) => ({
+        selectedSeries: 'earnings',
+        activeRange,
+        chartSeries,
+        chartPresets: chartPresets ?? {},
+        initialChartFilter: initialChartFilter ?? 'this_month',
+        localChartFilter: initialChartFilter ?? 'this_month',
+        chart: null,
+        init() {
+            this.localChartFilter = this.initialChartFilter ?? 'this_month';
+
+            if (!window.ApexCharts || !this.$refs.heroChart) {
+                return;
+            }
+
+            this.remountHeroChart();
+        },
+        clonePreset(series) {
+            try {
+                return structuredClone(series);
+            } catch {
+                return JSON.parse(JSON.stringify(series));
+            }
+        },
+        /** Preset tabs: chart from cached JSON only (no Livewire). Leaving Livewire "custom" mode syncs server once (still cached, no DB). */
+        applyPreset(key) {
+            if (key === 'custom') {
+                return;
+            }
+
+            const preset = this.chartPresets?.[key];
+            if (!preset) {
+                return;
+            }
+
+            this.chartSeries = this.clonePreset(preset);
+            this.localChartFilter = key;
+            this.remountHeroChart();
+
+            if (this.$wire?.chartFilter === 'custom') {
+                this.$wire.setChartFilter(key);
+            }
+        },
+        remountHeroChart() {
+            if (!window.ApexCharts || !this.$refs.heroChart) {
+                return;
+            }
+
+            this.chart?.destroy();
+            this.chart = new ApexCharts(this.$refs.heroChart, this.chartOptions());
+            this.chart.render();
+        },
+        rangeLabel() {
+            if (this.chartSeries?.rangeLabel) {
+                return this.chartSeries.rangeLabel;
+            }
+
+            return this.activeRange === '7d'
+                ? 'Past 7 days'
+                : (this.activeRange === 'ytd' ? 'Year to date' : 'Past 30 days');
+        },
+        /** Mini-spark arrays for KPI tiles — same `sparkline` payload as the hero chart. */
+        kpiSparkSl(metricKey) {
+            const sl = this.chartSeries?.sparkline ?? {};
+            const toNums = (row) => (Array.isArray(row) ? row.map((v) => Number(v)) : [0]);
+
+            if (metricKey === 'orders') {
+                return toNums(sl.orders);
+            }
+
+            if (metricKey === 'pending') {
+                return toNums(sl.pending);
+            }
+
+            return toNums(sl.earnings);
+        },
+        kpiSparkGeometry(metricKey) {
+            const arr = this.kpiSparkSl(metricKey);
+            const w = 88;
+            const h = 30;
+            const min = Math.min(...arr);
+            const max = Math.max(...arr);
+            const range = Math.max(0.0001, max - min);
+            const n = arr.length;
+            const step = n > 1 ? w / (n - 1) : 0;
+            const pts = arr
+                .map((v, i) => {
+                    const x = Math.round(i * step * 100) / 100;
+                    const y = Math.round((h - ((v - min) / range) * h) * 100) / 100;
+
+                    return `${x},${y}`;
+                })
+                .join(' ');
+
+            return {
+                polyline: pts,
+                polygon: `0,${h} ${pts} ${w},${h}`,
+            };
+        },
+        _sumSeries(arr) {
+            return (Array.isArray(arr) ? arr : []).reduce((acc, x) => acc + Number(x), 0);
+        },
+        kpiBucketCount() {
+            return Math.max(1, (this.chartSeries?.labels ?? []).length);
+        },
+        /** Headline KPI numbers match chart series totals for the active range (bucketed like the chart). */
+        kpiRangeNumber(metricKey) {
+            const e = this._sumSeries(this.chartSeries?.earnings);
+            const o = this._sumSeries(this.chartSeries?.orders);
+            const p = this._sumSeries(this.chartSeries?.pending);
+            const n = this.kpiBucketCount();
+
+            if (metricKey === 'orders') {
+                return Math.round(o);
+            }
+
+            if (metricKey === 'pending') {
+                return p;
+            }
+
+            if (metricKey === 'paid') {
+                return e / n;
+            }
+
+            return e;
+        },
+        kpiDisplayText(metricKey) {
+            const n = this.kpiRangeNumber(metricKey);
+
+            if (metricKey === 'orders') {
+                return String(Math.round(n));
+            }
+
+            return `$${Number(n).toFixed(2)}`;
+        },
+        toggleSeries(series) {
+            this.selectedSeries = series;
+            if (!this.chart) {
+                return;
+            }
+            this.chart.updateOptions({
+                colors: [this.seriesColor()],
+                fill: {
+                    gradient: {
+                        colorStops: [
+                            [{ offset: 0, color: this.seriesColor(), opacity: 0.34 }, { offset: 100, color: this.seriesColor(), opacity: 0.02 }],
+                        ],
+                    },
+                },
+            }, false, true);
+            this.chart.updateSeries([{ name: this.seriesLabel(), data: this.currentSeries() }], true);
+        },
+        currentSeries() {
+            return this.selectedSeries === 'orders'
+                ? (this.chartSeries?.orders ?? [])
+                : (this.chartSeries?.earnings ?? []);
+        },
+        seriesColor() {
+            return this.selectedSeries === 'orders'
+                ? 'hsl(var(--accent-orders))'
+                : 'hsl(var(--accent-earnings))';
+        },
+        seriesLabel() {
+            return this.selectedSeries === 'orders' ? 'Orders' : 'Earnings';
+        },
+        labelCount() {
+            return Array.isArray(this.chartSeries?.labels) ? this.chartSeries.labels.length : 0;
+        },
+        xAxisLabelRotate() {
+            const n = this.labelCount();
+
+            return n > 14 ? -45 : (n > 8 ? -40 : 0);
+        },
+        chartOptions() {
+            const rotate = this.xAxisLabelRotate();
+
+            return {
+                chart: {
+                    type: 'area',
+                    height: 208,
+                    foreColor: 'hsl(var(--foreground) / 0.78)',
+                    toolbar: { show: false },
+                    zoom: { enabled: false },
+                    animations: { enabled: true, speed: 480, easing: 'easeinout' },
+                    fontFamily: 'inherit',
+                },
+                series: [{ name: this.seriesLabel(), data: this.currentSeries() }],
+                colors: [this.seriesColor()],
+                stroke: {
+                    curve: 'smooth',
+                    width: 2.4,
+                    lineCap: 'round',
+                },
+                fill: {
+                    type: 'gradient',
+                    gradient: {
+                        shadeIntensity: 0.4,
+                        colorStops: [
+                            [{ offset: 0, color: this.seriesColor(), opacity: 0.4 }, { offset: 100, color: this.seriesColor(), opacity: 0.01 }],
+                        ],
+                    },
+                },
+                dataLabels: { enabled: false },
+                grid: {
+                    show: true,
+                    borderColor: 'hsl(var(--surface-3) / 0.28)',
+                    strokeDashArray: 4,
+                    padding: { left: 4, right: 6, top: 6, bottom: rotate !== 0 ? 8 : 2 },
+                    xaxis: { lines: { show: false } },
+                    yaxis: { lines: { show: true } },
+                },
+                xaxis: {
+                    categories: this.chartSeries?.labels ?? [],
+                    labels: {
+                        show: true,
+                        rotate,
+                        rotateAlways: rotate !== 0,
+                        style: {
+                            colors: 'hsl(var(--foreground) / 0.82)',
+                            fontSize: '11px',
+                            fontWeight: 500,
+                        },
+                        hideOverlappingLabels: rotate === 0,
+                        maxHeight: rotate !== 0 ? 120 : 36,
+                    },
+                    axisBorder: { show: false },
+                    axisTicks: { show: false },
+                },
+                yaxis: {
+                    labels: {
+                        style: {
+                            colors: 'hsl(var(--foreground) / 0.76)',
+                            fontSize: '11px',
+                            fontWeight: 500,
+                        },
+                        formatter: (value) => this.selectedSeries === 'orders'
+                            ? Math.round(value).toString()
+                            : `$${Number(value).toFixed(2)}`,
+                    },
+                },
+                tooltip: {
+                    theme: document.documentElement.classList.contains('dark') ? 'dark' : 'light',
+                    marker: { show: false },
+                    custom: ({ dataPointIndex }) => {
+                        const label = this.chartSeries?.labels?.[dataPointIndex] ?? '—';
+                        const raw = this.currentSeries()?.[dataPointIndex] ?? 0;
+                        const value = this.selectedSeries === 'orders'
+                            ? `${Math.round(Number(raw))}`
+                            : `$${Number(raw).toFixed(2)}`;
+                        const seriesLabel = this.seriesLabel();
+
+                        return `<div class="rounded-xl border border-[hsl(var(--foreground)/0.12)] bg-[hsl(var(--surface-2))] px-3 py-2 shadow-lg backdrop-blur-sm">
+                            <p class="text-[10px] font-medium uppercase tracking-[0.12em] text-[hsl(var(--foreground)/0.55)]">${label}</p>
+                            <p class="mt-1 text-xs text-[hsl(var(--foreground)/0.72)]">${seriesLabel}</p>
+                            <p class="tabular-nums text-sm font-semibold text-[hsl(var(--foreground))]">${value}</p>
+                        </div>`;
+                    },
+                },
+                legend: { show: false },
+                responsive: [{
+                    breakpoint: 768,
+                    options: {
+                        xaxis: {
+                            labels: {
+                                rotate: this.labelCount() > 10 ? -45 : 0,
+                                rotateAlways: this.labelCount() > 10,
+                                hideOverlappingLabels: this.labelCount() <= 10,
+                                maxHeight: this.labelCount() > 10 ? 120 : 36,
+                            },
+                        },
+                        stroke: { width: 2.2 },
+                    },
+                }],
+            };
+        },
+    }));
+
+    /** Attributed orders: filter + group in-browser (no Livewire on search/status/range). */
+    Alpine.data('salespersonOrdersTable', ({ orders, strings, serverToday }) => ({
+        orders: Array.isArray(orders) ? orders : [],
+        strings: strings ?? {},
+        serverToday: serverToday ?? '',
+        search: '',
+        statusFilter: 'all',
+        dateRange: '30d',
+        rowTime(row) {
+            const raw = row?.date ?? '';
+
+            return Date.parse(String(raw).replace(' ', 'T')) || 0;
+        },
+        cutoffMs() {
+            const now = Date.now();
+
+            if (this.dateRange === '7d') {
+                return now - 7 * 86400000;
+            }
+
+            if (this.dateRange === 'ytd') {
+                const d = new Date();
+
+                d.setHours(0, 0, 0, 0);
+                d.setMonth(0, 1);
+
+                return d.getTime();
+            }
+
+            return now - 30 * 86400000;
+        },
+        filteredOrders() {
+            const t0 = this.cutoffMs();
+            let list = this.orders.filter((row) => this.rowTime(row) >= t0);
+
+            if (this.statusFilter !== 'all') {
+                list = list.filter((row) => row.commission_status === this.statusFilter);
+            }
+
+            const q = this.search.trim().toLowerCase();
+
+            if (q !== '') {
+                list = list.filter((row) => {
+                    const hay = `${row.order ?? ''} ${row.product ?? ''} ${row.customer_name ?? ''} ${row.customer_phone ?? ''} ${row.customer_username ?? ''} ${row.customer ?? ''}`.toLowerCase();
+
+                    return hay.includes(q);
+                });
+            }
+
+            return list.sort((a, b) => this.rowTime(b) - this.rowTime(a));
+        },
+        groupedOrders() {
+            const byDay = {};
+
+            for (const row of this.filteredOrders()) {
+                const key = String(row.date ?? '').substring(0, 10);
+
+                if (key.length !== 10) {
+                    continue;
+                }
+
+                if (!byDay[key]) {
+                    byDay[key] = [];
+                }
+
+                byDay[key].push(row);
+            }
+
+            return Object.keys(byDay)
+                .sort((a, b) => b.localeCompare(a))
+                .map((key) => {
+                    const rows = byDay[key];
+                    const commission = rows.reduce((sum, r) => sum + Number(r.commission ?? 0), 0);
+                    const label = key === this.serverToday
+                        ? (this.strings.today ?? 'Today')
+                        : this.formatDayLabel(key);
+
+                    return { key, label, count: rows.length, commission, rows };
+                });
+        },
+        formatDayLabel(ymd) {
+            const parts = ymd.split('-').map((x) => parseInt(x, 10));
+
+            if (parts.length !== 3 || parts.some((n) => Number.isNaN(n))) {
+                return ymd;
+            }
+
+            const [y, mo, da] = parts;
+            const dt = new Date(y, mo - 1, da);
+            const lang = document.documentElement.lang || 'en';
+
+            return dt.toLocaleDateString(lang, { month: 'short', day: 'numeric' });
+        },
+        commissionLabel(status) {
+            return this.strings.commission_status?.[status] ?? status;
+        },
+        fulfillmentLabel(key) {
+            return this.strings.fulfillment_status?.[key] ?? key;
+        },
+        money(n) {
+            return `$${Number(n ?? 0).toFixed(2)}`;
+        },
+    }));
 
     /**
      * Shared custom-amount pricing estimate.
@@ -1221,6 +1605,500 @@ document.addEventListener('alpine:init', () => {
             });
         },
     });
+
+    /**
+     * Salesperson referred users: edit / reset / create open instantly from row data;
+     * submit calls Livewire once (Actions) and refreshes list via users-updated.
+     */
+    Alpine.data('salespersonReferredUsersPage', () => ({
+        showFilters: false,
+        editOpen: false,
+        resetOpen: false,
+        createOpen: false,
+        busyAction: null,
+        editForm: {
+            id: null,
+            name: '',
+            username: '',
+            email: '',
+            phone: '',
+            country_code: '+90',
+            password: '',
+            password_confirmation: '',
+        },
+        editErrors: {},
+        resetForm: {
+            id: null,
+            password: '',
+            password_confirmation: '',
+        },
+        resetErrors: {},
+        createForm: {
+            name: '',
+            username: '',
+            email: '',
+            password: '',
+            password_confirmation: '',
+            phone: '',
+            country_code: '+90',
+        },
+        createErrors: {},
+        allowedCountryCodes: ['+90', '+963'],
+        normalizeCountryCode(cc) {
+            const s = cc == null ? '' : String(cc);
+
+            return this.allowedCountryCodes.includes(s) ? s : '+90';
+        },
+        flattenFirstErrors(errors) {
+            const out = {};
+            if (!errors || typeof errors !== 'object') {
+                return out;
+            }
+            for (const [key, messages] of Object.entries(errors)) {
+                if (Array.isArray(messages) && messages.length > 0) {
+                    out[key] = messages[0];
+                } else if (typeof messages === 'string') {
+                    out[key] = messages;
+                }
+            }
+
+            return out;
+        },
+        /** Row payload from `data-referred-user` (base64 JSON from server; avoids HTML/dataset entity issues). */
+        parseReferredRowDataset(el) {
+            const b64 = el?.dataset?.referredUser;
+            if (!b64 || typeof atob !== 'function') {
+                return null;
+            }
+            try {
+                return JSON.parse(atob(b64));
+            } catch {
+                return null;
+            }
+        },
+        openEditFromDataset(el) {
+            const user = this.parseReferredRowDataset(el);
+            if (user) {
+                this.openEditFromRow(user);
+            }
+        },
+        openResetFromDataset(el) {
+            const user = this.parseReferredRowDataset(el);
+            if (user) {
+                this.openResetFromRow(user);
+            }
+        },
+        openEditFromRow(user) {
+            if (!user || user.id == null) {
+                return;
+            }
+            this.editErrors = {};
+            this.editForm = {
+                id: user.id,
+                name: user.name ?? '',
+                username: user.username ?? '',
+                email: user.email ?? '',
+                phone: user.phone ?? '',
+                country_code: this.normalizeCountryCode(user.country_code),
+                password: '',
+                password_confirmation: '',
+            };
+            this.editOpen = true;
+        },
+        closeEdit() {
+            this.editOpen = false;
+        },
+        async submitEdit() {
+            if (this.busyAction) {
+                return;
+            }
+            this.busyAction = 'edit';
+            this.editErrors = {};
+            try {
+                const r = await this.$wire.referredSaveEdit(this.editForm);
+                if (r?.ok) {
+                    this.editOpen = false;
+                } else if (r?.errors) {
+                    this.editErrors = this.flattenFirstErrors(r.errors);
+                }
+            } finally {
+                this.busyAction = null;
+            }
+        },
+        openResetFromRow(user) {
+            if (!user || user.id == null) {
+                return;
+            }
+            this.resetErrors = {};
+            this.resetForm = {
+                id: user.id,
+                password: '',
+                password_confirmation: '',
+            };
+            this.resetOpen = true;
+        },
+        closeReset() {
+            this.resetOpen = false;
+        },
+        async submitReset() {
+            if (this.busyAction) {
+                return;
+            }
+            this.busyAction = 'reset';
+            this.resetErrors = {};
+            try {
+                const r = await this.$wire.referredResetPassword(this.resetForm);
+                if (r?.ok) {
+                    this.resetOpen = false;
+                } else if (r?.errors) {
+                    this.resetErrors = this.flattenFirstErrors(r.errors);
+                }
+            } finally {
+                this.busyAction = null;
+            }
+        },
+        openCreateModal() {
+            this.createErrors = {};
+            this.createForm = {
+                name: '',
+                username: '',
+                email: '',
+                password: '',
+                password_confirmation: '',
+                phone: '',
+                country_code: '+90',
+            };
+            this.createOpen = true;
+        },
+        closeCreate() {
+            this.createOpen = false;
+        },
+        async submitCreate() {
+            if (this.busyAction) {
+                return;
+            }
+            this.busyAction = 'create';
+            this.createErrors = {};
+            try {
+                const r = await this.$wire.referredCreateUser(this.createForm);
+                if (r?.ok) {
+                    this.createOpen = false;
+                } else if (r?.errors) {
+                    this.createErrors = this.flattenFirstErrors(r.errors);
+                }
+            } finally {
+                this.busyAction = null;
+            }
+        },
+    }));
+
+    Alpine.data('walletPaymentMethodCard', (config) => ({
+        copied: false,
+        methodId: config.methodId,
+        copyAriaLabel: config.copyAriaLabel ?? '',
+        copiedAnnouncement: config.copiedAnnouncement ?? '',
+        paymentRoot() {
+            const root = this.$el.closest('[data-wallet-payment-root]');
+
+            if (! root) {
+                return { selectedId: null };
+            }
+
+            const data = Alpine.$data(root);
+
+            return data ?? { selectedId: null };
+        },
+        accountText() {
+            return (this.$refs.accountText?.textContent ?? '').trim();
+        },
+        async copyAccount() {
+            const text = this.accountText();
+
+            if (text === '') {
+                return;
+            }
+
+            const ok = await this.writeClipboard(text);
+
+            if (! ok) {
+                return;
+            }
+
+            this.copied = true;
+            window.setTimeout(() => {
+                this.copied = false;
+            }, 2500);
+        },
+        async writeClipboard(text) {
+            try {
+                if (navigator.clipboard?.writeText) {
+                    await navigator.clipboard.writeText(text);
+
+                    return true;
+                }
+            } catch {
+                /* try legacy copy */
+            }
+
+            return this.legacyCopy(text);
+        },
+        legacyCopy(text) {
+            const el = document.createElement('textarea');
+            el.value = text;
+            el.setAttribute('readonly', '');
+            el.style.position = 'fixed';
+            el.style.left = '-9999px';
+            document.body.appendChild(el);
+            el.select();
+
+            let ok = false;
+
+            try {
+                ok = document.execCommand('copy');
+            } catch {
+                ok = false;
+            }
+
+            document.body.removeChild(el);
+
+            return ok;
+        },
+    }));
+
+    Alpine.data('storefrontPackageSearch', (config) => ({
+        query: '',
+        results: [],
+        loading: false,
+        panelOpen: false,
+        hint: '',
+        activeIndex: -1,
+        abortController: null,
+        searchUrl: config.searchUrl,
+        minLength: config.minLength ?? 2,
+        pricesVisible: config.pricesVisible ?? false,
+        strings: config.strings ?? {},
+        inputId: config.inputId ?? 'storefront-package-search-input',
+        homeUrl: config.homeUrl ?? '/',
+
+        get statusMessage() {
+            if (this.loading) {
+                return this.strings.loading ?? '';
+            }
+
+            if (this.hint) {
+                return this.hint;
+            }
+
+            if (this.panelOpen && this.results.length > 0) {
+                return this.strings.resultsCount
+                    ? this.strings.resultsCount.replace(':count', String(this.results.length))
+                    : `${this.results.length}`;
+            }
+
+            return '';
+        },
+
+        optionId(pkgId) {
+            return `storefront-package-search-option-${this.inputId}-${pkgId}`;
+        },
+
+        get activeDescendantId() {
+            if (this.activeIndex < 0 || ! this.results[this.activeIndex]) {
+                return null;
+            }
+
+            return this.optionId(this.results[this.activeIndex].id);
+        },
+
+        onFocus() {
+            if (this.query.trim().length >= this.minLength) {
+                this.panelOpen = true;
+            }
+        },
+
+        closePanel() {
+            this.panelOpen = false;
+            this.activeIndex = -1;
+        },
+
+        clear() {
+            this.query = '';
+            this.results = [];
+            this.hint = '';
+            this.activeIndex = -1;
+            this.panelOpen = false;
+            if (this.abortController) {
+                this.abortController.abort();
+                this.abortController = null;
+            }
+        },
+
+        moveActive(delta) {
+            if (this.results.length === 0) {
+                return;
+            }
+
+            if (this.activeIndex < 0) {
+                this.activeIndex = delta > 0 ? 0 : this.results.length - 1;
+            } else {
+                const next = this.activeIndex + delta;
+                if (next < 0) {
+                    this.activeIndex = this.results.length - 1;
+                } else if (next >= this.results.length) {
+                    this.activeIndex = 0;
+                } else {
+                    this.activeIndex = next;
+                }
+            }
+
+            this.$nextTick(() => {
+                const el = document.getElementById(this.activeDescendantId);
+                el?.scrollIntoView({ block: 'nearest' });
+            });
+        },
+
+        onKeydown(event) {
+            const key = event.key;
+
+            if (key === 'Escape') {
+                if (this.panelOpen) {
+                    event.preventDefault();
+                    this.closePanel();
+                }
+
+                return;
+            }
+
+            if (key === 'ArrowDown' || key === 'ArrowUp') {
+                if (! this.panelOpen && this.results.length > 0) {
+                    this.panelOpen = true;
+                }
+
+                if (! this.panelOpen && this.query.trim().length >= this.minLength) {
+                    this.panelOpen = true;
+                }
+
+                if (! this.panelOpen) {
+                    return;
+                }
+
+                event.preventDefault();
+                this.moveActive(key === 'ArrowDown' ? 1 : -1);
+
+                return;
+            }
+
+            if (! this.panelOpen) {
+                return;
+            }
+
+            if (key === 'Home' && this.results.length > 0) {
+                event.preventDefault();
+                this.activeIndex = 0;
+
+                return;
+            }
+
+            if (key === 'End' && this.results.length > 0) {
+                event.preventDefault();
+                this.activeIndex = this.results.length - 1;
+
+                return;
+            }
+
+            if (key === 'Enter' && this.activeIndex >= 0 && this.results[this.activeIndex]) {
+                event.preventDefault();
+                this.selectPackage(this.results[this.activeIndex]);
+            }
+        },
+
+        async search() {
+            const term = this.query.trim();
+            this.activeIndex = -1;
+
+            if (term.length < this.minLength) {
+                this.results = [];
+                this.hint = term.length === 0 ? '' : this.strings.typeMore;
+                this.panelOpen = term.length > 0;
+                this.loading = false;
+
+                return;
+            }
+
+            this.panelOpen = true;
+            this.loading = true;
+            this.hint = '';
+
+            if (this.abortController) {
+                this.abortController.abort();
+            }
+
+            this.abortController = new AbortController();
+
+            try {
+                const url = new URL(this.searchUrl, window.location.origin);
+                url.searchParams.set('q', term);
+
+                const response = await fetch(url.toString(), {
+                    method: 'GET',
+                    headers: {
+                        Accept: 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                    credentials: 'same-origin',
+                    signal: this.abortController.signal,
+                });
+
+                if (!response.ok) {
+                    this.results = [];
+                    this.hint = this.strings.noResults;
+
+                    return;
+                }
+
+                const payload = await response.json();
+                this.results = Array.isArray(payload?.data) ? payload.data : [];
+                this.hint = this.results.length === 0 ? this.strings.noResults : '';
+            } catch (error) {
+                if (error?.name === 'AbortError') {
+                    return;
+                }
+
+                this.results = [];
+                this.hint = this.strings.noResults;
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        packageHref(pkgId) {
+            try {
+                const url = new URL(this.homeUrl, window.location.origin);
+                url.searchParams.set('package', String(pkgId));
+
+                return `${url.pathname}${url.search}`;
+            } catch {
+                return `${this.homeUrl}?package=${pkgId}`;
+            }
+        },
+
+        selectPackage(pkg, event = null) {
+            if (!pkg?.id) {
+                return;
+            }
+
+            if (event && (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0)) {
+                return;
+            }
+
+            if (event) {
+                event.preventDefault();
+            }
+
+            this.closePanel();
+            this.$dispatch('open-package-overlay', { packageId: pkg.id });
+        },
+    }));
 
     Alpine.store('cart').init();
 });

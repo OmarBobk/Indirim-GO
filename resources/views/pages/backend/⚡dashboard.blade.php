@@ -1,58 +1,123 @@
 <?php
 
+declare(strict_types=1);
+
+use App\Actions\Dashboard\GetAdminDailyStats;
+use App\Actions\Dashboard\GetAdminOpsInbox;
+use App\Enums\AdminDashboardVariant;
+use App\Fulfillments\CachedFulfillmentAnalyticsProvider;
+use App\Models\User;
+use Illuminate\Contracts\View\View;
+use Livewire\Attributes\On;
 use Livewire\Component;
+use Masmerise\Toaster\Toastable;
 
 new class extends Component
 {
-    public function render()
+    use Toastable;
+
+    /** @var array<string, mixed> */
+    public array $inbox = [];
+
+    /** @var array<string, mixed> */
+    public array $dailyStats = [];
+
+    public string $statsRange = '7d';
+
+    public function mount(): void
     {
-        return $this->view()->title(__('main.dashboard'));
+        abort_unless(auth()->user()?->can('view_dashboard'), 403);
+
+        $user = auth()->user();
+        abort_unless($user instanceof User, 403);
+
+        $this->reloadInbox($user);
+    }
+
+    #[On('admin-ops-inbox-updated')]
+    public function onOpsInboxUpdated(): void
+    {
+        $user = auth()->user();
+        abort_unless($user instanceof User, 403);
+
+        $this->reloadInbox($user);
+    }
+
+    public function setStatsRange(string $range): void
+    {
+        if (! in_array($range, ['today', '7d', 'this_month'], true)) {
+            return;
+        }
+
+        $this->statsRange = $range;
+        $this->loadDailyStats();
+    }
+
+    public function refreshDashboard(): void
+    {
+        $user = auth()->user();
+        abort_unless($user instanceof User, 403);
+
+        app(GetAdminDailyStats::class)->forgetCache();
+        app(CachedFulfillmentAnalyticsProvider::class)->forget();
+
+        $this->reloadInbox($user);
+        $this->success(__('messages.admin_ops_refreshed'));
+    }
+
+    public function render(): View
+    {
+        return $this->view()->title(__('messages.dashboard'));
+    }
+
+    private function reloadInbox(User $user): void
+    {
+        $this->inbox = app(GetAdminOpsInbox::class)->handle($user);
+        $this->loadDailyStats();
+    }
+
+    private function loadDailyStats(): void
+    {
+        if (($this->inbox['variant'] ?? '') !== AdminDashboardVariant::Full->value) {
+            $this->dailyStats = [];
+
+            return;
+        }
+
+        $this->dailyStats = app(GetAdminDailyStats::class)->handle($this->statsRange);
     }
 };
 ?>
 
-<div>
-    <div class="flex h-full w-full flex-1 flex-col gap-4 rounded-xl">
-        <div class="grid auto-rows-min gap-4 md:grid-cols-3">
-            <div class="relative aspect-video overflow-hidden rounded-xl border border-neutral-200 dark:border-neutral-700">
-                <x-placeholder-pattern class="absolute inset-0 size-full stroke-gray-900/20 dark:stroke-neutral-100/20" />
-            </div>
-            <div class="relative aspect-video overflow-hidden rounded-xl border border-neutral-200 dark:border-neutral-700">
-                <x-placeholder-pattern class="absolute inset-0 size-full stroke-gray-900/20 dark:stroke-neutral-100/20" />
-            </div>
-            <div class="relative aspect-video overflow-hidden rounded-xl border border-neutral-200 dark:border-neutral-700">
-                <x-placeholder-pattern class="absolute inset-0 size-full stroke-gray-900/20 dark:stroke-neutral-100/20" />
-            </div>
+<div class="admin-fulfillments flex min-h-full min-w-0 max-w-full flex-1 flex-col gap-6 overflow-x-hidden">
+    <div class="cf-ops-toolbar cf-reveal flex flex-wrap items-center justify-between gap-3">
+        <div class="flex items-center gap-2.5">
+            <span class="cf-live-dot" aria-hidden="true"></span>
+            <flux:text class="text-xs font-semibold tracking-wide text-[var(--cf-muted-foreground)] uppercase">
+                {{ __('messages.admin_ops_live_sync') }}
+            </flux:text>
         </div>
-        <div class="relative h-full flex-1 overflow-hidden rounded-xl border border-neutral-200 dark:border-neutral-700">
-            <x-placeholder-pattern class="absolute inset-0 size-full stroke-gray-900/20 dark:stroke-neutral-100/20" />
-            <flux:dropdown>
-                <flux:button icon:trailing="chevron-down">{{ __('messages.options') }}</flux:button>
-
-                <flux:menu>
-                    <flux:menu.item icon="plus">{{ __('messages.new_post') }}</flux:menu.item>
-
-                    <flux:menu.separator />
-
-                    <flux:menu.submenu :heading="__('messages.sort_by')">
-                        <flux:menu.radio.group>
-                            <flux:menu.radio checked>{{ __('messages.name') }}</flux:menu.radio>
-                            <flux:menu.radio>{{ __('messages.date') }}</flux:menu.radio>
-                            <flux:menu.radio>{{ __('messages.popularity') }}</flux:menu.radio>
-                        </flux:menu.radio.group>
-                    </flux:menu.submenu>
-
-                    <flux:menu.submenu :heading="__('messages.filter')">
-                        <flux:menu.checkbox checked>{{ __('messages.draft') }}</flux:menu.checkbox>
-                        <flux:menu.checkbox checked>{{ __('messages.published') }}</flux:menu.checkbox>
-                        <flux:menu.checkbox>{{ __('messages.archived') }}</flux:menu.checkbox>
-                    </flux:menu.submenu>
-
-                    <flux:menu.separator />
-
-                    <flux:menu.item variant="danger" icon="trash">{{ __('messages.delete') }}</flux:menu.item>
-                </flux:menu>
-            </flux:dropdown>
-        </div>
+        <flux:button
+            size="sm"
+            variant="ghost"
+            icon="arrow-path"
+            wire:click="refreshDashboard"
+            wire:loading.attr="disabled"
+            wire:target="refreshDashboard"
+            data-test="refresh-dashboard"
+            class="transition-opacity"
+        >
+            <span wire:loading.remove wire:target="refreshDashboard">{{ __('messages.admin_ops_refresh') }}</span>
+            <span wire:loading wire:target="refreshDashboard">{{ __('messages.admin_ops_refreshing') }}</span>
+        </flux:button>
     </div>
+
+    <x-admin.ops-dashboard :inbox="$inbox" />
+
+    @if (($inbox['variant'] ?? '') === 'full' && $dailyStats !== [])
+        <x-admin.daily-stats
+            :stats="$dailyStats"
+            :active-range="$statsRange"
+        />
+    @endif
 </div>

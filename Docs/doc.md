@@ -1,7 +1,3 @@
-#1
-- lang is ar user logout -> automatically lang is en 
-
-
 #BUG
 - ###DONE if a non-admin user hit /dashboard he will see forbidden but he should be redirected to 404 error page
 - ###DONE If user click on the logo on the main page it should redirect him to home page
@@ -42,28 +38,64 @@
     - ###DONE: Stop rotating screen on phone.
     - ###DONE: PWA application button should only appear if the user has permission for install_pwa_app
   - ###DONE: ###MAJOR### Record bug system.
-  - ###DONE: Pricing Rules on the custom amount products is always hight
+  - ###DONE: Pricing Rules on the custom amount products are always height
   - ###DONE: Products page: add filter by package.
-  - ###DONE: customer click on buy now button -> if he delete the default quantity value to enter his value he is getting 500 | Server Erorr
+  - ###DONE: customer clicks on buy now button -> if he delete the default quantity value to enter his value he is getting 500 | Server Erorr
   - ###DONE: Pretend a query or function or create a new page where the input is two fields Product serial -> new price ex: SOULCHILL-10K ->  3.00 and by that we can update the prices faster
-      - or maybe we just select the package name and then (supoose there are 10 products belong to this package) on the left hand you see the Product serial and on the right hand input fiels for the new price.
-  - ###DONE: when user trying to login and by accident click the login button twice he is redirected into "Page Expired | 419"
-  - ###DONE: Backend Notification manager add "Mark all as read" button.
+      - or maybe we just select the package name, and then (supoose there are 10 products belong to this package) on the left hand you see the Product serial and on the right hand input fiels for the new price.
+  - ###DONE: when user trying to log in and by accident click the login button twice he is redirected into "Page Expired | 419"
+  - ###DONE: Backend Notification manager adds "Mark all as read" button.
+  - ###DONE: redesign the login, register, reset password pages.
+  - ###DONE: pwa: if a user tries to install the app from chrome → three dots → open karman  instead of open indirimGo
   - ###TODO: Contactus: the messages that come from this form where we should handle them.
   - ###TODO: ###MAJOR### Record website views and how many users are logged in and who are they
   - ###TODO: ###MAJOR### Users hierarchy.
   - ###TODO: Dashboard Page:
     - #TODO: who is online by role
-  - ###TODO: redesign the login, register, reset password pages.
-  - 
+    - #TODO: 
+  - ###TODO: Referral Feature:
+    - ###DONE: Salesperson should be able to create new user under him, see users under him, and update there information (phone, username, password, email, name)
+    - ###DONE: Admin should be able to set the commission percent for every salesperson
+    - ###DONE: Salesperson should see only the dashboard there is no need to access the fulfillments
+    - ###DONE: if admin hit the salesperson dashboard he should be able to select some salesperson to see his states
+    - ###DONE: add the default commission rate to the website settings
+    - ###DONE: salesperson dashboard light mode isn't matched
+  - ###DONE: when new user is created automatically the customer role should be assigned to him.
+  - ###DONE: if admin approve an topup request by accident what he should do ?
+  - ###DONE: orders/{order}: "Delivered payload" should not be hashed like this "••••••••••••••••klds"
+  - ###DONE: Add the payments ways like iban, sham cash wallet barcode, usdt wallt ...etc
+  - ###DONE: Automation manager:
+    - ###DONE: in the record details the Raw log excerpt json array should be sorted 
+    - ###DONE: the screenshots are repeated twice in "automation-worker/storage" and in "storage/app/public"
+    - ###DONE: when user order product and the automation is failed and the fulfillment is also marked as failed now if user tried to order the product again there is no order created instead he gets the order success message whit the order id of the old one (the failed one)
+  - ###DONE: we need some automated process to check if there is any changing in the prices between wassim-store and our entry price.
+  - ###DONE: from now on the fulfillment should never be marked as failed from the automation this decision should be decide by admin only cuz:
+    - Refactor fulfillment automation handling for supplier order statuses
+  - ###TODO: Business 
+    - ###TODO: Create a WhatsApp/Telegram group for potential store owners.
+      - Invite potential customers (store owners) to the group.
+      - Introduce IndirimGo and ask members to review the website and compare the prices.
+      - Collect feedback and suggestions from the group.
+  - ###DONE: Platform / Admin
+    - ###DONE: Implement an Admin Credit Management feature.
+      - Allow admins to manually add credits to a user's account.
+      - Record every credit transaction in the wallet/transaction history.
+      - Include an optional reason/note for each credit adjustment.
+      - Log the action for auditing purposes.
+    - ###DONE: Customer wallet Credit Facility / overdraft (`/credit-facility`, `manage_wallet_credit`).
+      - Grant facility: `credit_enabled` + `credit_limit` + `payment_terms_days` + `credit_status` (Active/Suspended; null when not granted).
+      - Spend via `WalletSpendPolicy`; topups repay debt by arithmetic (no separate repay flow).
+      - Out of scope: debt write-off; purchase path still not on `WalletLedger`.
+
 - Frontend:
   - ###DONE wallet transaction in /wallets should be more described
   - ###DONE Wallet /wallet Request topups form borders remove the ring
   - ###DONE /orders Redesign
   - ###DONE Register form: mask the phone number field
   - ###DONE: Topups: when customer want to request a new topup he should see a toggle button if checked it then he need to upload the proof file if not then he can request the topup without uploading the proof
+  - ###DONE: main page search field is not working
 
-    
+You are an expert UI designer and full-stack Laravel developer with 20+ years exp. You build visually stunning, production-grade interfaces using Laravel 12, Livewire 4, TailwindCSS, and Alpine.js.    
 
 You are an expert UI designer and full-stack Laravel developer with 20+ years exp. You build visually stunning, production-grade interfaces using Laravel 12, Livewire 4, TailwindCSS, and Alpine.js.
 Lets build a new page in the backend Content Management section
@@ -75,18 +107,15 @@ now the idea is like this:
 - the left section will contain fields that filled with the product name, id, entry_price. (these fields disabled)
 - on the right section user can enter the new entry price..
 
-
-
-
 **🔒 Ticket → Audit → Fix → Lock**
 
 
 You a senior prompt Generator with 20+ years exp
-first you can scan the uploaded file to understand my system.
-second lets go Ask → Plan → Agent → Review → Fix to Make Cursor implements this fix as a senior Laravel 12, Livewire 4, Tailwind and Alpinejs
+first you can scan the uploaded files to understand my system.
+second lets go Ask → Plan → Agent → Review → Fix to Make Cursor implements this as a senior Laravel 12, Livewire 4, Tailwind, and Alpinejs
 now sometime cursor is overengineering so tell him what you need to tell to not do that.
 and by there are a lot of places where there a better path for performance for high quality code and fast and even best practices that cursor doesn't take 
-Cursor should take the best approach in everything code readability, maintance, high quality, better performance and all what Expert Developer are care about
+Cursor should take the best approach in everything code readability, maintance, high quality, better performance, and all what Expert Developer are care about
 
 
 1. you give me the Ask mode prompt  → I give you the results you understand system
@@ -94,7 +123,6 @@ Cursor should take the best approach in everything code readability, maintance, 
 3. You refine the plan
 4. Agent → implement
 5. Review → fix issues
-
 
 Composer 1.5
 Opus 4.5
@@ -116,7 +144,7 @@ Gemini 2.5 Flash
 Kimi K2.5
 
 
-
+You are an expert UI designer and full-stack Laravel developer with 20+ years exp. You build visually stunning, production-grade interfaces using Laravel 12, Livewire 4, TailwindCSS, and Alpine.js.
 General Engineering Rules:
 
 * Prefer SIMPLE over FLEXIBLE
@@ -211,3 +239,213 @@ You are an expert UI designer and full-stack Laravel developer. You build visual
 3. Compose into section components (Livewire)
 4. Assemble on the page layout
 5. Add interactivity last (Alpine.js)
+
+
+
+# Role
+You are a senior Laravel 12 engineer implementing an **AI agent surface** for ** İndirimGo ** — aligned with this repo’s architecture, not generic Laravel tutorials.
+Work like a staff engineer
+
+---
+# Repo facts (do not guess — verify in code)
+## Installed / not installed
+| Package | Status |
+|---------|--------|
+| `laravel/mcp` | **Installed** (`^0.x`). Active MCP route: `POST /mcp/ops-assistant` via `OpsAssistantServer` in `routes/ai.php`. Tools under `app/Mcp/Tools/*`. |
+| `laravel/ai` (Laravel AI SDK) | **Installed** (`^0.7`). Ops Assistant agent: `app/Ai/Agents/OpsAssistant.php` + `app/Ai/Tools/*`; UI at `/admin/assistant`. |
+| OpenAI via config | Uses `OPENAI_API_KEY` / `OPENAI_MODEL` / `OPENAI_BASE_URL` (`config/services.php`, `config/ai.php`). No separate Anthropic SDK required for Ops Assistant. |
+| Cloudflare Turnstile | Configured in `config/services.php` (`TURNSTILE_*`); enforced on public registration via `app/Domain/Security/*`. |
+## Stack (hard constraints)
+- PHP 8.4.x, **Laravel 12**, **Livewire 4**, **Tailwind CSS 4.1**, **Alpine.js**
+- **Flux UI FREE only** — no Pro components (published overrides under `resources/views/flux/`)
+- Auth: **Fortify** (username login), **Spatie permissions**; public register: Turnstile + honeypot + rate limits
+- Realtime: **Reverb**
+- Tests: **Pest 3**, format: **Pint**
+- Do **not** add packages unless necessary and justified
+
+## Architecture (where code lives)
+- **Business logic:** `app/Actions/{Domain}/` — never fat Livewire
+- **Orchestration/IO:** `app/Services/`
+- **Pure domain:** `app/Domain/` (Pricing + Security)
+- **Policies + permissions:** respect `config('permission.backend_permissions')` and `backend` middleware (404 on deny)
+- **Full-page Livewire:** `resources/views/pages/**/⚡*.blade.php` (single-file: PHP class + Blade)
+- **Widgets:** `app/Livewire/` + `resources/views/livewire/`
+- **Routes:** `routes/web.php`, `routes/automation.php` (worker), `routes/ai.php` (MCP)
+- **MCP registration pattern:** `routes/ai.php` uses `Laravel\Mcp\Facades\Mcp::web(...)`
+
+
+## Non-negotiable invariants (karman.store)
+1. **Financial truth:** `wallet_transactions` + `wallets.balance` only. Never derive money from `system_events`. Customer balance may be negative under an Active credit facility; spend checks use `WalletSpendPolicy` / `availableToSpend()`.
+2. **No client-trusted pricing/totals** — server repricing via `app/Domain/Pricing/*` and existing Actions.
+3. **Money mutations:** DB transaction + `lockForUpdate` + idempotency keys + exactly one financial `system_events` row; side effects in `DB::afterCommit()`.
+4. **Custom amount:** `requested_amount`, quantity 1 semantics — preserve.
+5. **Backend access:** permission-based; no role-only shortcuts.
+6. **Agent tools default to READ-ONLY** unless I explicitly asked for writes — and writes must go through existing Actions, never raw Eloquent on money paths.
+
+
+---
+# Required reading order (before designing)
+1. `SYSTEM_CONTEXT_CORE_v1.md` — full product + invariants
+2. `Docs/PROJECT_STRUCTURE.md` — layout map (keep in sync with SYSTEM_CONTEXT)
+3. `routes/web.php` — how backend routes and Livewire pages register
+4. `routes/ai.php` — MCP entry point (Ops Assistant already registered)
+5. Sibling **Action** + **Policy** for the domain you touch (e.g. `app/Actions/Orders/*`, `app/Policies/OrderPolicy.php`)
+6. One existing admin Livewire page as UI reference (e.g. `resources/views/livewire/admin/automation-monitor.blade.php` or `resources/views/pages/backend/orders/⚡show.blade.php`)
+7. `.cursor/rules/000-core.mdc`, `200-livewire.mdc` — performance rules
+
+
+
+---
+# Ops Assistant (already shipped — extend, do not rebuild)
+Status as of July 2026: MCP server, AI tools, and admin chat UI are **implemented**. Prefer extending existing pieces over greenfield rewrites.
+
+## Shipped locations
+- **MCP Server:** `app/Mcp/Servers/OpsAssistantServer.php` — `POST /mcp/ops-assistant` (`auth`, `verified`, `backend`, `admin`, `throttle:60,1`)
+- **MCP Tools:** `app/Mcp/Tools/LookupOrderTool.php`, `LookupWalletTool.php`, `LookupFulfillmentTool.php`
+- **AI Agent:** `app/Ai/Agents/OpsAssistant.php` + `app/Ai/Tools/*` → `app/Actions/AiAssistant/Fetch*Data.php`
+- **Chat UI:** `/admin/assistant` — `App\Livewire\Admin\AssistantChat` (`throttle:20,1`)
+- **Tests:** `tests/Feature/AiAssistant/*`
+
+## When extending
+- Keep tools **read-only** unless explicitly asked for writes (writes must call existing Actions + idempotency)
+- Flux free only: `flux:button`, `flux:input`, `flux:heading`, `flux:callout`, etc.
+- Alpine for UI-only state — **no business state in Alpine**
+- Rate-limit chat + MCP; never expose secrets/password hashes
+- Run `vendor/bin/pint --dirty` and targeted Pest tests before finishing
+---
+# Implementation rules (general)
+## Code style
+- `declare(strict_types=1);` on new PHP files
+- Constructor property promotion where appropriate
+- Explicit return types everywhere
+- PHPDoc array shapes where arrays are structured
+- Run `vendor/bin/pint --dirty` before finishing
+## Livewire performance
+- `wire:model.defer` / `lazy` on inputs
+- Computed properties for derived data
+- No side effects in `render()`
+- `wire:key` in loops
+## Testing (mandatory)
+- Pest feature tests for happy/forbidden/not-found paths
+- Mock HTTP/AI clients — don’t hit real APIs in tests
+- Run: `php artisan test --compact tests/Feature/{YourTest}.php`
+## Security
+- Rate limit sensitive routes
+- Gate MCP/admin AI explicitly — **never public MCP**
+- Read-only tools by default; any write tool must call existing Action and reuse idempotency
+---
+
+
+
+
+Phase 1
+UX Architecture (Ask)
+
+↓
+
+Phase 2
+Implementation
+
+↓
+
+Phase 3
+UX Review
+
+↓
+
+Phase 4
+Security Review
+
+↓
+
+Phase 5
+Performance Review
+
+↓
+
+Phase 6
+Production Readiness
+
+↓
+
+Merge
+
+
+1. Landing Experience
+
+2. Browsing Experience
+
+3. Product Experience
+
+4. Checkout Experience
+
+5. Customer Experience
+
+6. Delight Experience
+
+
+
+M1
+├── Shopping
+├── Buy Now
+├── Cart
+├── Checkout
+└── Wallet payment
+
+            ↓
+
+M2
+├── Customer shell
+├── Navigation
+├── Dashboard
+└── Shared UI
+
+            ↓
+
+M3
+├── Home
+├── Recently ordered
+├── Frequently ordered
+├── Quick actions
+└── Better customer dashboard
+
+            ↓
+
+✅ M4
+├── Orders
+├── Delivery workspace
+├── Search
+├── Recovery
+├── Timeline
+├── Order Again
+└── Desktop UX
+
+            ↓
+
+M5
+Notifications & Activity
+
+            ↓
+
+M6
+Wallet & Financial Center
+
+            ↓
+
+M7
+Account / Settings
+
+            ↓
+
+M8
+Supplier Automation
+
+            ↓
+
+M9
+Admin Modernization
+
+            ↓
+
+M10
+Platform Polish

@@ -39,7 +39,7 @@ return [
                 'type' => 'image/png',
             ],
             [
-                'src' => 'log_lg.png',
+                'src' => 'logo _lg.png',
                 'sizes' => '512x512',
                 'type' => 'image/png',
             ],

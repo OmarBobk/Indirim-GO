@@ -4,32 +4,33 @@ declare(strict_types=1);
 
 namespace App\Livewire\Sidebar;
 
-use App\Enums\TopupRequestStatus;
-use App\Models\TopupRequest;
+use App\Livewire\Sidebar\Concerns\RefreshesSidebarMetric;
 use Livewire\Attributes\On;
 use Livewire\Component;
 
 class TopupIndicator extends Component
 {
-    public int $count = 0;
+    use RefreshesSidebarMetric;
 
     public function mount(): void
+    {
+        $this->mountRefreshesSidebarMetric();
+    }
+
+    #[On('topup-list-updated')]
+    public function onTopupListUpdated(): void
     {
         $this->refreshCount();
     }
 
-    #[On('topup-list-updated')]
-    public function refreshCount(): void
+    protected function sidebarMetricKey(): string
     {
-        if (! auth()->check() || ! auth()->user()->can('manage_topups')) {
-            $this->count = 0;
+        return 'pending_topups';
+    }
 
-            return;
-        }
-
-        $this->count = TopupRequest::query()
-            ->where('status', TopupRequestStatus::Pending)
-            ->count();
+    protected function canViewSidebarMetric(): bool
+    {
+        return auth()->user()?->can('manage_topups') ?? false;
     }
 
     public function render()

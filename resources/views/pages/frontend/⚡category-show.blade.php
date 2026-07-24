@@ -49,8 +49,8 @@ new #[Layout('layouts::frontend')] class extends Component
 };
 ?>
 
-<div class="mx-auto flex w-full max-w-7xl flex-col gap-5 px-2 py-3 sm:px-0 sm:py-4" x-data="{ viewMode: 'grid' }">
-    <section class="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-800">
+<div class="storefront-page storefront-page--browse mx-auto flex w-full flex-col gap-5" x-data="{ viewMode: 'grid' }" data-storefront-page="browse">
+    <section class="storefront-card storefront-card--pad-none overflow-hidden">
         <div class="relative">
             <div class="sm:aspect-[16/4] w-full overflow-hidden bg-zinc-100 dark:bg-zinc-900">
                 <img
@@ -122,7 +122,7 @@ new #[Layout('layouts::frontend')] class extends Component
         </div>
     </section>
 
-    <section class="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-800 sm:p-6">
+    <section class="storefront-card storefront-card--pad-md">
         <div class="mb-4 flex items-center justify-between gap-3">
             <flux:heading size="lg" class="text-zinc-900 dark:text-zinc-100">
                 {{ __('messages.packages') }}
@@ -205,5 +205,4 @@ new #[Layout('layouts::frontend')] class extends Component
         @endif
     </section>
 
-    <livewire:main.buy-now-modal />
 </div>

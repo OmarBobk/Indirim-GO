@@ -18,7 +18,6 @@ new class extends Component
         $resolver = app(ResolvePackageRequirements::class);
         $priceService = app(CustomerPriceService::class);
         $user = auth()->user();
-        $overrides = $user !== null ? $priceService->getUserOverridesFor($user) : [];
 
         $this->products = Product::query()
             ->select([
@@ -45,17 +44,14 @@ new class extends Component
             ->orderBy('name')
             ->limit(8)
             ->get()
-            ->map(fn (Product $product): array => $this->mapProduct($product, $resolver, $priceService, $user, $placeholderImage, $overrides))
+            ->map(fn (Product $product): array => $this->mapProduct($product, $resolver, $priceService, $user, $placeholderImage))
             ->all();
     }
 
-    /**
-     * @param  array<int, float>  $overrides
-     */
-    private function mapProduct(Product $product, ResolvePackageRequirements $resolver, CustomerPriceService $priceService, ?\App\Models\User $user, string $placeholderImage, array $overrides): array
+    private function mapProduct(Product $product, ResolvePackageRequirements $resolver, CustomerPriceService $priceService, ?\App\Models\User $user, string $placeholderImage): array
     {
         $resolved = $resolver->handle($product->package?->requirements ?? collect());
-        $prices = $priceService->priceFor($product, $user, $overrides);
+        $prices = $priceService->priceFor($product, $user);
 
         return [
             'id' => $product->id,
