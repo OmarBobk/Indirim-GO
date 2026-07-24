@@ -131,12 +131,8 @@ new #[Layout('layouts::frontend')] class extends Component
 };
 ?>
 
-<div class="mx-auto w-full max-w-4xl px-3 py-6 sm:px-0 sm:py-10" data-test="orders-page" data-section="orders-page">
-    <div class="mb-6 flex items-center">
-        <x-back-button />
-    </div>
-
-    <section class="space-y-6 sm:space-y-8">
+<x-storefront.page width="work" data-test="orders-page" data-section="orders-page">
+    <section class="storefront-section-stack">
         <x-orders.header />
 
         <x-orders.summary-strip-placeholder />
@@ -155,4 +151,4 @@ new #[Layout('layouts::frontend')] class extends Component
             :empty-state="$this->presenter->emptyState($this->activeFilter, $this->search)"
         />
     </section>
-</div>
+</x-storefront.page>

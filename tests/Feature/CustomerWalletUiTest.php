@@ -91,7 +91,7 @@ test('header shows green prepaid balance and credit limit hint when facility is 
         ->assertSeeHtml('>'.e($limitAmount).'</span>')
         ->assertDontSeeHtml('hidden text-[10px] font-medium text-zinc-500 dark:text-zinc-400 lg:inline')
         ->assertSeeHtml('data-test="wallet-chrome-summary"')
-        ->assertSeeHtml('data-test="wallet-add-sufficient"')
+        ->assertSeeHtml('data-test="wallet-chrome-open"')
         ->assertSeeHtml('data-wallet-cta-badge="'.e($ctaBadge).'"')
         ->assertSeeHtml('data-test="wallet-nav-amount"');
 });

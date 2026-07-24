@@ -29,7 +29,7 @@
     >
         <script>window.__addToCartMessageTemplate = @json(__('main.add_to_cart_for'));</script>
 
-        <x-storefront.mobile-top-bar :wallet-display="$walletDisplay" />
+        <x-storefront.mobile-top-bar />
 
         <div class="hidden lg:block" data-storefront-shell="desktop-header">
         <flux:header
@@ -62,115 +62,50 @@
                 <div class="mx-auto w-full h-full [:where(&)]:max-w-7xl  items-center">
 
 
-                <div class="flex flex-wrap sm:flex-nowrap justify-between gap-2 sm:gap-4 items-center w-full mb-3 sm:mb-0">
+                <div class="flex flex-nowrap items-center justify-between gap-3 sm:gap-4 w-full mb-3 sm:mb-0">
                     <!-- Logo -->
-                    <x-app-brand-logo wire:navigate class="order-1" />
+                    <x-app-brand-logo wire:navigate class="order-1 shrink-0" />
 
-                    <!-- Search Bar (Alpine + JSON API; packages only, inline results) -->
-                    <div class="w-full max-w-3xl mx-auto sm:order-2 order-3">
-                        <x-storefront.package-search />
-                    </div>
+                    {{-- Authenticated home: Command Zone owns search (single owner). --}}
+                    @unless (auth()->check() && request()->routeIs('home'))
+                        <!-- Search Bar (Alpine + JSON API; packages only, inline results) -->
+                        <div class="min-w-0 flex-1 max-w-3xl mx-auto order-3 sm:order-2" data-test="desktop-header-package-search">
+                            <x-storefront.package-search />
+                        </div>
+                    @endunless
 
                     <!-- Action Icons -->
-                    <div class="flex items-center sm:gap-2 shrink-0 sm:order-3 order-2">
+                    <div class="storefront-shell-utilities order-2 sm:order-3" data-test="desktop-shell-utilities">
                         <x-admin.usd-try-rate-panel variant="storefront" />
-                        <!-- Wishlist Icon -->
-{{--                        <flux:button--}}
-{{--                            variant="ghost"--}}
-{{--                            icon="heart"--}}
-{{--                            class="!h-10 !w-10 !p-0 [&>div>svg]:size-5 !text-zinc-700 dark:!text-zinc-300--}}
-{{--                            hover:!bg-zinc-200 hover:cursor-pointer dark:hover:!bg-zinc-800 rounded-full"--}}
-{{--                            aria-label="Favoriler"--}}
-{{--                        />--}}
 
-                        <!-- Shopping Cart Icon with Badge -->
                         <livewire:cart.dropdown />
 
                         @auth
-                        <!-- Notifications Bell -->
                         <livewire:notification-bell-dropdown />
                         @endauth
 
-                        <!-- User Profile Icon -->
                         <div x-data x-on:scroll.window="const p = $el.querySelector('[popover]'); if (p) { try { p.hidePopover(); } catch (_) {} }">
                         <flux:dropdown position="bottom" align="end">
                             <flux:button
                                 variant="ghost"
                                 icon="user"
-                                class="!h-10 !w-10 !p-0 [&>div>svg]:size-5 !text-zinc-700 dark:!text-zinc-300
+                                class="storefront-shell-icon-btn !h-10 !w-10 !p-0 [&>div>svg]:size-5 !text-zinc-700 dark:!text-zinc-300
                                 hover:cursor-pointer hover:!bg-zinc-200 dark:hover:!bg-zinc-800 rounded-full transition-colors
                                 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--color-accent)/40 focus-visible:ring-offset-2
                                 focus-visible:ring-offset-white dark:focus-visible:ring-offset-zinc-900"
-                                aria-label="Kullanıcı"
+                                aria-label="{{ __('main.account_menu') }}"
                             />
                             <flux:navmenu class="min-w-48 rounded-xl border border-zinc-200 bg-white p-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
                                 @auth
                                     <flux:navmenu.item
                                         icon="user"
-                                        href="{{ route('profile') }}"
+                                        href="{{ route('account') }}"
+                                        wire:navigate
                                         class="rounded-lg !text-zinc-700 hover:!bg-zinc-100 focus-visible:!bg-zinc-100 dark:!text-zinc-200 dark:hover:!bg-zinc-800 dark:focus-visible:!bg-zinc-800"
+                                        data-test="desktop-account-hub"
                                     >
-                                        {{ __('main.profile') }}
+                                        {{ __('main.account') }}
                                     </flux:navmenu.item>
-                                    <flux:navmenu.item
-                                        icon="bell"
-                                        href="{{ route('notifications.index') }}"
-                                        class="rounded-lg !text-zinc-700 hover:!bg-zinc-100 focus-visible:!bg-zinc-100 dark:!text-zinc-200 dark:hover:!bg-zinc-800 dark:focus-visible:!bg-zinc-800"
-                                    >
-                                        {{ __('messages.notifications') }}
-                                    </flux:navmenu.item>
-                                    <flux:navmenu.item
-                                        icon="wallet"
-                                        href="{{ route('wallet') }}"
-                                        class="rounded-lg !text-zinc-700 hover:!bg-zinc-100 focus-visible:!bg-zinc-100 dark:!text-zinc-200 dark:hover:!bg-zinc-800 dark:focus-visible:!bg-zinc-800"
-                                    >
-                                        {{ __('main.wallet') }}
-                                    </flux:navmenu.item>
-                                    <flux:navmenu.item
-                                        icon="shopping-bag"
-                                        href="{{ route('orders.index') }}"
-                                        class="rounded-lg !text-zinc-700 hover:!bg-zinc-100 focus-visible:!bg-zinc-100 dark:!text-zinc-200 dark:hover:!bg-zinc-800 dark:focus-visible:!bg-zinc-800"
-                                    >
-                                        {{ __('main.my_orders') }}
-                                    </flux:navmenu.item>
-                                    @can('view_referrals')
-                                        <flux:navmenu.item
-                                            icon="link"
-                                            href="{{ route('referral-link') }}"
-                                            class="rounded-lg !text-zinc-700 hover:!bg-zinc-100 focus-visible:!bg-zinc-100 dark:!text-zinc-200 dark:hover:!bg-zinc-800 dark:focus-visible:!bg-zinc-800"
-                                            wire:navigate
-                                        >
-                                            {{ __('main.referral_link') }}
-                                        </flux:navmenu.item>
-                                    @endcan
-                                    @if (auth()->user()?->loyaltyRole() !== null)
-                                        <flux:navmenu.item
-                                            icon="sparkles"
-                                            href="{{ route('loyalty') }}"
-                                            class="rounded-lg !text-zinc-700 hover:!bg-zinc-100 focus-visible:!bg-zinc-100 dark:!text-zinc-200 dark:hover:!bg-zinc-800 dark:focus-visible:!bg-zinc-800"
-                                        >
-                                            {{ __('main.loyalty') }}
-                                        </flux:navmenu.item>
-                                    @endif
-                                    @can('view_dashboard')
-                                        <flux:navmenu.item
-                                            icon="home"
-                                            href="{{ route('dashboard') }}"
-                                            class="rounded-lg !text-zinc-700 hover:!bg-zinc-100 focus-visible:!bg-zinc-100 dark:!text-zinc-200 dark:hover:!bg-zinc-800 dark:focus-visible:!bg-zinc-800"
-                                        >
-                                            {{ __('main.dashboard') }}
-                                        </flux:navmenu.item>
-                                    @endcan
-                                    @can('view_referrals')
-                                        <flux:navmenu.item
-                                            icon="chart-bar"
-                                            href="{{ route('salesperson.dashboard') }}"
-                                            class="rounded-lg !text-zinc-700 hover:!bg-zinc-100 focus-visible:!bg-zinc-100 dark:!text-zinc-200 dark:hover:!bg-zinc-800 dark:focus-visible:!bg-zinc-800"
-                                            wire:navigate
-                                        >
-                                            {{ __('messages.salesperson_dashboard') }}
-                                        </flux:navmenu.item>
-                                    @endcan
                                     <form method="POST" action="{{ route('logout') }}" class="w-full">
                                         @csrf
                                         <flux:menu.item
@@ -206,8 +141,8 @@
                         </flux:dropdown>
                         </div>
 
-
                         @auth
+                            <span class="storefront-shell-utilities__divider" aria-hidden="true"></span>
                             @if (\App\Models\WebsiteSetting::getPricesVisible() && $walletDisplay)
                                 <div
                                     class="relative shrink-0"
@@ -218,13 +153,15 @@
                                 >
                                     <button
                                         type="button"
-                                        class="inline-flex shrink-0 items-center justify-center rounded-md px-1.5 py-0.5 transition hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--color-accent)/40 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:hover:bg-zinc-800 dark:focus-visible:ring-offset-zinc-900"
+                                        class="storefront-shell-icon-btn inline-flex shrink-0 items-center justify-center rounded-md px-1.5 py-0.5 transition hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--color-accent)/40 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:hover:bg-zinc-800 dark:focus-visible:ring-offset-zinc-900"
                                         aria-label="{{ __('main.wallet') }} — {{ $walletDisplay->navTitle() }}"
                                         aria-expanded="false"
                                         aria-haspopup="dialog"
                                         x-bind:aria-expanded="open.toString()"
                                         x-on:click="open = ! open"
                                         data-test="wallet-balance"
+                                        data-wallet-tone="{{ $walletDisplay->tone() }}"
+                                        data-wallet-cta-badge="{{ $walletDisplay->formattedCtaBadge() }}"
                                     >
                                         <x-wallet.nav-amount
                                             :display="$walletDisplay"
@@ -260,7 +197,7 @@
                                 <a
                                     href="{{ route('wallet') }}"
                                     wire:navigate
-                                    class="inline-flex items-center gap-2 px-1 py-2 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-100 sm:px-3 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                                    class="storefront-shell-icon-btn inline-flex size-10 items-center justify-center rounded-full text-zinc-700 transition hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--color-accent)/40 dark:text-zinc-200 dark:hover:bg-zinc-800"
                                     aria-label="{{ __('main.wallet') }}"
                                     data-test="wallet-balance"
                                 >
@@ -269,15 +206,30 @@
                             @endif
                         @endauth
 
-                        <flux:button x-data x-on:click="$flux.dark = ! $flux.dark" icon="moon" variant="subtle" aria-label="Toggle dark mode" />
+                        <span class="storefront-shell-utilities__divider" aria-hidden="true"></span>
+                        <flux:button
+                            x-data
+                            x-on:click="$flux.dark = ! $flux.dark"
+                            icon="moon"
+                            variant="subtle"
+                            class="storefront-shell-icon-btn shrink-0"
+                            aria-label="{{ __('main.toggle_theme') }}"
+                            data-test="desktop-theme-toggle"
+                        />
                     </div>
                 </div>
                 <flux:separator class="my-3 sm:block hidden" />
 
+                @php
+                    $browseNavItems = \App\Support\StorefrontShell::browseNavItems();
+                @endphp
                 <nav
                     x-data="categoryNav()"
                     x-init="init()"
                     class=" border-zinc-200 dark:border-zinc-800 dark:bg-zinc-900"
+                    aria-label="{{ __('main.browse_navigation') }}"
+                    data-test="storefront-browse-nav"
+                    data-storefront-shell="browse-nav"
                 >
                     <div class="mx-auto max-w-7xl ">
                         <div class="relative">
@@ -309,59 +261,29 @@
                                 x-on:scroll="update()"
                                 class="overflow-x-auto scrollbar-hide sm:mx-12"
                             >
-                                <!-- Side padding keeps the Add Credit CTA fully reachable on narrow RTL/LTR phones -->
                                 <flux:navbar class="gap-3 !py-0 pe-4 ps-1 sm:gap-4 sm:pe-0 sm:ps-0 ltr:lg:pr-12 rtl:lg:pl-12 justify-start sm:justify-center">
-                                    <flux:navbar.item class="border !border-accent  after:!h-0 {{request()->routeIs('home') ? '!bg-accent hover:!bg-accent-hover !text-accent-foreground' : ''}}"
-                                                      data-nav-active="{{ request()->routeIs('home') ? 'true' : 'false' }}"
-                                                      href="{{route('home')}}" icon="home">{{__('main.home')}}</flux:navbar.item>
-                                    <flux:navbar.item class="border !border-accent after:!h-0 {{request()->routeIs('orders.index') ? '!bg-accent hover:!bg-accent-hover !text-accent-foreground' : ''}}"
-                                                      data-nav-active="{{ request()->routeIs('orders.index') ? 'true' : 'false' }}"
-                                                      href="{{route('orders.index')}}">{{__('main.my_orders')}}</flux:navbar.item>
-                                    @if (\App\Models\WebsiteSetting::getPricesVisible() && $walletDisplay)
-                                    <flux:navbar.item class="shrink-0 border !border-accent after:!h-0 {{request()->routeIs('wallet') ? '!bg-accent hover:!bg-accent-hover !text-accent-foreground' : ''}}"
-                                                      data-nav-active="{{ request()->routeIs('wallet') ? 'true' : 'false' }}"
-                                                      href="{{route('wallet')}}"
-                                                      wire:navigate
-                                                      title="{{ $walletDisplay->navTitle() }}"
-                                                      badge="{{ $walletDisplay->formattedCtaBadge() }}"
-                                                      badge:color="{{ $walletDisplay->badgeColor() }}"
-                                                      badge:class="ms-2 max-w-[11rem] truncate whitespace-nowrap px-2 tabular-nums sm:max-w-none sm:ms-3"
-                                                      data-test="wallet-add-sufficient"
-                                                      data-wallet-tone="{{ $walletDisplay->tone() }}"
-                                                      data-wallet-cta-badge="{{ $walletDisplay->formattedCtaBadge() }}"
-                                                      icon="plus">{{__('main.add_sufficient')}}</flux:navbar.item>
-                                    @else
-                                    <flux:navbar.item class="shrink-0 border !border-accent after:!h-0 {{request()->routeIs('wallet') ? '!bg-accent hover:!bg-accent-hover !text-accent-foreground' : ''}}"
-                                                      data-nav-active="{{ request()->routeIs('wallet') ? 'true' : 'false' }}"
-                                                      href="{{route('wallet')}}"
-                                                      wire:navigate
-                                                      icon="plus">{{__('main.add_sufficient')}}</flux:navbar.item>
-                                    @endif
-                                    @if (auth()->user()?->loyaltyRole() !== null)
-                                        <flux:navbar.item class="border !border-accent after:!h-0 {{ request()->routeIs('loyalty') ? '!bg-accent hover:!bg-accent-hover !text-accent-foreground' : '' }}"
-                                                          data-nav-active="{{ request()->routeIs('loyalty') ? 'true' : 'false' }}"
-                                                          href="{{ route('loyalty') }}"
-                                                          wire:navigate
-                                                          icon="sparkles">{{ __('main.loyalty') }}</flux:navbar.item>
-                                    @endif
-                                    @auth
-                                        <flux:navbar.item class="border !border-accent after:!h-0 {{ request()->routeIs('profile') ? '!bg-accent hover:!bg-accent-hover !text-accent-foreground' : '' }}"
-                                                          data-nav-active="{{ request()->routeIs('profile') ? 'true' : 'false' }}"
-                                                          href="{{ route('profile') }}"
-                                                          wire:navigate
-                                                          icon="user">{{ __('main.profile') }}</flux:navbar.item>
-                                    @endauth
-                                    <flux:navbar.item class="border !border-accent after:!h-0 {{ request()->routeIs('contact') ? '!bg-accent hover:!bg-accent-hover !text-accent-foreground' : '' }}" data-nav-active="{{ request()->routeIs('contact') ? 'true' : 'false' }}"
-                                                      href="{{ route('contact') }}" wire:navigate>{{ __('main.contact_us') }}</flux:navbar.item>
-
-                                    <!-- <flux:dropdown class="border !border-accent rounded-lg">
-                                        <flux:navbar.item icon:trailing="chevron-down" class="!border-accent">Account</flux:navbar.item>
-                                        <flux:navmenu class="!border-accent">
-                                            <flux:navmenu.item href="#">Profile</flux:navmenu.item>
-                                            <flux:navmenu.item href="#">Settings</flux:navmenu.item>
-                                            <flux:navmenu.item href="#">Billing</flux:navmenu.item>
-                                        </flux:navmenu>
-                                    </flux:dropdown> -->
+                                    @foreach ($browseNavItems as $browseItem)
+                                        @if ($browseItem['icon'])
+                                            <flux:navbar.item
+                                                wire:key="browse-nav-{{ $browseItem['key'] }}"
+                                                class="border !border-accent after:!h-0 {{ $browseItem['active'] ? '!bg-accent hover:!bg-accent-hover !text-accent-foreground' : '' }}"
+                                                data-nav-active="{{ $browseItem['active'] ? 'true' : 'false' }}"
+                                                data-test="browse-nav-{{ $browseItem['key'] }}"
+                                                href="{{ $browseItem['href'] }}"
+                                                wire:navigate
+                                                icon="{{ $browseItem['icon'] }}"
+                                            >{{ $browseItem['label'] }}</flux:navbar.item>
+                                        @else
+                                            <flux:navbar.item
+                                                wire:key="browse-nav-{{ $browseItem['key'] }}"
+                                                class="border !border-accent after:!h-0 {{ $browseItem['active'] ? '!bg-accent hover:!bg-accent-hover !text-accent-foreground' : '' }}"
+                                                data-nav-active="{{ $browseItem['active'] ? 'true' : 'false' }}"
+                                                data-test="browse-nav-{{ $browseItem['key'] }}"
+                                                href="{{ $browseItem['href'] }}"
+                                                wire:navigate
+                                            >{{ $browseItem['label'] }}</flux:navbar.item>
+                                        @endif
+                                    @endforeach
                                 </flux:navbar>
                             </div>
 

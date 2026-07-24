@@ -30,7 +30,7 @@
 
 {{-- Hierarchy: status → products → time → total/payment → actions --}}
 <article
-    class="overflow-hidden rounded-2xl border border-zinc-200/90 bg-white shadow-sm transition hover:border-zinc-300 hover:shadow-md dark:border-zinc-700/80 dark:bg-zinc-900 dark:hover:border-zinc-600"
+    class="storefront-card storefront-card--interactive storefront-card--pad-none overflow-hidden"
     data-test="order-card"
     data-section="orders-card"
 >

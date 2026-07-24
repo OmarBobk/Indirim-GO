@@ -40,19 +40,17 @@ new class extends Component
 };
 ?>
 
-<div
-    class="mx-auto w-full max-w-3xl px-4 py-8"
+<x-storefront.page
+    width="work"
     x-data="{ newIds: [] }"
     x-on:notification-received.window="const id = $event.detail?.id; if (id) newIds.push(id); $wire.$refresh(); setTimeout(() => { const i = newIds.indexOf(id); if (i !== -1) newIds.splice(i, 1); }, 8000)"
 >
-    <div class="mb-6">
-        <flux:heading size="lg" class="text-zinc-900 dark:text-zinc-100">
-            {{ __('messages.notifications') }}
-        </flux:heading>
-        <flux:text class="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-            {{ __('messages.notifications_intro') }}
-        </flux:text>
-    </div>
+    <x-storefront.page-header
+        :title="__('messages.notifications')"
+        :description="__('messages.notifications_intro')"
+        :show-back="true"
+        :back-fallback="route('account')"
+    />
 
     <div class="flex flex-col gap-3">
         @forelse ($this->notifications as $notification)
@@ -63,29 +61,37 @@ new class extends Component
                 $url = $data['url'] ?? null;
                 $isUnread = $notification->read_at === null;
             @endphp
-            <div
+            <x-storefront.card
                 wire:key="notif-{{ $notification->id }}"
-                class="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 {{ $isUnread ? 'border-sky-300 dark:border-sky-700' : '' }}"
+                padding="sm"
+                @class([
+                    'border-sky-300 dark:border-sky-700' => $isUnread,
+                ])
             >
                 <div class="flex items-start justify-between gap-3">
                     <div class="min-w-0 flex-1">
-                        <div class="flex items-center gap-2 flex-wrap">
-                            <flux:heading size="sm" class="text-zinc-900 dark:text-zinc-100">{{ $title }}</flux:heading>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <flux:heading size="sm" class="storefront-type-section text-zinc-900 dark:text-zinc-100">{{ $title }}</flux:heading>
+                            @if ($isUnread)
+                                <flux:badge color="sky" size="sm" class="shrink-0">
+                                    {{ __('messages.unread') }}
+                                </flux:badge>
+                            @endif
                             <span
                                 x-show="typeof newIds !== 'undefined' && newIds.includes('{{ $notification->id }}')"
-                                x-transition:enter="transition ease-out duration-200"
+                                x-transition:enter="transition ease-out duration-150"
                                 x-transition:enter-start="opacity-0 scale-90"
                                 x-transition:enter-end="opacity-100 scale-100"
                                 x-transition:leave="transition ease-in duration-150"
                                 x-transition:leave-start="opacity-100"
                                 x-transition:leave-end="opacity-0"
-                                class="shrink-0 rounded-full bg-emerald-500 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white dark:bg-emerald-600"
+                                class="shrink-0"
                             >
-                                {{ __('messages.new') }}
+                                <flux:badge color="green" size="sm">{{ __('messages.new') }}</flux:badge>
                             </span>
                         </div>
-                        <flux:text class="mt-1 text-sm text-zinc-600 dark:text-zinc-400">{{ $message }}</flux:text>
-                        <flux:text class="mt-2 text-xs text-zinc-500 dark:text-zinc-500">
+                        <flux:text class="storefront-type-body mt-1 text-zinc-600 dark:text-zinc-400">{{ $message }}</flux:text>
+                        <flux:text class="storefront-type-meta mt-2">
                             {{ $notification->created_at?->diffForHumans() }}
                         </flux:text>
                     </div>
@@ -112,11 +118,34 @@ new class extends Component
                         @endif
                     </div>
                 </div>
-            </div>
+            </x-storefront.card>
         @empty
-            <div class="rounded-xl border border-zinc-200 bg-zinc-50 px-6 py-12 text-center dark:border-zinc-700 dark:bg-zinc-800/60">
-                <flux:text class="text-zinc-600 dark:text-zinc-400">{{ __('messages.no_notifications') }}</flux:text>
-            </div>
+            <x-storefront.empty
+                icon="bell"
+                :title="__('messages.no_notifications')"
+                :description="__('messages.no_notifications_hint')"
+                data-test="notifications-empty"
+            >
+                <x-slot:actions>
+                    <flux:button
+                        variant="primary"
+                        href="{{ route('home') }}"
+                        wire:navigate
+                        class="!bg-accent !text-accent-foreground hover:!bg-accent-hover"
+                        data-test="notifications-empty-home"
+                    >
+                        {{ __('messages.notifications_continue_shopping') }}
+                    </flux:button>
+                    <flux:button
+                        variant="ghost"
+                        href="{{ route('orders.index') }}"
+                        wire:navigate
+                        data-test="notifications-empty-orders"
+                    >
+                        {{ __('main.my_orders') }}
+                    </flux:button>
+                </x-slot:actions>
+            </x-storefront.empty>
         @endforelse
     </div>
 
@@ -125,4 +154,4 @@ new class extends Component
             {{ $this->notifications->links() }}
         </div>
     @endif
-</div>
+</x-storefront.page>

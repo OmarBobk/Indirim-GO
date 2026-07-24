@@ -20,7 +20,7 @@
 @endphp
 
 <div
-    {{ $attributes->merge(['class' => 'rounded-2xl border border-zinc-200 bg-gradient-to-br from-violet-50/80 to-amber-50/60 p-4 shadow-sm dark:border-zinc-700 dark:from-violet-950/30 dark:to-amber-950/20 sm:p-6']) }}
+    {{ $attributes->class(['storefront-card storefront-card--pad-md bg-gradient-to-br from-violet-50/80 to-amber-50/60 dark:from-violet-950/30 dark:to-amber-950/20']) }}
 >
     @if ($layout === 'full')
         <div class="flex items-center gap-3">

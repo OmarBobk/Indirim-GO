@@ -5,6 +5,7 @@ use App\Enums\TopupRequestStatus;
 use App\Models\PaymentMethod;
 use App\Models\TopupRequest;
 use App\Models\WebsiteSetting;
+use App\Support\PurchaseResumeIntent;
 use Illuminate\Support\Collection;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -117,6 +118,14 @@ new #[Layout('layouts::frontend')] class extends Component
         session()->flash('topup_submitted', true);
         $this->success(__('messages.topup_request_created'));
 
+        $resumeUrl = PurchaseResumeIntent::resumeUrl();
+        if ($resumeUrl !== null) {
+            session()->flash('purchase_resume_ready', true);
+            $this->redirect($resumeUrl, navigate: true);
+
+            return;
+        }
+
         $this->redirect(route('wallet'), navigate: true);
     }
 
@@ -136,31 +145,25 @@ new #[Layout('layouts::frontend')] class extends Component
     $topupCurrencySign = $topupDisplayCurrency === 'TRY' ? '₺' : '$';
 @endphp
 
-<div
-    class="mx-auto w-full max-w-2xl px-3 py-6 sm:px-0 sm:py-10"
+<x-storefront.page
+    width="focus"
     data-test="wallet-topup-page"
     data-wallet-payment-root
     x-data="{ get selectedId() { return $wire.paymentMethodId }, set selectedId(value) { $wire.paymentMethodId = value } }"
 >
-    <div class="mb-4 flex items-center gap-3">
-        <x-back-button :fallback="route('wallet')" />
-    </div>
-
-    <header class="mb-6 space-y-2">
-        <flux:heading size="lg" class="text-zinc-900 dark:text-zinc-100">
-            {{ __('messages.wallet_add_funds') }}
-        </flux:heading>
-        <flux:text class="text-sm text-zinc-600 dark:text-zinc-400">
-            {{ __('messages.wallet_topup_intro') }}
-        </flux:text>
-    </header>
+    <x-storefront.page-header
+        :title="__('messages.wallet_add_funds')"
+        :description="__('messages.wallet_topup_intro')"
+        :show-back="true"
+        :back-fallback="route('wallet')"
+    />
 
     @if ($this->hasPendingTopup)
         <flux:callout class="mb-6" variant="warning" icon="clock">
             {{ __('messages.wallet_topup_pending_banner') }}
         </flux:callout>
     @else
-        <section class="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 sm:p-6">
+        <section class="storefront-card storefront-card--pad-md">
             <form class="space-y-5" wire:submit.prevent="submitTopup">
                 <flux:input
                     class:input="focus:!border-(--color-accent) focus:!border-1 focus:!ring-0 focus:!outline-none focus:!ring-offset-0"
@@ -226,4 +229,4 @@ new #[Layout('layouts::frontend')] class extends Component
             </form>
         </section>
     @endif
-</div>
+</x-storefront.page>

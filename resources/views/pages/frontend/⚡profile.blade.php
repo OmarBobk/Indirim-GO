@@ -115,12 +115,10 @@ new #[Layout('layouts::frontend')] class extends Component
     $money = FrontendMoney::for(auth()->user());
 @endphp
 
-<div class="mx-auto w-full max-w-4xl px-3 py-6 sm:px-0 sm:py-10">
-    <div class="mb-4 flex items-center">
-        <x-back-button />
-    </div>
+<x-storefront.page width="work">
+    <x-storefront.page-header :show-back="true" :back-fallback="route('account')" />
 
-    <section class="mb-6 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 sm:p-6">
+    <x-storefront.card class="mb-6">
         <div class="flex flex-wrap items-start gap-4 sm:gap-6">
             <div class="shrink-0">
                 @php $user = auth()->user(); @endphp
@@ -137,16 +135,16 @@ new #[Layout('layouts::frontend')] class extends Component
                 @endif
             </div>
             <div class="min-w-0 flex-1 space-y-1">
-                <flux:heading size="lg" class="text-zinc-900 dark:text-zinc-100">{{ $user->name }}</flux:heading>
-                <flux:text class="text-sm text-zinc-600 dark:text-zinc-400">{{ $user->username }}</flux:text>
-                <flux:text class="block text-sm text-zinc-600 dark:text-zinc-400">{{ $user->email }}</flux:text>
+                <flux:heading size="lg" class="storefront-type-title text-zinc-900 dark:text-zinc-100">{{ $user->name }}</flux:heading>
+                <flux:text class="storefront-type-body text-zinc-600 dark:text-zinc-400">{{ $user->username }}</flux:text>
+                <flux:text class="storefront-type-body block text-zinc-600 dark:text-zinc-400">{{ $user->email }}</flux:text>
                 @if ($user->phone || $user->country_code)
-                    <flux:text class="block text-sm text-zinc-600 dark:text-zinc-400 {{ app()->getLocale() === 'ar' ? 'text-right' : '' }}" dir="ltr">
+                    <flux:text class="storefront-type-body block text-zinc-600 dark:text-zinc-400 {{ app()->getLocale() === 'ar' ? 'text-right' : '' }}" dir="ltr">
                         {{ $user->country_code ? $user->country_code . ' ' : '' }}{{ $user->phone ?? '' }}
                     </flux:text>
                 @endif
                 @if ($user->timezone)
-                    <flux:text class="block text-sm text-zinc-500 dark:text-zinc-400">
+                    <flux:text class="storefront-type-meta block">
                         {{ $user->timezone->displayName() }}
                     </flux:text>
                 @endif
@@ -163,13 +161,13 @@ new #[Layout('layouts::frontend')] class extends Component
                 </div>
             </div>
         </div>
-    </section>
+    </x-storefront.card>
 
     <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <a
             href="{{ route('wallet') }}"
             wire:navigate
-            class="flex items-center gap-4 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm transition hover:shadow-md dark:border-zinc-700 dark:bg-zinc-900"
+            class="storefront-card storefront-card--pad-sm storefront-card--interactive flex items-center gap-4"
         >
             <div class="flex size-12 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-600 dark:bg-emerald-900/50 dark:text-emerald-400">
                 <flux:icon icon="wallet" variant="outline" class="size-6" />
@@ -209,7 +207,7 @@ new #[Layout('layouts::frontend')] class extends Component
         <a
             href="{{ route('orders.index') }}"
             wire:navigate
-            class="flex items-center gap-4 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm transition hover:shadow-md dark:border-zinc-700 dark:bg-zinc-900"
+            class="storefront-card storefront-card--pad-sm storefront-card--interactive flex items-center gap-4"
         >
             <div class="flex size-12 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400">
                 <flux:icon icon="shopping-bag" variant="outline" class="size-6" />
@@ -223,7 +221,7 @@ new #[Layout('layouts::frontend')] class extends Component
             <a
                 href="{{ route('loyalty') }}"
                 wire:navigate
-                class="flex items-center gap-4 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm transition hover:shadow-md dark:border-zinc-700 dark:bg-zinc-900"
+                class="storefront-card storefront-card--pad-sm storefront-card--interactive flex items-center gap-4"
             >
                 <div class="flex size-12 shrink-0 items-center justify-center rounded-xl bg-violet-100 text-violet-600 dark:bg-violet-900/50 dark:text-violet-400">
                     <flux:icon icon="sparkles" variant="outline" class="size-6" />
@@ -241,7 +239,7 @@ new #[Layout('layouts::frontend')] class extends Component
         <a
             href="{{ route('notifications.index') }}"
             wire:navigate
-            class="flex items-center gap-4 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm transition hover:shadow-md dark:border-zinc-700 dark:bg-zinc-900 sm:col-span-2 lg:col-span-1"
+            class="storefront-card storefront-card--pad-sm storefront-card--interactive flex items-center gap-4 sm:col-span-2 lg:col-span-1"
         >
             <div class="flex size-12 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-600 dark:bg-amber-900/50 dark:text-amber-400">
                 <flux:icon icon="bell" variant="outline" class="size-6" />
@@ -268,4 +266,4 @@ new #[Layout('layouts::frontend')] class extends Component
             />
         </section>
     @endif
-</div>
+</x-storefront.page>

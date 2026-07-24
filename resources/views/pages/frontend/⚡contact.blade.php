@@ -60,17 +60,17 @@ new #[Layout('layouts::frontend')] class extends Component
 };
 ?>
 
-<div class="mx-auto w-full max-w-4xl px-3 py-6 sm:px-0 sm:py-10">
-    <div class="mb-4 flex items-center">
-        <x-back-button :fallback="route('home')" />
-    </div>
-
-    <flux:heading size="lg" class="mb-2 text-zinc-900 dark:text-zinc-100">{{ __('main.contact_us') }}</flux:heading>
-    <flux:text class="mb-6 block text-sm text-zinc-600 dark:text-zinc-400">{{ __('messages.contact_page_intro') }}</flux:text>
+<x-storefront.page width="work">
+    <x-storefront.page-header
+        :title="__('main.contact_us')"
+        :description="__('messages.contact_page_intro')"
+        :show-back="true"
+        :back-fallback="route('account')"
+    />
 
     @if ($contactEmail || $primaryPhone || $secondaryPhone)
-        <section class="mb-8 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 sm:p-6">
-            <flux:heading size="sm" class="mb-4 text-zinc-900 dark:text-zinc-100">{{ __('messages.contact_info') }}</flux:heading>
+        <x-storefront.card class="mb-8">
+            <flux:heading size="sm" class="storefront-type-section mb-4 text-zinc-900 dark:text-zinc-100">{{ __('messages.contact_info') }}</flux:heading>
             <div class="flex flex-col gap-3 text-sm">
                 @if ($contactEmail)
                     <div class="flex items-center gap-3">
@@ -91,11 +91,11 @@ new #[Layout('layouts::frontend')] class extends Component
                     </div>
                 @endif
             </div>
-        </section>
+        </x-storefront.card>
     @endif
 
-    <section class="mt-6 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 sm:p-6">
-        <flux:heading size="sm" class="mb-4 text-zinc-900 dark:text-zinc-100">{{ __('messages.send_us_a_message') }}</flux:heading>
+    <x-storefront.card>
+        <flux:heading size="sm" class="storefront-type-section mb-4 text-zinc-900 dark:text-zinc-100">{{ __('messages.send_us_a_message') }}</flux:heading>
 
         <form wire:submit="submit" class="space-y-6">
             <flux:error name="form" class="mb-4" />
@@ -129,5 +129,5 @@ new #[Layout('layouts::frontend')] class extends Component
                 {{ __('messages.send_message') }}
             </flux:button>
         </form>
-    </section>
-</div>
+    </x-storefront.card>
+</x-storefront.page>

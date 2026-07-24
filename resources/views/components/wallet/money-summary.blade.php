@@ -17,7 +17,7 @@
 
 <div {{ $attributes->class(['space-y-6']) }}>
     <section
-        class="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 sm:p-6"
+        class="storefront-card storefront-card--pad-md"
         data-test="wallet-spend-summary"
         data-wallet-tone="{{ $tone }}"
     >
@@ -77,6 +77,12 @@
             @endif
         </div>
 
+        @unless ($pricesVisible)
+            <div class="mt-4">
+                <x-purchase.prices-gated context="wallet" />
+            </div>
+        @endunless
+
         @if ($pricesVisible)
             <div class="mt-5 grid gap-3 border-t border-zinc-100 pt-5 dark:border-zinc-800 sm:grid-cols-2">
                 <div data-test="wallet-available-to-spend">
@@ -123,7 +129,7 @@
 
     @if ($showCreditFacility && $creditGranted && $pricesVisible)
         <section
-            class="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 sm:p-6"
+            class="storefront-card storefront-card--pad-md"
             data-test="wallet-credit-facility"
         >
             <div class="flex flex-wrap items-center justify-between gap-3">

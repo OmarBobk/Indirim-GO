@@ -69,10 +69,11 @@ return [
             ],
             [
                 'key' => 'account',
-                'label' => 'main.profile',
-                'route' => 'profile',
+                'label' => 'main.account',
+                'route' => 'account',
                 'icon' => 'user',
                 'active' => [
+                    'account',
                     'profile',
                     'profile.edit-information',
                     'notifications.index',
@@ -81,7 +82,7 @@ return [
                     'contact',
                 ],
                 'event' => 'bottom-nav-account',
-                'badge' => null,
+                'badge' => 'notifications',
                 'auth' => true,
             ],
         ],
@@ -117,5 +118,26 @@ return [
                 'auth' => false,
             ],
         ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Design system width tiers (M4.10.5)
+    |--------------------------------------------------------------------------
+    |
+    | Authenticated pages must use x-storefront.page width=… (or matching
+    | .storefront-page--* classes). Do not invent ad-hoc max-w-* values.
+    |
+    | browse     → 7xl  — home, cart, category
+    | work       → 4xl  — orders, wallet, account, profile, notifications, …
+    | work-wide  → 5xl / lg:6xl — order detail workspace only
+    | focus      → 2xl  — wallet top-up and dense single-column forms
+    |
+    */
+    'page_widths' => [
+        'browse' => '7xl',
+        'work' => '4xl',
+        'work-wide' => '5xl',
+        'focus' => '2xl',
     ],
 ];

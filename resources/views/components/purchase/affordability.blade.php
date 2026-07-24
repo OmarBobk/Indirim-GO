@@ -4,6 +4,7 @@
     'needsFunds' => false,
     'topupUrl' => null,
     'compact' => false,
+    'addFundsWireClick' => null,
 ])
 
 @php
@@ -60,14 +61,27 @@
             <p class="text-xs font-medium text-amber-800 dark:text-amber-200">
                 {{ __('messages.purchase_need_more_funds_hint') }}
             </p>
-            <a
-                href="{{ $resolvedTopupUrl }}"
-                wire:navigate
-                class="text-xs font-semibold text-(--color-accent) underline-offset-2 hover:underline"
-                data-test="purchase-add-funds-link"
-            >
-                {{ __('messages.cart_need_more_funds') }}
-            </a>
+            @if (is_string($addFundsWireClick) && $addFundsWireClick !== '')
+                <button
+                    type="button"
+                    wire:click="{{ $addFundsWireClick }}"
+                    wire:loading.attr="disabled"
+                    class="text-xs font-semibold text-(--color-accent) underline-offset-2 hover:underline disabled:opacity-60"
+                    data-test="purchase-add-funds-link"
+                >
+                    <span wire:loading.remove>{{ __('messages.cart_need_more_funds') }}</span>
+                    <span wire:loading>{{ __('messages.please_wait') }}</span>
+                </button>
+            @else
+                <a
+                    href="{{ $resolvedTopupUrl }}"
+                    wire:navigate
+                    class="text-xs font-semibold text-(--color-accent) underline-offset-2 hover:underline"
+                    data-test="purchase-add-funds-link"
+                >
+                    {{ __('messages.cart_need_more_funds') }}
+                </a>
+            @endif
         </div>
     @elseif (! $compact)
         <p class="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">

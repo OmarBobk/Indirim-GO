@@ -1,8 +1,12 @@
 @props([
     'inputId' => 'storefront-package-search-input',
+    'placeholder' => null,
+    'size' => 'default',
 ])
 @php
     $pricesVisible = \App\Models\WebsiteSetting::getPricesVisible();
+    $placeholderText = $placeholder ?? __('main.search_packages_placeholder');
+    $isHero = $size === 'hero';
 @endphp
 <div
     class="relative w-full"
@@ -23,7 +27,11 @@
     <div class="relative">
         <flux:icon
             icon="magnifying-glass"
-            class="pointer-events-none absolute start-3 top-1/2 z-10 size-5 -translate-y-1/2 text-zinc-400"
+            @class([
+                'pointer-events-none absolute start-3.5 top-1/2 z-10 -translate-y-1/2 text-zinc-400',
+                'size-6' => $isHero,
+                'size-5' => ! $isHero,
+            ])
         />
         <input
             id="{{ $inputId }}"
@@ -34,22 +42,31 @@
             autocomplete="off"
             autocorrect="off"
             spellcheck="false"
-            placeholder="{{ __('main.search_packages_placeholder') }}"
-            class="w-full rounded-lg border border-zinc-200 bg-white py-2.5 ps-10 pe-10 text-sm text-zinc-900 shadow-sm transition focus:border-(--color-accent) focus:outline-none focus:ring-0 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
-            aria-label="{{ __('main.search_packages_placeholder') }}"
+            placeholder="{{ $placeholderText }}"
+            @class([
+                'w-full border bg-white text-zinc-900 transition focus:outline-none dark:bg-zinc-800 dark:text-zinc-100',
+                'rounded-xl border-zinc-300 py-3.5 ps-12 pe-12 text-base shadow-md focus:border-(--color-accent) focus:ring-2 focus:ring-(--color-accent)/30 dark:border-zinc-500' => $isHero,
+                'rounded-lg border-zinc-200 py-2.5 ps-10 pe-10 text-sm shadow-sm focus:border-(--color-accent) focus:ring-0 dark:border-zinc-600' => ! $isHero,
+            ])
+            aria-label="{{ $placeholderText }}"
             aria-expanded="false"
             x-bind:aria-expanded="panelOpen ? 'true' : 'false'"
             aria-controls="storefront-package-search-results-{{ $inputId }}"
             role="combobox"
             aria-autocomplete="list"
             data-event="package-search-input"
+            @if ($isHero) data-search-size="hero" @endif
         />
         <button
             type="button"
             x-show="query.length > 0"
             x-on:click="clear()"
             x-cloak
-            class="absolute end-2 top-1/2 z-10 flex size-8 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+            @class([
+                'absolute end-2 top-1/2 z-10 flex -translate-y-1/2 cursor-pointer items-center justify-center rounded-full text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-200',
+                'size-9' => $isHero,
+                'size-8' => ! $isHero,
+            ])
             aria-label="{{ __('main.package_search_clear') }}"
         >
             <flux:icon icon="x-mark" class="size-5" />

@@ -10,6 +10,7 @@ use App\Models\Product;
 use App\Models\Wallet;
 use App\Services\LoyaltySpendService;
 use App\Support\FrontendMoney;
+use App\Support\PurchaseResumeIntent;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 use Livewire\Attributes\Computed;
@@ -70,6 +71,7 @@ new #[Layout('layouts::frontend')] class extends Component
                 : __('messages.payment_successful_order_processing', ['order_number' => $order->order_number]);
             $this->lastOrderNumber = $order->order_number;
             $this->success($this->checkoutSuccess);
+            PurchaseResumeIntent::forget();
             $this->dispatch('checkout-success', orderNumber: $order->order_number);
         } catch (ValidationException $exception) {
             $this->checkoutError = collect($exception->errors())->flatten()->first()
@@ -80,6 +82,25 @@ new #[Layout('layouts::frontend')] class extends Component
             $this->checkoutError = __('messages.something_went_wrong_checkout');
             $this->error($this->checkoutError);
         }
+    }
+
+    public function continueToTopup(?string $amount = null): void
+    {
+        if (! auth()->check()) {
+            $this->checkoutError = __('messages.sign_in_to_checkout');
+            $this->error($this->checkoutError);
+
+            return;
+        }
+
+        PurchaseResumeIntent::store(['source' => PurchaseResumeIntent::SOURCE_CART]);
+
+        $query = [];
+        if (is_string($amount) && is_numeric($amount) && (float) $amount > 0) {
+            $query['amount'] = number_format((float) $amount, 2, '.', '');
+        }
+
+        $this->redirect(route('wallet.topup', $query), navigate: true);
     }
 
     public function loadRequirements(array $productIds): void
@@ -431,7 +452,7 @@ new #[Layout('layouts::frontend')] class extends Component
 @endphp
 
 <div
-    class="mx-auto w-full max-w-7xl px-3 py-6 sm:px-0 sm:py-10"
+    class="storefront-page storefront-page--browse"
     x-data="{
         itemsLabel: @js(__('messages.items')),
         itemLabel: @js(__('messages.item')),
@@ -470,15 +491,28 @@ new #[Layout('layouts::frontend')] class extends Component
     "
     x-on:checkout-success.window="$store.cart.clear()"
     data-test="cart-page"
+    data-storefront-page="browse"
 >
-    <div class="mb-4 flex items-center">
-        <x-back-button />
-    </div>
+    @php
+        $cartResumeIntent = \App\Support\PurchaseResumeIntent::peek();
+        $showCartResumeBanner = session('purchase_resume_ready')
+            || (($cartResumeIntent['source'] ?? null) === \App\Support\PurchaseResumeIntent::SOURCE_CART);
+    @endphp
+    @if ($showCartResumeBanner)
+        <flux:callout variant="subtle" icon="shopping-cart" class="mb-4" data-test="purchase-resume-banner">
+            <flux:text class="font-medium text-zinc-900 dark:text-zinc-100">
+                {{ __('messages.purchase_resume_cart_ready') }}
+            </flux:text>
+            <flux:text class="text-sm text-zinc-600 dark:text-zinc-400">
+                {{ __('messages.purchase_resume_banner_body') }}
+            </flux:text>
+        </flux:callout>
+    @endif
     <div class="flex flex-col gap-6 lg:flex-row lg:items-start">
         <section class="flex-1">
-            <div class="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-800 sm:p-6">
+            <div class="storefront-card storefront-card--pad-md">
                 <div class="flex items-center justify-between gap-3">
-                    <flux:heading size="lg" class="text-zinc-900 dark:text-zinc-100">
+                    <flux:heading size="lg" class="storefront-type-title text-zinc-900 dark:text-zinc-100">
                         {{ __('main.my_cart') }}
                     </flux:heading>
                     <span
@@ -510,7 +544,7 @@ new #[Layout('layouts::frontend')] class extends Component
                     <template x-for="item in $store.cart.items" :key="item.id">
                         <li>
                             <article
-                                class="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 sm:p-5"
+                                class="storefront-card storefront-card--pad-md"
                             >
                                 <div class="flex gap-4">
                                     <div
@@ -723,7 +757,7 @@ new #[Layout('layouts::frontend')] class extends Component
         </section>
 
         <aside class="w-full lg:w-80 lg:sticky lg:top-24">
-            <div class="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-800 sm:p-6">
+            <div class="storefront-card storefront-card--pad-md">
                 <flux:heading size="lg" class="text-zinc-900 dark:text-zinc-100">
                     {{ __('main.order_summary') }}
                 </flux:heading>
@@ -813,6 +847,11 @@ new #[Layout('layouts::frontend')] class extends Component
                     <span class="text-zinc-500 dark:text-zinc-400">—</span>
                     @endif
                 </div>
+                @unless ($cartPricesVisible)
+                    <div class="mt-3">
+                        <x-purchase.prices-gated context="cart" />
+                    </div>
+                @endunless
                 <p
                     class="mt-1 text-xs text-zinc-500 dark:text-zinc-400"
                     x-show="$store.cart.displayCurrencyCode() === 'TRY'"
@@ -831,27 +870,24 @@ new #[Layout('layouts::frontend')] class extends Component
                                 get total() { return Number($store.cart.subtotal - $store.cart.loyaltyDiscount) || 0 },
                                 get shortfall() { return Math.max(0, this.total - this.available) },
                                 get needsMore() { return this.shortfall > 0.009 || {{ $checkoutNeedsFunds ? 'true' : 'false' }} },
-                                topupUrl() {
-                                    if (this.shortfall <= 0) return @js(route('wallet.topup'));
-                                    return @js(route('wallet.topup')) + '?amount=' + encodeURIComponent(this.shortfall.toFixed(2));
-                                },
                             }"
                         >
                             <x-purchase.affordability
                                 :available="(float) $this->walletAvailableToSpend"
                                 :needs-funds="$checkoutNeedsFunds"
+                                add-funds-wire-click="continueToTopup"
                                 compact
                             />
-                            <a
+                            <button
+                                type="button"
                                 x-show="needsMore"
                                 x-cloak
-                                x-bind:href="topupUrl()"
-                                wire:navigate
-                                class="mt-2 block text-center text-xs font-semibold text-(--color-accent) hover:underline"
+                                x-on:click="$wire.continueToTopup(shortfall > 0.009 ? shortfall.toFixed(2) : null)"
+                                class="mt-2 block w-full text-center text-xs font-semibold text-(--color-accent) hover:underline"
                                 data-test="cart-add-funds-shortfall"
                             >
                                 {{ __('messages.cart_need_more_funds') }}
-                            </a>
+                            </button>
                         </div>
                     @endif
                 @endauth
@@ -871,14 +907,16 @@ new #[Layout('layouts::frontend')] class extends Component
                     </flux:button>
                     @auth
                         @if ($checkoutNeedsFunds)
-                            <a
-                                href="{{ route('wallet.topup') }}"
-                                wire:navigate
-                                class="block text-center text-xs font-medium text-(--color-accent) hover:underline"
+                            <button
+                                type="button"
+                                wire:click="continueToTopup"
+                                wire:loading.attr="disabled"
+                                class="block w-full text-center text-xs font-medium text-(--color-accent) hover:underline disabled:opacity-60"
                                 data-test="cart-add-funds-link"
                             >
-                                {{ __('messages.cart_need_more_funds') }}
-                            </a>
+                                <span wire:loading.remove wire:target="continueToTopup">{{ __('messages.cart_need_more_funds') }}</span>
+                                <span wire:loading wire:target="continueToTopup">{{ __('messages.please_wait') }}</span>
+                            </button>
                         @endif
                     @endauth
                     <p
@@ -908,7 +946,7 @@ new #[Layout('layouts::frontend')] class extends Component
         x-cloak
         data-test="cart-sticky-checkout"
     >
-        <div class="mx-auto flex max-w-7xl flex-col gap-2">
+        <div class="mx-auto flex w-full max-w-7xl flex-col gap-2">
             <div class="flex items-center justify-between gap-3 text-sm">
                 <span class="font-medium text-zinc-600 dark:text-zinc-300">{{ __('messages.total') }}</span>
                 @if ($cartPricesVisible)
@@ -919,14 +957,16 @@ new #[Layout('layouts::frontend')] class extends Component
             </div>
             @auth
                 @if ($checkoutNeedsFunds)
-                    <a
-                        href="{{ route('wallet.topup') }}"
-                        wire:navigate
-                        class="text-center text-xs font-semibold text-(--color-accent) hover:underline"
+                    <button
+                        type="button"
+                        wire:click="continueToTopup"
+                        wire:loading.attr="disabled"
+                        class="text-center text-xs font-semibold text-(--color-accent) hover:underline disabled:opacity-60"
                         data-test="cart-sticky-add-funds"
                     >
-                        {{ __('messages.cart_need_more_funds') }}
-                    </a>
+                        <span wire:loading.remove wire:target="continueToTopup">{{ __('messages.cart_need_more_funds') }}</span>
+                        <span wire:loading wire:target="continueToTopup">{{ __('messages.please_wait') }}</span>
+                    </button>
                 @endif
             @endauth
             <flux:button

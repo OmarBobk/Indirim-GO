@@ -322,12 +322,34 @@ new #[Layout('layouts::frontend')] class extends Component
     $pricesVisible = \App\Models\WebsiteSetting::getPricesVisible();
 @endphp
 
-<div class="mx-auto w-full max-w-4xl px-3 py-6 sm:px-0 sm:py-10" data-test="wallet-page">
-    <div class="mb-4 flex items-center">
-        <x-back-button />
-    </div>
+<x-storefront.page width="work" data-test="wallet-page">
+    <div class="storefront-section-stack">
+        @if (($resumeUrl = \App\Support\PurchaseResumeIntent::resumeUrl()) !== null)
+            <flux:callout variant="subtle" icon="arrow-path" data-test="purchase-resume-banner">
+                <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                        <flux:text class="font-medium text-zinc-900 dark:text-zinc-100">
+                            {{ __('messages.purchase_resume_banner_title') }}
+                        </flux:text>
+                        <flux:text class="text-sm text-zinc-600 dark:text-zinc-400">
+                            {{ __('messages.purchase_resume_banner_body') }}
+                        </flux:text>
+                    </div>
+                    <flux:button
+                        as="a"
+                        href="{{ $resumeUrl }}"
+                        wire:navigate
+                        variant="primary"
+                        size="sm"
+                        class="shrink-0 !bg-accent !text-accent-foreground hover:!bg-accent-hover"
+                        data-test="purchase-resume-continue"
+                    >
+                        {{ __('messages.purchase_resume_continue') }}
+                    </flux:button>
+                </div>
+            </flux:callout>
+        @endif
 
-    <div class="space-y-6">
         @if ($this->loyaltyCurrentTierConfig !== null)
             <x-loyalty.tier-card
                 :current-tier-name="auth()->user()?->loyalty_tier?->value ?? 'bronze'"
@@ -381,18 +403,16 @@ new #[Layout('layouts::frontend')] class extends Component
         @endif
 
         @if ($this->topupRequests->isNotEmpty())
-            <section class="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 sm:p-6">
+            <section class="storefront-card storefront-card--pad-md">
                 <flux:heading size="lg" class="text-zinc-900 dark:text-zinc-100">
                     {{ __('messages.topup_requests') }}
                 </flux:heading>
                 <div class="mt-4 space-y-3">
                     @foreach ($this->topupRequests as $topupRequest)
                         @php
-                            $statusColor = match ($topupRequest->status) {
-                                TopupRequestStatus::Approved => 'green',
-                                TopupRequestStatus::Rejected => 'red',
-                                default => 'amber',
-                            };
+                            $statusColor = \App\Support\CustomerStatusPresentation::badgeColor(
+                                (string) ($topupRequest->status?->value ?? $topupRequest->status)
+                            );
                         @endphp
                         <div class="flex items-center justify-between gap-3 rounded-xl border border-zinc-100 bg-zinc-50 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-800/60">
                             <div>
@@ -430,7 +450,7 @@ new #[Layout('layouts::frontend')] class extends Component
             </section>
         @endif
 
-        <section class="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 sm:p-6">
+        <section class="storefront-card storefront-card--pad-md">
             <flux:heading size="lg" class="text-zinc-900 dark:text-zinc-100">
                 {{ __('messages.wallet_transactions') }}
             </flux:heading>
@@ -588,4 +608,4 @@ new #[Layout('layouts::frontend')] class extends Component
 
         <x-timeline :entity="$this->wallet" audience="customer" />
     </div>
-</div>
+</x-storefront.page>

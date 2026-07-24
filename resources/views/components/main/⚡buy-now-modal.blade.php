@@ -13,6 +13,7 @@ use App\Models\Product;
 use App\Models\Wallet;
 use App\Support\BuyNowClientPricingContext;
 use App\Support\BuyNowLoginIntent;
+use App\Support\PurchaseResumeIntent;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Computed;
@@ -83,24 +84,60 @@ new class extends Component
             return;
         }
 
-        $intent = BuyNowLoginIntent::pull();
+        $loginIntent = BuyNowLoginIntent::pull();
+        if ($loginIntent !== null) {
+            $this->restorePurchaseIntent($loginIntent);
 
-        if ($intent === null) {
             return;
         }
 
-        if (isset($intent['package_id'])) {
-            $this->openPackageOverlay((int) $intent['package_id']);
+        $resumeIntent = PurchaseResumeIntent::peek();
+        if ($resumeIntent !== null && ($resumeIntent['source'] ?? null) === PurchaseResumeIntent::SOURCE_BUY_NOW) {
+            $this->restorePurchaseIntent($resumeIntent);
+            if (session()->pull('purchase_resume_ready')) {
+                $this->info(__('messages.purchase_resume_restored'));
+            }
+        }
+    }
+
+    /**
+     * Persist current buy-now state and continue to wallet top-up (no duplicated checkout logic).
+     */
+    public function continueToTopup(?string $amount = null): void
+    {
+        if (! auth()->check() || $this->buyNowProductId === null) {
+            return;
         }
 
-        if (isset($intent['product_id'])) {
-            $this->openBuyNow(
-                (int) $intent['product_id'],
-                isset($intent['package_id']),
-                $intent['quantity'] ?? null,
-                $intent['requested_amount'] ?? null,
-            );
+        $shortfall = null;
+        if (is_string($amount) && is_numeric($amount) && (float) $amount > 0) {
+            $shortfall = number_format((float) $amount, 2, '.', '');
+        } elseif (
+            $this->buyNowLineFinalPrice !== null
+            && $this->walletAvailableToSpendAmount !== null
+        ) {
+            $diff = max(0, (float) $this->buyNowLineFinalPrice - (float) $this->walletAvailableToSpendAmount);
+            if ($diff > 0) {
+                $shortfall = number_format($diff, 2, '.', '');
+            }
         }
+
+        PurchaseResumeIntent::store([
+            'source' => PurchaseResumeIntent::SOURCE_BUY_NOW,
+            'product_id' => $this->buyNowProductId,
+            'package_id' => $this->selectedPackageId,
+            'quantity' => is_numeric($this->buyNowQuantity) ? (int) $this->buyNowQuantity : 1,
+            'requested_amount' => $this->buyNowAmountMode === ProductAmountMode::Custom->value
+                && is_numeric($this->buyNowRequestedAmount)
+                ? (int) $this->buyNowRequestedAmount
+                : null,
+            'requirements' => $this->buyNowRequirements,
+        ]);
+
+        $this->redirect(
+            route('wallet.topup', array_filter(['amount' => $shortfall])),
+            navigate: true,
+        );
     }
 
     #[Computed]
@@ -603,6 +640,7 @@ new class extends Component
             $this->buyNowSuccess = $message;
             $this->buyNowOrderNumber = $order->order_number;
             $this->success($message);
+            PurchaseResumeIntent::forget();
         } catch (ValidationException $exception) {
             $this->buyNowError = collect($exception->errors())->flatten()->first()
                 ?? __('messages.checkout_validation_failed');
@@ -782,6 +820,45 @@ new class extends Component
     /**
      * @param  array{product_id?: int|null, package_id?: int|null, quantity?: int|null, requested_amount?: int|null}  $intent
      */
+    /**
+     * @param  array{
+     *     product_id?: int,
+     *     package_id?: int,
+     *     quantity?: int,
+     *     requested_amount?: int,
+     *     requirements?: array<string, string>
+     * }  $intent
+     */
+    private function restorePurchaseIntent(array $intent): void
+    {
+        if (isset($intent['package_id'])) {
+            $this->openPackageOverlay((int) $intent['package_id']);
+        }
+
+        if (! isset($intent['product_id'])) {
+            return;
+        }
+
+        $this->openBuyNow(
+            (int) $intent['product_id'],
+            isset($intent['package_id']),
+            $intent['quantity'] ?? null,
+            $intent['requested_amount'] ?? null,
+        );
+
+        $requirements = $intent['requirements'] ?? null;
+        if (! is_array($requirements) || $requirements === []) {
+            return;
+        }
+
+        foreach ($requirements as $key => $value) {
+            if (! is_string($key) || $key === '' || ! array_key_exists($key, $this->buyNowRequirements)) {
+                continue;
+            }
+            $this->buyNowRequirements[$key] = is_scalar($value) ? (string) $value : '';
+        }
+    }
+
     private function redirectToLoginWithBuyNowIntent(array $intent): void
     {
         BuyNowLoginIntent::store([
@@ -1519,10 +1596,28 @@ new class extends Component
                         :available="$this->walletAvailableToSpendAmount"
                         :total="$buyNowLineFinalPrice"
                         :needs-funds="$buyNowNeedsFunds"
+                        add-funds-wire-click="continueToTopup"
                         compact
                     />
+                @elseif (! \App\Models\WebsiteSetting::getPricesVisible())
+                    <x-purchase.prices-gated context="buy_now" class="mb-1" />
                 @endif
             @endauth
+
+            @if ($buyNowError && $buyNowNeedsFunds)
+                <div class="rounded-xl border border-amber-200 bg-amber-50/90 px-3 py-2.5 dark:border-amber-800/60 dark:bg-amber-950/30" data-test="buy-now-recovery">
+                    <p class="text-xs font-medium text-amber-900 dark:text-amber-100">{{ $buyNowError }}</p>
+                    <button
+                        type="button"
+                        wire:click="continueToTopup"
+                        wire:loading.attr="disabled"
+                        class="mt-2 text-xs font-semibold text-(--color-accent) underline-offset-2 hover:underline"
+                        data-test="buy-now-recovery-topup"
+                    >
+                        {{ __('messages.cart_need_more_funds') }}
+                    </button>
+                </div>
+            @endif
 
             <div class="grid gap-4 sm:grid-cols-2">
                 @if ($buyNowAmountMode === \App\Enums\ProductAmountMode::Custom->value)
@@ -1702,14 +1797,16 @@ new class extends Component
 
             <div class="sticky bottom-0 z-10 mt-3 space-y-2 border-t border-zinc-200 bg-white pt-3 pb-[max(0.25rem,env(safe-area-inset-bottom))] dark:border-zinc-700 dark:bg-zinc-800" data-test="buy-now-sticky-actions">
                 @if ($buyNowNeedsFunds)
-                    <a
-                        href="{{ route('wallet.topup', array_filter(['amount' => $buyNowLineFinalPrice !== null && $this->walletAvailableToSpendAmount !== null ? number_format(max(0, (float) $buyNowLineFinalPrice - (float) $this->walletAvailableToSpendAmount), 2, '.', '') : null])) }}"
-                        wire:navigate
-                        class="block text-center text-xs font-semibold text-(--color-accent) hover:underline"
+                    <button
+                        type="button"
+                        wire:click="continueToTopup"
+                        wire:loading.attr="disabled"
+                        class="block w-full text-center text-xs font-semibold text-(--color-accent) hover:underline disabled:opacity-60"
                         data-test="buy-now-add-funds-link"
                     >
-                        {{ __('messages.cart_need_more_funds') }}
-                    </a>
+                        <span wire:loading.remove wire:target="continueToTopup">{{ __('messages.cart_need_more_funds') }}</span>
+                        <span wire:loading wire:target="continueToTopup">{{ __('messages.please_wait') }}</span>
+                    </button>
                 @endif
                 <div class="flex flex-wrap items-center justify-end gap-2">
                     <flux:button variant="ghost" wire:click="closeBuyNow">

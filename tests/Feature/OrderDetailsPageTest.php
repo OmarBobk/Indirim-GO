@@ -457,17 +457,38 @@ test('order details delivery workspace renders header attention units line-conte
     $attention = strpos($html, 'data-section="order-detail-attention-strip"');
     $units = strpos($html, 'data-section="order-detail-units"');
     $lineContext = strpos($html, 'data-section="order-detail-line-context"');
+    $orderAgainPanel = strpos($html, 'data-section="order-detail-order-again-panel"');
     $summary = strpos($html, 'data-section="order-detail-summary"');
+    $desktopLayout = strpos($html, 'data-section="order-detail-desktop-layout"');
 
     expect($header)->not->toBeFalse()
         ->and($attention)->not->toBeFalse()
         ->and($units)->not->toBeFalse()
         ->and($lineContext)->not->toBeFalse()
+        ->and($orderAgainPanel)->not->toBeFalse()
         ->and($summary)->not->toBeFalse()
+        ->and($desktopLayout)->not->toBeFalse()
         ->and($header)->toBeLessThan($attention)
         ->and($attention)->toBeLessThan($units)
         ->and($units)->toBeLessThan($lineContext)
-        ->and($lineContext)->toBeLessThan($summary);
+        ->and($lineContext)->toBeLessThan($orderAgainPanel)
+        ->and($orderAgainPanel)->toBeLessThan($summary);
+});
+
+test('order details desktop workspace uses a single responsive layout tree', function () {
+    $user = User::factory()->create();
+    $payload = makeCompletedOrder($user, ['code' => 'DESK-1']);
+
+    $html = $this->actingAs($user)
+        ->get(route('orders.show', $payload['order']->order_number))
+        ->assertOk()
+        ->assertSee('data-test="order-detail-desktop-layout"', false)
+        ->assertSee('lg:grid-cols-[minmax(0,1fr)_minmax(16rem,20rem)]', false)
+        ->getContent();
+
+    expect(substr_count($html, 'data-section="order-detail-desktop-layout"'))->toBe(1)
+        ->and(substr_count($html, 'data-section="order-detail-summary"'))->toBe(1)
+        ->and(substr_count($html, 'data-section="order-detail-units"'))->toBe(1);
 });
 
 test('order details attention strip appears when classification needs attention', function () {

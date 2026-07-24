@@ -48,6 +48,7 @@ Route::livewire('/contact', 'pages::frontend.contact')->name('contact');
 Route::livewire('/cart', 'pages::frontend.cart')->name('cart');
 
 Route::middleware(['auth', 'verified'])->group(function () {
+    Route::livewire('/account', 'pages::frontend.account')->name('account');
     Route::livewire('/profile', 'pages::frontend.profile')->name('profile');
     Route::livewire('/profile/edit', 'pages::frontend.profile-edit')->name('profile.edit-information');
     Route::livewire('/wallet', 'pages::frontend.wallet')->name('wallet');

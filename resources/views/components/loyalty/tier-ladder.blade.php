@@ -13,7 +13,7 @@
 @endphp
 
 <div
-    {{ $attributes->merge(['class' => 'rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 sm:p-5']) }}
+    {{ $attributes->class(['storefront-card storefront-card--pad-md sm:p-5']) }}
 >
     <flux:heading size="sm" class="mb-3 text-zinc-900 dark:text-zinc-100">{{ __('messages.loyalty_benefits') }}</flux:heading>
     <div class="{{ $orientation === 'horizontal' ? 'flex flex-wrap gap-2' : 'space-y-2' }}">

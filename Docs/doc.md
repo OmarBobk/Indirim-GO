@@ -382,3 +382,70 @@ Merge
 5. Customer Experience
 
 6. Delight Experience
+
+
+
+M1
+├── Shopping
+├── Buy Now
+├── Cart
+├── Checkout
+└── Wallet payment
+
+            ↓
+
+M2
+├── Customer shell
+├── Navigation
+├── Dashboard
+└── Shared UI
+
+            ↓
+
+M3
+├── Home
+├── Recently ordered
+├── Frequently ordered
+├── Quick actions
+└── Better customer dashboard
+
+            ↓
+
+✅ M4
+├── Orders
+├── Delivery workspace
+├── Search
+├── Recovery
+├── Timeline
+├── Order Again
+└── Desktop UX
+
+            ↓
+
+M5
+Notifications & Activity
+
+            ↓
+
+M6
+Wallet & Financial Center
+
+            ↓
+
+M7
+Account / Settings
+
+            ↓
+
+M8
+Supplier Automation
+
+            ↓
+
+M9
+Admin Modernization
+
+            ↓
+
+M10
+Platform Polish
