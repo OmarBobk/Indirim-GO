@@ -310,3 +310,38 @@ test('frequently ordered empty state guides toward shopping', function () {
         ->assertSee(__('main.home_frequently_ordered_empty_packages'), false)
         ->assertDontSee(__('main.home_frequently_ordered_empty'), false);
 });
+
+test('authenticated home exposes main landmark heading and equal section titles', function () {
+    $user = User::factory()->create();
+
+    $html = $this->actingAs($user)->get(route('home'))->assertOk()->getContent();
+
+    expect($html)
+        ->toContain('id="customer-home-main"')
+        ->toContain('class="sr-only">'.e(__('main.homepage')))
+        ->toContain('id="customer-home-frequently-ordered-heading"')
+        ->toContain('id="customer-home-categories-heading"')
+        ->toContain('id="customer-home-packages-heading"')
+        ->toContain('aria-label="'.e(__('main.home_search_region')).'"');
+
+    expect(substr_count($html, 'text-base font-semibold tracking-tight text-pretty'))->toBeGreaterThanOrEqual(3);
+});
+
+test('authenticated home package tiles deep-link with package query', function () {
+    $user = User::factory()->create();
+    $category = Category::factory()->create(['is_active' => true]);
+    $package = Package::factory()->create([
+        'category_id' => $category->id,
+        'name' => 'Deep Link Pack',
+        'is_active' => true,
+    ]);
+    Product::factory()->create(['package_id' => $package->id, 'is_active' => true]);
+
+    $this->actingAs($user)
+        ->get(route('home'))
+        ->assertOk()
+        ->assertSee(
+            'href="'.e(route('home', ['package' => $package->id])).'"',
+            false
+        );
+});

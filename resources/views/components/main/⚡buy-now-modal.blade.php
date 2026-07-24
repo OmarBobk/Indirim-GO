@@ -296,6 +296,14 @@ new class extends Component
             'packageOverlayClientPricingContexts',
         ]);
         $this->resetValidation();
+
+        $this->js(<<<'JS'
+            const url = new URL(window.location.href);
+            if (url.searchParams.has('package')) {
+                url.searchParams.delete('package');
+                history.replaceState({}, '', url);
+            }
+        JS);
     }
 
     /**
@@ -1208,7 +1216,22 @@ new class extends Component
             x-data
         @endif
         x-on:open-buy-now.window="$wire.openBuyNow($event.detail.productId, false, $event.detail.quantity === undefined ? null : $event.detail.quantity)"
-        x-on:open-package-overlay.window="$wire.openPackageOverlay($event.detail.packageId)"
+        x-on:open-package-overlay.window="
+            $wire.openPackageOverlay($event.detail.packageId);
+            if ($event.detail.packageId) {
+                const url = new URL(window.location.href);
+                url.searchParams.set('package', String($event.detail.packageId));
+                history.replaceState({}, '', url);
+            }
+        "
+        x-init="
+            if (window.__karmanPackageDeepLinkDone) { return; }
+            const packageParam = Number(new URLSearchParams(window.location.search).get('package') || 0);
+            if (packageParam > 0) {
+                window.__karmanPackageDeepLinkDone = true;
+                $nextTick(() => $dispatch('open-package-overlay', { packageId: packageParam }));
+            }
+        "
     >
         <div class="flex items-center">
             <div class="flex items-center">

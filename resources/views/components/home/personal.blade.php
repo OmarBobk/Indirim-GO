@@ -4,10 +4,10 @@
 ])
 
 {{-- Personal Zone: frequently ordered. --}}
-<section
+<div
     data-section="customer-home-personal"
     data-test="customer-home-personal"
     data-zone="personal"
 >
     <x-home.frequently-ordered :items="$frequentlyOrdered" />
-</section>
+</div>

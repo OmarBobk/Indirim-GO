@@ -3,6 +3,16 @@
     'items' => [],
 ])
 
+@php
+    $scrollToSearch = "
+        const el = document.getElementById('customer-home-package-search-input');
+        if (! el) { return; }
+        const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        el.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'center' });
+        el.focus({ preventScroll: true });
+    ";
+@endphp
+
 <section
     class="mx-auto w-full max-w-7xl scroll-mt-24 px-3 sm:px-0"
     data-section="customer-home-frequently-ordered"
@@ -13,7 +23,7 @@
         <div class="min-w-0">
             <h2
                 id="customer-home-frequently-ordered-heading"
-                class="text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 sm:text-lg"
+                class="text-base font-semibold tracking-tight text-pretty text-zinc-900 dark:text-zinc-50 sm:text-lg"
             >
                 {{ __('main.home_frequently_ordered') }}
             </h2>
@@ -33,60 +43,62 @@
                 <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400 sm:text-sm">
                     {{ __('main.home_frequently_ordered_empty_hint') }}
                 </p>
-                <div class="mt-3 flex flex-wrap gap-2">
+                <div class="mt-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
                     <button
                         type="button"
-                        class="inline-flex min-h-10 items-center rounded-lg bg-(--color-accent) px-3.5 py-2 text-sm font-semibold text-(--color-accent-foreground) transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--color-accent)/40"
+                        class="inline-flex min-h-10 w-full items-center justify-center rounded-lg bg-(--color-accent) px-3.5 py-2 text-sm font-semibold text-(--color-accent-foreground) transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--color-accent)/40 sm:w-auto"
                         data-test="customer-home-freq-empty-search"
                         data-event="home-freq-empty-search"
                         x-data
-                        x-on:click="
-                            const el = document.getElementById('customer-home-package-search-input');
-                            if (! el) { return; }
-                            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                            el.focus({ preventScroll: true });
-                        "
+                        x-on:click="{!! $scrollToSearch !!}"
                     >
                         {{ __('main.home_frequently_ordered_empty_search') }}
                     </button>
-                    <a
-                        href="#customer-home-browse"
-                        class="inline-flex min-h-10 items-center rounded-lg border border-zinc-200 bg-white px-3.5 py-2 text-sm font-medium text-zinc-700 transition hover:border-(--color-accent) dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-200"
-                        data-test="customer-home-freq-empty-categories"
-                        data-event="home-freq-empty-categories"
-                    >
-                        {{ __('main.home_frequently_ordered_empty_categories') }}
-                    </a>
-                    <a
-                        href="#homepage-section-of-packages"
-                        class="inline-flex min-h-10 items-center rounded-lg border border-zinc-200 bg-white px-3.5 py-2 text-sm font-medium text-zinc-700 transition hover:border-(--color-accent) dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-200"
-                        data-test="customer-home-freq-empty-packages"
-                        data-event="home-freq-empty-packages"
-                    >
-                        {{ __('main.home_frequently_ordered_empty_packages') }}
-                    </a>
+                    <p class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-zinc-600 dark:text-zinc-300">
+                        <a
+                            href="#customer-home-browse"
+                            class="font-medium underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--color-accent)/40 rounded-sm"
+                            data-test="customer-home-freq-empty-categories"
+                            data-event="home-freq-empty-categories"
+                        >
+                            {{ __('main.home_frequently_ordered_empty_categories') }}
+                        </a>
+                        <span class="text-zinc-300 dark:text-zinc-600" aria-hidden="true">·</span>
+                        <a
+                            href="#homepage-section-of-packages"
+                            class="font-medium underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--color-accent)/40 rounded-sm"
+                            data-test="customer-home-freq-empty-packages"
+                            data-event="home-freq-empty-packages"
+                        >
+                            {{ __('main.home_frequently_ordered_empty_packages') }}
+                        </a>
+                    </p>
                 </div>
             </div>
         @else
             <div class="relative" data-test="customer-home-frequently-ordered-rail">
                 <div
-                    class="pointer-events-none absolute inset-y-0 end-0 z-10 w-12 bg-gradient-to-l from-white from-40% to-transparent dark:from-zinc-900 max-sm:w-14"
+                    class="pointer-events-none absolute inset-y-0 end-0 z-10 w-14 bg-gradient-to-l from-white from-30% to-transparent dark:from-zinc-900 max-sm:w-16"
                     aria-hidden="true"
                 ></div>
                 <div
                     role="region"
                     aria-roledescription="{{ __('main.home_horizontal_rail') }}"
                     aria-label="{{ __('main.home_frequently_ordered') }}"
-                    class="-mx-1 flex gap-3 overflow-x-auto px-1 pb-1 pe-10 scrollbar-hide snap-x snap-proximity scroll-ps-1 scroll-pe-10 sm:pe-12 sm:scroll-pe-12"
+                    class="-mx-1 flex gap-3 overflow-x-auto px-1 pb-1 pe-12 scrollbar-hide snap-x snap-proximity scroll-ps-1 scroll-pe-12 sm:pe-14 sm:scroll-pe-14"
                     data-test="customer-home-frequently-ordered-scroller"
                 >
                     @foreach ($items as $item)
-                        <button
-                            type="button"
+                        <a
+                            href="{{ route('home', ['package' => $item['id']]) }}"
                             wire:key="home-freq-{{ $item['id'] }}"
                             x-data
-                            x-on:click="$dispatch('open-package-overlay', { packageId: {{ $item['id'] }} })"
-                            class="group flex w-36 shrink-0 snap-start cursor-pointer flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white text-start shadow-sm transition hover:border-(--color-accent) focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-accent) active:border-(--color-accent) dark:border-zinc-700 dark:bg-zinc-800 sm:w-40"
+                            x-on:click="
+                                if ($event.metaKey || $event.ctrlKey || $event.shiftKey || $event.altKey || $event.button !== 0) { return; }
+                                $event.preventDefault();
+                                $dispatch('open-package-overlay', { packageId: {{ $item['id'] }} });
+                            "
+                            class="group flex w-36 shrink-0 snap-start cursor-pointer flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white text-start shadow-sm transition-[border-color,box-shadow] hover:border-(--color-accent) focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-accent) active:border-(--color-accent) motion-reduce:transition-none dark:border-zinc-700 dark:bg-zinc-800 sm:w-40"
                             aria-label="{{ __('main.home_open_package_aria', ['name' => $item['name']]) }}"
                             title="{{ $item['name'] }}"
                             data-test="customer-home-frequently-ordered-item"
@@ -108,7 +120,7 @@
                                 <span class="line-clamp-2 text-xs font-semibold text-zinc-900 dark:text-zinc-100 sm:text-sm">
                                     {{ $item['name'] }}
                                 </span>
-                                <span class="text-xs text-zinc-500 dark:text-zinc-400">
+                                <span class="text-xs tabular-nums text-zinc-500 dark:text-zinc-400">
                                     {{ trans_choice('main.home_ordered_times', $item['times_ordered'], ['count' => $item['times_ordered']]) }}
                                 </span>
                                 <span
@@ -120,7 +132,7 @@
                                     <flux:icon icon="chevron-right" class="size-3.5 rtl:rotate-180" />
                                 </span>
                             </div>
-                        </button>
+                        </a>
                     @endforeach
                 </div>
             </div>
