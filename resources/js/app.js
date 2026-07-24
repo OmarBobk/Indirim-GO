@@ -1871,11 +1871,44 @@ document.addEventListener('alpine:init', () => {
         loading: false,
         panelOpen: false,
         hint: '',
+        activeIndex: -1,
         abortController: null,
         searchUrl: config.searchUrl,
         minLength: config.minLength ?? 2,
         pricesVisible: config.pricesVisible ?? false,
         strings: config.strings ?? {},
+        inputId: config.inputId ?? 'storefront-package-search-input',
+        homeUrl: config.homeUrl ?? '/',
+
+        get statusMessage() {
+            if (this.loading) {
+                return this.strings.loading ?? '';
+            }
+
+            if (this.hint) {
+                return this.hint;
+            }
+
+            if (this.panelOpen && this.results.length > 0) {
+                return this.strings.resultsCount
+                    ? this.strings.resultsCount.replace(':count', String(this.results.length))
+                    : `${this.results.length}`;
+            }
+
+            return '';
+        },
+
+        optionId(pkgId) {
+            return `storefront-package-search-option-${this.inputId}-${pkgId}`;
+        },
+
+        get activeDescendantId() {
+            if (this.activeIndex < 0 || ! this.results[this.activeIndex]) {
+                return null;
+            }
+
+            return this.optionId(this.results[this.activeIndex].id);
+        },
 
         onFocus() {
             if (this.query.trim().length >= this.minLength) {
@@ -1885,12 +1918,14 @@ document.addEventListener('alpine:init', () => {
 
         closePanel() {
             this.panelOpen = false;
+            this.activeIndex = -1;
         },
 
         clear() {
             this.query = '';
             this.results = [];
             this.hint = '';
+            this.activeIndex = -1;
             this.panelOpen = false;
             if (this.abortController) {
                 this.abortController.abort();
@@ -1898,8 +1933,88 @@ document.addEventListener('alpine:init', () => {
             }
         },
 
+        moveActive(delta) {
+            if (this.results.length === 0) {
+                return;
+            }
+
+            if (this.activeIndex < 0) {
+                this.activeIndex = delta > 0 ? 0 : this.results.length - 1;
+            } else {
+                const next = this.activeIndex + delta;
+                if (next < 0) {
+                    this.activeIndex = this.results.length - 1;
+                } else if (next >= this.results.length) {
+                    this.activeIndex = 0;
+                } else {
+                    this.activeIndex = next;
+                }
+            }
+
+            this.$nextTick(() => {
+                const el = document.getElementById(this.activeDescendantId);
+                el?.scrollIntoView({ block: 'nearest' });
+            });
+        },
+
+        onKeydown(event) {
+            const key = event.key;
+
+            if (key === 'Escape') {
+                if (this.panelOpen) {
+                    event.preventDefault();
+                    this.closePanel();
+                }
+
+                return;
+            }
+
+            if (key === 'ArrowDown' || key === 'ArrowUp') {
+                if (! this.panelOpen && this.results.length > 0) {
+                    this.panelOpen = true;
+                }
+
+                if (! this.panelOpen && this.query.trim().length >= this.minLength) {
+                    this.panelOpen = true;
+                }
+
+                if (! this.panelOpen) {
+                    return;
+                }
+
+                event.preventDefault();
+                this.moveActive(key === 'ArrowDown' ? 1 : -1);
+
+                return;
+            }
+
+            if (! this.panelOpen) {
+                return;
+            }
+
+            if (key === 'Home' && this.results.length > 0) {
+                event.preventDefault();
+                this.activeIndex = 0;
+
+                return;
+            }
+
+            if (key === 'End' && this.results.length > 0) {
+                event.preventDefault();
+                this.activeIndex = this.results.length - 1;
+
+                return;
+            }
+
+            if (key === 'Enter' && this.activeIndex >= 0 && this.results[this.activeIndex]) {
+                event.preventDefault();
+                this.selectPackage(this.results[this.activeIndex]);
+            }
+        },
+
         async search() {
             const term = this.query.trim();
+            this.activeIndex = -1;
 
             if (term.length < this.minLength) {
                 this.results = [];
@@ -1956,9 +2071,28 @@ document.addEventListener('alpine:init', () => {
             }
         },
 
-        selectPackage(pkg) {
+        packageHref(pkgId) {
+            try {
+                const url = new URL(this.homeUrl, window.location.origin);
+                url.searchParams.set('package', String(pkgId));
+
+                return `${url.pathname}${url.search}`;
+            } catch {
+                return `${this.homeUrl}?package=${pkgId}`;
+            }
+        },
+
+        selectPackage(pkg, event = null) {
             if (!pkg?.id) {
                 return;
+            }
+
+            if (event && (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0)) {
+                return;
+            }
+
+            if (event) {
+                event.preventDefault();
             }
 
             this.closePanel();

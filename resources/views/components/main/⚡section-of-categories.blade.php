@@ -88,7 +88,7 @@ new class extends Component
                     {{ __('messages.create_first_category') }}
                 </div>
             @else
-                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div class="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-4" data-test="homepage-categories-grid">
                     @foreach ($categories as $category)
                         <a
                             href="{{ route('categories.show', ['category' => $category['slug']]) }}"
@@ -98,7 +98,6 @@ new class extends Component
                             @class([
                                 'group relative overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-accent hover:shadow-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-accent) dark:border-zinc-700 dark:bg-zinc-800 dark:hover:border-accent',
                                 'sm:col-span-2 lg:row-span-2' => $loop->first,
-
                             ])
                             aria-label="{{ $category['name'] }}"
                             data-test="homepage-category-card"
@@ -107,7 +106,7 @@ new class extends Component
                             <div class="pointer-events-none absolute inset-x-0 bottom-0 h-[48%] bg-gradient-to-t from-black/90 via-black/50 to-transparent"></div>
                             <div class="pointer-events-none absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-black/40 to-transparent transition duration-200 group-hover:from-black/50"></div>
 
-                            <div class=" aspect-[4/3] overflow-hidden bg-zinc-100 dark:bg-zinc-900">
+                            <div class="aspect-[4/3] overflow-hidden bg-zinc-100 dark:bg-zinc-900">
                                 <img
                                     src="{{ $category['image'] }}"
                                     alt="{{ $category['name'] }}"
@@ -119,35 +118,31 @@ new class extends Component
                             </div>
 
                             <div class="absolute inset-x-0 bottom-0">
-                                <div class="">
-                                    <div class="pb-2  gap-2 items-center justify-between space-y-1.5 rounded-b-2xl border border-white/10 bg-zinc-950/70 px-3 pt-2 shadow-lg ring-1 ring-black/40 backdrop-blur-md supports-[backdrop-filter]:bg-zinc-950/55 sm:px-3.5">
-
-                                        @if ($category['package_names'] !== [] || $category['package_names_overflow_count'] > 0)
-                                            <div
-                                                class="flex min-w-0 flex-nowrap gap-1.5 overflow-hidden"
-                                                data-test="category-package-pills"
-                                                aria-label="{{ __('messages.packages') }}"
-                                            >
-                                                @foreach ($category['package_names'] as $packageName)
-                                                    <span class="inline-flex max-w-[9rem] shrink truncate whitespace-nowrap rounded-full border border-white/25 bg-black/55 px-2 py-1 text-[11px] font-bold text-white shadow-sm backdrop-blur-sm sm:max-w-[10rem] sm:px-2.5 sm:text-xs">
-                                                        {{ $packageName }}
-                                                    </span>
-                                                @endforeach
-                                                @if ($category['package_names_overflow_count'] > 0)
-                                                    <span
-                                                        class="inline-flex shrink-0 rounded-full border border-white/30 bg-black/60 px-2 py-1 text-[11px] font-bold text-white/95 shadow-sm backdrop-blur-sm sm:px-2.5 sm:text-xs"
-                                                        title="{{ __('messages.packages') }}"
-                                                    >
-                                                        +{{ $category['package_names_overflow_count'] }}
-                                                    </span>
-                                                @endif
-                                            </div>
-                                        @endif
-                                        <div class="text-base font-semibold text-white [text-shadow:0_1px_2px_rgb(0_0_0/0.85),0_2px_12px_rgb(0_0_0/0.55)] sm:text-lg {{ $loop->first ? 'lg:text-2xl' : '' }}">
-                                            {{ $category['name'] }}
+                                <div class="space-y-1 rounded-b-2xl border border-white/10 bg-zinc-950/70 px-2 py-1.5 shadow-lg ring-1 ring-black/40 backdrop-blur-md supports-[backdrop-filter]:bg-zinc-950/55 sm:space-y-1.5 sm:px-3.5 sm:pb-2 sm:pt-2">
+                                    @if ($category['package_names'] !== [] || $category['package_names_overflow_count'] > 0)
+                                        <div
+                                            class="hidden min-w-0 flex-nowrap gap-1.5 overflow-hidden sm:flex"
+                                            data-test="category-package-pills"
+                                            aria-label="{{ __('messages.packages') }}"
+                                        >
+                                            @foreach ($category['package_names'] as $packageName)
+                                                <span class="inline-flex max-w-[9rem] shrink truncate whitespace-nowrap rounded-full border border-white/25 bg-black/55 px-2 py-1 text-[11px] font-bold text-white shadow-sm backdrop-blur-sm sm:max-w-[10rem] sm:px-2.5 sm:text-xs">
+                                                    {{ $packageName }}
+                                                </span>
+                                            @endforeach
+                                            @if ($category['package_names_overflow_count'] > 0)
+                                                <span
+                                                    class="inline-flex shrink-0 rounded-full border border-white/30 bg-black/60 px-2 py-1 text-[11px] font-bold text-white/95 shadow-sm backdrop-blur-sm sm:px-2.5 sm:text-xs"
+                                                    title="{{ __('messages.packages') }}"
+                                                >
+                                                    +{{ $category['package_names_overflow_count'] }}
+                                                </span>
+                                            @endif
                                         </div>
+                                    @endif
+                                    <div class="line-clamp-2 text-sm font-semibold leading-snug text-white [text-shadow:0_1px_2px_rgb(0_0_0/0.85),0_2px_12px_rgb(0_0_0/0.55)] sm:text-lg {{ $loop->first ? 'lg:text-2xl' : '' }}">
+                                        {{ $category['name'] }}
                                     </div>
-
                                 </div>
                             </div>
                         </a>

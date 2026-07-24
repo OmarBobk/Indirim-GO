@@ -19,7 +19,8 @@ class UpsertProduct
      *     amount_unit_label?:?string,
      *     custom_amount_min?:?int,
      *     custom_amount_max?:?int,
-     *     custom_amount_step?:?int
+     *     custom_amount_step?:?int,
+     *     product_api?:?string
      * }  $data
      */
     public function handle(?int $productId, array $data): Product
@@ -52,10 +53,20 @@ class UpsertProduct
             'custom_amount_min' => $isCustom ? ($data['custom_amount_min'] ?? null) : null,
             'custom_amount_max' => $isCustom ? ($data['custom_amount_max'] ?? null) : null,
             'custom_amount_step' => $isCustom ? max(1, (int) ($data['custom_amount_step'] ?? 1)) : null,
+            'product_api' => self::normalizeProductApi($data['product_api'] ?? null),
         ]);
 
         $product->save();
 
         return $product;
+    }
+
+    public static function normalizeProductApi(?string $value): ?string
+    {
+        if ($value === null || trim($value) === '') {
+            return null;
+        }
+
+        return trim($value);
     }
 }

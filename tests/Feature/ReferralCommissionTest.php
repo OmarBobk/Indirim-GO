@@ -66,7 +66,7 @@ test('checkout attaches referral meta from buyer referred_by when no cookie and 
         'product_id' => $product->id,
         'package_id' => $package->id,
         'quantity' => 1,
-    ]], []);
+    ]], [])->order;
 
     $order->refresh();
 
@@ -106,7 +106,7 @@ test('checkout attaches referral meta from cookie and pay creates commission', f
         'product_id' => $product->id,
         'package_id' => $package->id,
         'quantity' => 1,
-    ]], []);
+    ]], [])->order;
 
     $order->refresh();
 
@@ -151,7 +151,7 @@ test('commission uses website default rate when salesperson has no custom rate',
         'product_id' => $product->id,
         'package_id' => $package->id,
         'quantity' => 1,
-    ]], []);
+    ]], [])->order;
 
     $commission = Commission::query()->where('order_id', $order->id)->first();
     expect($commission)->not->toBeNull();
@@ -187,7 +187,7 @@ test('commission uses salesperson custom rate percent when set', function () {
         'product_id' => $product->id,
         'package_id' => $package->id,
         'quantity' => 1,
-    ]], []);
+    ]], [])->order;
 
     $commission = Commission::query()->where('order_id', $order->id)->first();
     expect($commission)->not->toBeNull();
@@ -220,7 +220,7 @@ test('checkout does not attach referral when cookie matches buyer self', functio
         'product_id' => $product->id,
         'package_id' => $package->id,
         'quantity' => 1,
-    ]], []);
+    ]], [])->order;
 
     $order->refresh();
 

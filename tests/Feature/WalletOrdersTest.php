@@ -57,7 +57,9 @@ test('wallet shows recent orders with link', function () {
     $this->actingAs($user)
         ->get('/wallet')
         ->assertOk()
-        ->assertSee('data-test="back-button"', false)
+        ->assertSee('data-test="wallet-page"', false)
+        ->assertSee('data-storefront-page="work"', false)
+        ->assertDontSee('data-test="back-button"', false)
         ->assertSee($order->order_number)
         ->assertSee(__('messages.order_number').': '.$order->order_number)
         ->assertSee(route('orders.show', $order->order_number));

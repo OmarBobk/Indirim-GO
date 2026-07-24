@@ -3,7 +3,9 @@
 use App\Actions\Products\GetProductPackages;
 use App\Actions\Products\UpdateProductEntryPrice;
 use App\Enums\ProductAmountMode;
+use App\Models\Package;
 use App\Models\Product;
+use App\Services\SupplierPriceScanService;
 use Illuminate\Support\Collection;
 use Illuminate\View\View;
 use Livewire\Component;
@@ -48,6 +50,34 @@ new class extends Component
             ->orderBy('order')
             ->orderBy('id')
             ->get();
+    }
+
+    public function getIsWasimPackageProperty(): bool
+    {
+        $id = $this->selectedPackageId();
+
+        if ($id === null) {
+            return false;
+        }
+
+        $provider = Package::query()->whereKey($id)->value('fulfillment_provider');
+
+        return is_string($provider) && $provider === 'browser:wasim';
+    }
+
+    public function formatWasimScannedPrice(Product $product): string
+    {
+        if ($product->supplier_scan_error !== null) {
+            return __('messages.price_drift_scan_error_short', ['code' => $product->supplier_scan_error]);
+        }
+
+        return app(SupplierPriceScanService::class)->formatScannedPrice($product)
+            ?? __('messages.price_drift_never_scanned');
+    }
+
+    public function wasimProductUrl(Product $product): ?string
+    {
+        return app(SupplierPriceScanService::class)->buildWasimProductUrl($product);
     }
 
     public function saveChangedPrices(): void
@@ -275,6 +305,19 @@ new class extends Component
                                     class:input="opacity-90"
                                 />
                             </div>
+                            @if ($this->isWasimPackage)
+                                <div class="space-y-1 rounded-lg border border-[var(--cf-border)] bg-[var(--cf-muted-surface)] px-3 py-2">
+                                    <flux:text class="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--cf-muted-foreground)]">
+                                        {{ __('messages.product_entry_prices_wasim') }}
+                                    </flux:text>
+                                    <p class="tabular-nums text-sm text-[var(--cf-foreground)]">{{ $this->formatWasimScannedPrice($product) }}</p>
+                                    @if ($url = $this->wasimProductUrl($product))
+                                        <a href="{{ $url }}" target="_blank" rel="noopener noreferrer" class="text-xs text-[var(--cf-primary)] hover:underline">
+                                            {{ __('messages.product_entry_prices_open_wasim') }}
+                                        </a>
+                                    @endif
+                                </div>
+                            @endif
                         </div>
                         <div class="space-y-3 border-t border-[var(--cf-border)] pt-4 md:border-s md:border-t-0 md:pt-0 md:ps-6">
                             <p class="cf-display text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--cf-muted-foreground)]">

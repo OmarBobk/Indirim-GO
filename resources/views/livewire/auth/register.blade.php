@@ -8,7 +8,7 @@
             method="POST"
             action="{{ route('register.store') }}"
             id="register-form"
-            class="flex flex-col gap-6"
+            class="relative flex flex-col gap-6"
             x-data="{ submitting: false, passScore: 0 }"
             x-on:submit="submitting = true"
             x-on:input.capture="
@@ -34,6 +34,20 @@
             "
         >
             @csrf
+
+            {{-- Honeypot: hidden from humans, filled by naive bots --}}
+            @php($honeypotField = config('security.registration.honeypot_field', 'website'))
+            <div class="pointer-events-none absolute -left-[9999px] h-0 w-0 overflow-hidden opacity-0" aria-hidden="true">
+                <label for="{{ $honeypotField }}">Website</label>
+                <input
+                    type="text"
+                    name="{{ $honeypotField }}"
+                    id="{{ $honeypotField }}"
+                    value=""
+                    tabindex="-1"
+                    autocomplete="off"
+                />
+            </div>
 
             <input type="hidden" name="timezone_detected" id="timezone-detected" value="">
 
@@ -160,6 +174,20 @@
                     <flux:error name="phone" />
                 </flux:field>
             </div>
+
+            @if (config('services.turnstile.enabled'))
+                <flux:field>
+                    <div
+                        class="cf-turnstile"
+                        data-sitekey="{{ config('services.turnstile.site_key') }}"
+                        data-theme="auto"
+                    ></div>
+                    <flux:error name="cf-turnstile-response" />
+                </flux:field>
+                @once
+                    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+                @endonce
+            @endif
 
             <flux:button
                 type="submit"

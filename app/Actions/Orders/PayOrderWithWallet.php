@@ -9,6 +9,7 @@ use App\Enums\CommissionStatus;
 use App\Enums\OrderStatus;
 use App\Enums\WalletTransactionDirection;
 use App\Enums\WalletTransactionType;
+use App\Exceptions\WalletSpendDeniedException;
 use App\Models\Commission;
 use App\Models\Order;
 use App\Models\User;
@@ -17,12 +18,17 @@ use App\Models\WalletTransaction;
 use App\Models\WebsiteSetting;
 use App\Services\OperationalIntelligenceService;
 use App\Services\SystemEventService;
+use App\Services\WalletSpendPolicy;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class PayOrderWithWallet
 {
+    public function __construct(
+        private readonly WalletSpendPolicy $spendPolicy = new WalletSpendPolicy,
+    ) {}
+
     /**
      * Debit the wallet only after posting a ledger transaction.
      */
@@ -81,9 +87,11 @@ class PayOrderWithWallet
                 return $lockedOrder;
             }
 
-            if ((float) $lockedWallet->balance < (float) $lockedOrder->total) {
+            try {
+                $this->spendPolicy->assertCanDebit($lockedWallet, (string) $lockedOrder->total);
+            } catch (WalletSpendDeniedException $exception) {
                 throw ValidationException::withMessages([
-                    'wallet' => 'Insufficient wallet balance.',
+                    'wallet' => $exception->getMessage(),
                 ]);
             }
 

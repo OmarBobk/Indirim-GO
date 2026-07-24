@@ -4,10 +4,11 @@ return [
 
     'backup' => [
         /*
-         * The name of this application. You can use this name to monitor
-         * the backups.
+         * Folder name used under the backup disk. Keep this ASCII-safe:
+         * Spatie stores zips at "{name}/{timestamp}.zip". Using APP_NAME
+         * with non-ASCII characters (e.g. Turkish "İ") can break writes.
          */
-        'name' => env('APP_NAME', 'laravel-backup'),
+        'name' => env('BACKUP_NAME', env('APP_NAME', 'laravel-backup')),
 
         'source' => [
             'files' => [
@@ -275,7 +276,7 @@ return [
      */
     'monitor_backups' => [
         [
-            'name' => env('APP_NAME', 'laravel-backup'),
+            'name' => env('BACKUP_NAME', env('APP_NAME', 'laravel-backup')),
             'disks' => ['backups'],
             'health_checks' => [
                 \Spatie\Backup\Tasks\Monitor\HealthChecks\MaximumAgeInDays::class => 1,

@@ -15,6 +15,19 @@ test('header includes alpine package search', function () {
     $response->assertSee(__('main.search_packages_placeholder'));
 });
 
+test('storefront header uses locale brand logo images', function () {
+    $this->get('/')
+        ->assertOk()
+        ->assertSee('light_en_logo.png', false)
+        ->assertSee('dark_en_logo.png', false);
+
+    $this->withSession(['locale' => 'ar'])
+        ->get('/')
+        ->assertOk()
+        ->assertSee('light_ar_logo.png', false)
+        ->assertSee('dark_ar_logo.png', false);
+});
+
 test('package search api returns only active packages with active products', function () {
     $category = Category::factory()->create(['is_active' => true]);
 

@@ -7,7 +7,10 @@ use App\Enums\OrderStatus;
 use App\Models\LoyaltySetting;
 use App\Models\LoyaltyTierConfig;
 use App\Models\Product;
+use App\Models\Wallet;
 use App\Services\LoyaltySpendService;
+use App\Support\FrontendMoney;
+use App\Support\PurchaseResumeIntent;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 use Livewire\Attributes\Computed;
@@ -22,13 +25,14 @@ new #[Layout('layouts::frontend')] class extends Component
     public ?string $checkoutError = null;
     public ?string $checkoutSuccess = null;
     public ?string $lastOrderNumber = null;
+    public bool $checkoutNeedsFunds = false;
     public array $requirementsByProduct = [];
     public array $cartRequirements = [];
     public array $customAmountPriceMeta = [];
 
     public function checkout(mixed $items): void
     {
-        $this->reset('checkoutError', 'checkoutSuccess', 'lastOrderNumber');
+        $this->reset('checkoutError', 'checkoutSuccess', 'lastOrderNumber', 'checkoutNeedsFunds');
 
         if (! auth()->check()) {
             $this->checkoutError = __('messages.sign_in_to_checkout');
@@ -44,7 +48,7 @@ new #[Layout('layouts::frontend')] class extends Component
         }
 
         try {
-            $order = app(CheckoutFromPayload::class)->handle(
+            $checkout = app(CheckoutFromPayload::class)->handle(
                 $user,
                 $items,
                 [
@@ -53,6 +57,8 @@ new #[Layout('layouts::frontend')] class extends Component
                 ]
             );
 
+            $order = $checkout->order;
+
             if (! $order->exists || $order->status !== OrderStatus::Paid) {
                 $this->checkoutError = __('messages.checkout_could_not_complete');
                 $this->error($this->checkoutError);
@@ -60,18 +66,41 @@ new #[Layout('layouts::frontend')] class extends Component
                 return;
             }
 
-            $this->checkoutSuccess = __('messages.payment_successful_order_processing', ['order_number' => $order->order_number]);
+            $this->checkoutSuccess = $checkout->reusedExistingOrder
+                ? __('messages.checkout_order_already_placed', ['order_number' => $order->order_number])
+                : __('messages.payment_successful_order_processing', ['order_number' => $order->order_number]);
             $this->lastOrderNumber = $order->order_number;
             $this->success($this->checkoutSuccess);
+            PurchaseResumeIntent::forget();
             $this->dispatch('checkout-success', orderNumber: $order->order_number);
         } catch (ValidationException $exception) {
             $this->checkoutError = collect($exception->errors())->flatten()->first()
                 ?? __('messages.checkout_validation_failed');
+            $this->checkoutNeedsFunds = array_key_exists('wallet', $exception->errors());
             $this->error($this->checkoutError);
         } catch (\Throwable) {
             $this->checkoutError = __('messages.something_went_wrong_checkout');
             $this->error($this->checkoutError);
         }
+    }
+
+    public function continueToTopup(?string $amount = null): void
+    {
+        if (! auth()->check()) {
+            $this->checkoutError = __('messages.sign_in_to_checkout');
+            $this->error($this->checkoutError);
+
+            return;
+        }
+
+        PurchaseResumeIntent::store(['source' => PurchaseResumeIntent::SOURCE_CART]);
+
+        $query = [];
+        if (is_string($amount) && is_numeric($amount) && (float) $amount > 0) {
+            $query['amount'] = number_format((float) $amount, 2, '.', '');
+        }
+
+        $this->redirect(route('wallet.topup', $query), navigate: true);
     }
 
     public function loadRequirements(array $productIds): void
@@ -218,6 +247,34 @@ new #[Layout('layouts::frontend')] class extends Component
             return null;
         }
         return max(0.0, (float) $next->min_spend - $this->loyaltyRollingSpend);
+    }
+
+    #[Computed]
+    public function customerWallet(): ?Wallet
+    {
+        if (! auth()->check()) {
+            return null;
+        }
+
+        return Wallet::forUser(auth()->user());
+    }
+
+    #[Computed]
+    public function walletAvailableToSpend(): ?string
+    {
+        return $this->customerWallet?->availableToSpend();
+    }
+
+    #[Computed]
+    public function walletOutstandingDebt(): ?string
+    {
+        $wallet = $this->customerWallet;
+
+        if ($wallet === null || ! $wallet->isOverdrawn()) {
+            return null;
+        }
+
+        return $wallet->outstandingDebt();
     }
 
     public function render(): View
@@ -390,10 +447,12 @@ new #[Layout('layouts::frontend')] class extends Component
     $cartMaskThousands = $cartAmountMaskEn ? ',' : '.';
     $cartImageFallback = asset('images/promotions/promo-placeholder.svg');
     $cartInputClass = 'h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm text-zinc-700 shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-(--color-accent) focus:ring-2 focus:ring-(--color-accent)/15 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-500';
+    $cartMoney = FrontendMoney::for(auth()->user());
+    $cartPricesVisible = \App\Models\WebsiteSetting::getPricesVisible();
 @endphp
 
 <div
-    class="mx-auto w-full max-w-7xl px-3 py-6 sm:px-0 sm:py-10"
+    class="storefront-page storefront-page--browse"
     x-data="{
         itemsLabel: @js(__('messages.items')),
         itemLabel: @js(__('messages.item')),
@@ -432,15 +491,28 @@ new #[Layout('layouts::frontend')] class extends Component
     "
     x-on:checkout-success.window="$store.cart.clear()"
     data-test="cart-page"
+    data-storefront-page="browse"
 >
-    <div class="mb-4 flex items-center">
-        <x-back-button />
-    </div>
+    @php
+        $cartResumeIntent = \App\Support\PurchaseResumeIntent::peek();
+        $showCartResumeBanner = session('purchase_resume_ready')
+            || (($cartResumeIntent['source'] ?? null) === \App\Support\PurchaseResumeIntent::SOURCE_CART);
+    @endphp
+    @if ($showCartResumeBanner)
+        <flux:callout variant="subtle" icon="shopping-cart" class="mb-4" data-test="purchase-resume-banner">
+            <flux:text class="font-medium text-zinc-900 dark:text-zinc-100">
+                {{ __('messages.purchase_resume_cart_ready') }}
+            </flux:text>
+            <flux:text class="text-sm text-zinc-600 dark:text-zinc-400">
+                {{ __('messages.purchase_resume_banner_body') }}
+            </flux:text>
+        </flux:callout>
+    @endif
     <div class="flex flex-col gap-6 lg:flex-row lg:items-start">
         <section class="flex-1">
-            <div class="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-800 sm:p-6">
+            <div class="storefront-card storefront-card--pad-md">
                 <div class="flex items-center justify-between gap-3">
-                    <flux:heading size="lg" class="text-zinc-900 dark:text-zinc-100">
+                    <flux:heading size="lg" class="storefront-type-title text-zinc-900 dark:text-zinc-100">
                         {{ __('main.my_cart') }}
                     </flux:heading>
                     <span
@@ -472,7 +544,7 @@ new #[Layout('layouts::frontend')] class extends Component
                     <template x-for="item in $store.cart.items" :key="item.id">
                         <li>
                             <article
-                                class="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 sm:p-5"
+                                class="storefront-card storefront-card--pad-md"
                             >
                                 <div class="flex gap-4">
                                     <div
@@ -685,7 +757,7 @@ new #[Layout('layouts::frontend')] class extends Component
         </section>
 
         <aside class="w-full lg:w-80 lg:sticky lg:top-24">
-            <div class="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-800 sm:p-6">
+            <div class="storefront-card storefront-card--pad-md">
                 <flux:heading size="lg" class="text-zinc-900 dark:text-zinc-100">
                     {{ __('main.order_summary') }}
                 </flux:heading>
@@ -734,34 +806,52 @@ new #[Layout('layouts::frontend')] class extends Component
                 @endif
 
                 <div class="mt-4 space-y-3 text-sm">
+                    @auth
+                        @if ($cartPricesVisible && $this->walletOutstandingDebt !== null)
+                            <div
+                                class="flex items-center justify-between text-zinc-600 dark:text-zinc-300"
+                                data-test="cart-amount-you-owe"
+                            >
+                                <span>{{ __('messages.cart_amount_you_owe') }}</span>
+                                <span class="font-semibold tabular-nums text-red-700 dark:text-red-400" dir="ltr">
+                                    {{ $cartMoney->format((float) $this->walletOutstandingDebt, 'USD', 2) }}
+                                </span>
+                            </div>
+                        @endif
+                    @endauth
                     <div class="flex items-center justify-between text-zinc-600 dark:text-zinc-300">
                         <span>{{ __('messages.subtotal') }}</span>
-                        @if(\App\Models\WebsiteSetting::getPricesVisible())
+                        @if($cartPricesVisible)
                         <span class="font-semibold text-zinc-900 dark:text-zinc-100" dir="ltr" x-text="$store.cart.format($store.cart.subtotal)"></span>
                         @else
                         <span class="font-semibold text-zinc-500 dark:text-zinc-400">—</span>
                         @endif
                     </div>
-                    @if(\App\Models\WebsiteSetting::getPricesVisible())
+                    @if($cartPricesVisible)
                     <div class="flex items-center justify-between text-green-600 dark:text-green-400" x-show="$store.cart.loyaltyDiscount > 0" x-cloak>
                         <span>{{ __('messages.loyalty_discount') }} <span x-show="$store.cart.loyaltyTierName" x-text="'(' + $store.cart.loyaltyTierLabel + ')'"></span>:</span>
                         <span class="font-semibold" dir="ltr" x-text="'-' + $store.cart.format($store.cart.loyaltyDiscount)"></span>
                     </div>
                     @endif
                     <div class="flex items-center justify-between text-zinc-600 dark:text-zinc-300">
-                        <span>{{ __('main.shipping') }}</span>
-                        <span class="font-semibold text-zinc-900 dark:text-zinc-100">{{ __('main.free_shipping') }}</span>
+                        <span>{{ __('messages.purchase_instant_delivery') }}</span>
+                        <span class="font-semibold text-emerald-700 dark:text-emerald-400">{{ __('main.free_shipping') }}</span>
                     </div>
                 </div>
 
                 <div class="mt-4 flex items-center justify-between border-t border-zinc-100 pt-4 text-base font-semibold dark:border-zinc-700">
                     <span class="text-zinc-900 dark:text-zinc-100">{{ __('messages.total') }}</span>
-                    @if(\App\Models\WebsiteSetting::getPricesVisible())
+                    @if($cartPricesVisible)
                     <span class="text-(--color-accent)" dir="ltr" x-text="$store.cart.format($store.cart.subtotal - $store.cart.loyaltyDiscount)"></span>
                     @else
                     <span class="text-zinc-500 dark:text-zinc-400">—</span>
                     @endif
                 </div>
+                @unless ($cartPricesVisible)
+                    <div class="mt-3">
+                        <x-purchase.prices-gated context="cart" />
+                    </div>
+                @endunless
                 <p
                     class="mt-1 text-xs text-zinc-500 dark:text-zinc-400"
                     x-show="$store.cart.displayCurrencyCode() === 'TRY'"
@@ -770,7 +860,39 @@ new #[Layout('layouts::frontend')] class extends Component
                     {{ __('messages.amount') }}: {{ __('messages.estimated_total') }} (TRY, approx)
                 </p>
 
-                <div class="mt-4 space-y-3">
+                @auth
+                    @if ($cartPricesVisible && $this->walletAvailableToSpend !== null)
+                        <div
+                            class="mt-4"
+                            data-test="cart-affordability"
+                            x-data="{
+                                available: {{ (float) $this->walletAvailableToSpend }},
+                                get total() { return Number($store.cart.subtotal - $store.cart.loyaltyDiscount) || 0 },
+                                get shortfall() { return Math.max(0, this.total - this.available) },
+                                get needsMore() { return this.shortfall > 0.009 || {{ $checkoutNeedsFunds ? 'true' : 'false' }} },
+                            }"
+                        >
+                            <x-purchase.affordability
+                                :available="(float) $this->walletAvailableToSpend"
+                                :needs-funds="$checkoutNeedsFunds"
+                                add-funds-wire-click="continueToTopup"
+                                compact
+                            />
+                            <button
+                                type="button"
+                                x-show="needsMore"
+                                x-cloak
+                                x-on:click="$wire.continueToTopup(shortfall > 0.009 ? shortfall.toFixed(2) : null)"
+                                class="mt-2 block w-full text-center text-xs font-semibold text-(--color-accent) hover:underline"
+                                data-test="cart-add-funds-shortfall"
+                            >
+                                {{ __('messages.cart_need_more_funds') }}
+                            </button>
+                        </div>
+                    @endif
+                @endauth
+
+                <div class="mt-4 hidden space-y-3 lg:block">
                     <flux:button
                         variant="primary"
                         class="w-full justify-center !bg-accent !text-accent-foreground hover:!bg-accent-hover"
@@ -780,8 +902,23 @@ new #[Layout('layouts::frontend')] class extends Component
                         wire:target="checkout"
                         data-test="cart-checkout"
                     >
-                        {{ __('main.proceed_to_checkout') }}
+                        <span wire:loading.remove wire:target="checkout">{{ __('main.proceed_to_checkout') }}</span>
+                        <span wire:loading wire:target="checkout">{{ __('main.checking_out') }}</span>
                     </flux:button>
+                    @auth
+                        @if ($checkoutNeedsFunds)
+                            <button
+                                type="button"
+                                wire:click="continueToTopup"
+                                wire:loading.attr="disabled"
+                                class="block w-full text-center text-xs font-medium text-(--color-accent) hover:underline disabled:opacity-60"
+                                data-test="cart-add-funds-link"
+                            >
+                                <span wire:loading.remove wire:target="continueToTopup">{{ __('messages.cart_need_more_funds') }}</span>
+                                <span wire:loading wire:target="continueToTopup">{{ __('messages.please_wait') }}</span>
+                            </button>
+                        @endif
+                    @endauth
                     <p
                         class="text-xs text-zinc-500 dark:text-zinc-400"
                         x-show="$store.cart.hasMissingRequirements && ! $store.cart.showCartRequirementErrors"
@@ -801,4 +938,63 @@ new #[Layout('layouts::frontend')] class extends Component
             </div>
         </aside>
     </div>
+
+    {{-- Mobile thumb-zone checkout bar --}}
+    <div
+        class="storefront-sticky-cta fixed inset-x-0 z-40 border-t border-zinc-200 bg-white/95 px-3 py-3 shadow-[0_-8px_24px_rgb(0_0_0/0.08)] backdrop-blur dark:border-zinc-700 dark:bg-zinc-900/95 lg:hidden"
+        x-show="$store.cart.count > 0"
+        x-cloak
+        data-test="cart-sticky-checkout"
+    >
+        <div class="mx-auto flex w-full max-w-7xl flex-col gap-2">
+            <div class="flex items-center justify-between gap-3 text-sm">
+                <span class="font-medium text-zinc-600 dark:text-zinc-300">{{ __('messages.total') }}</span>
+                @if ($cartPricesVisible)
+                    <span class="text-lg font-bold tabular-nums text-(--color-accent)" dir="ltr" x-text="$store.cart.format($store.cart.subtotal - $store.cart.loyaltyDiscount)"></span>
+                @else
+                    <span class="text-lg font-semibold text-zinc-500">—</span>
+                @endif
+            </div>
+            @auth
+                @if ($checkoutNeedsFunds)
+                    <button
+                        type="button"
+                        wire:click="continueToTopup"
+                        wire:loading.attr="disabled"
+                        class="text-center text-xs font-semibold text-(--color-accent) hover:underline disabled:opacity-60"
+                        data-test="cart-sticky-add-funds"
+                    >
+                        <span wire:loading.remove wire:target="continueToTopup">{{ __('messages.cart_need_more_funds') }}</span>
+                        <span wire:loading wire:target="continueToTopup">{{ __('messages.please_wait') }}</span>
+                    </button>
+                @endif
+            @endauth
+            <flux:button
+                variant="primary"
+                class="min-h-12 w-full justify-center !bg-accent !text-accent-foreground hover:!bg-accent-hover"
+                x-bind:disabled="$store.cart.count === 0 || $store.cart.hasMissingRequirements || $store.cart.hasCustomAmountErrors"
+                x-on:click="$wire.checkout($store.cart.checkoutItems)"
+                wire:loading.attr="disabled"
+                wire:target="checkout"
+                data-test="cart-checkout-sticky"
+            >
+                <span wire:loading.remove wire:target="checkout">{{ __('main.proceed_to_checkout') }}</span>
+                <span wire:loading wire:target="checkout">{{ __('main.checking_out') }}</span>
+            </flux:button>
+            <p
+                class="text-center text-xs text-zinc-500 dark:text-zinc-400"
+                x-show="$store.cart.hasMissingRequirements && ! $store.cart.showCartRequirementErrors"
+            >
+                {{ __('messages.requirements_required_checkout') }}
+            </p>
+        </div>
+    </div>
+    <div
+        class="lg:hidden"
+        style="height: calc(var(--storefront-sticky-offset) + 7rem);"
+        x-show="$store.cart.count > 0"
+        x-cloak
+        aria-hidden="true"
+        data-test="cart-sticky-spacer"
+    ></div>
 </div>

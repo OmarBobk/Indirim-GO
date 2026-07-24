@@ -25,6 +25,7 @@ class GetPackages
                 'slug',
                 'description',
                 'is_active',
+                'fulfillment_provider',
                 'order',
                 'icon',
                 'image',

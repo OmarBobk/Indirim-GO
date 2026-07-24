@@ -1,11 +1,15 @@
 <?php
 
+use App\Actions\Fulfillments\CancelFulfillmentAutomationRun;
 use App\Actions\Fulfillments\CompleteFulfillment;
 use App\Actions\Fulfillments\ClaimFulfillment;
 use App\Actions\Fulfillments\FailFulfillment;
 use App\Actions\Fulfillments\GetFulfillments;
 use App\Actions\Fulfillments\RetryFulfillment;
+use App\Actions\Fulfillments\RetryFulfillmentAutomation;
 use App\Actions\Fulfillments\StartFulfillment;
+use App\Models\FulfillmentAutomationRun;
+use App\Services\FulfillmentAutomationService;
 use App\Actions\Orders\RefundOrderItem;
 use App\Actions\Refunds\ApproveRefundRequest;
 use App\Enums\FulfillmentStatus;
@@ -342,6 +346,21 @@ new class extends Component
         app(RetryFulfillment::class)->handle($fulfillment, 'admin', auth()->id());
 
         $this->success(__('messages.fulfillment_marked_queued'));
+    }
+
+    public function retryAutomation(int $fulfillmentId): void
+    {
+        $fulfillment = Fulfillment::query()->findOrFail($fulfillmentId);
+
+        if (! $fulfillment->isBrowserAutomated()) {
+            return;
+        }
+
+        $this->authorize('update', $fulfillment);
+
+        app(RetryFulfillmentAutomation::class)->handle($fulfillment, auth()->id());
+
+        $this->success(__('messages.fulfillment_automation_retry_queued'));
     }
 
     #[On('fulfillment-list-updated')]
@@ -734,6 +753,22 @@ new class extends Component
         return $this->activeClaimedCount < 5;
     }
 
+    public function getCompleteModalPendingRefundProperty(): bool
+    {
+        $fulfillment = $this->selectedFulfillment;
+
+        if ($fulfillment === null) {
+            return false;
+        }
+
+        return WalletTransaction::query()
+            ->where('reference_type', Fulfillment::class)
+            ->where('reference_id', $fulfillment->id)
+            ->where('type', WalletTransactionType::Refund)
+            ->where('status', WalletTransaction::STATUS_PENDING)
+            ->exists();
+    }
+
     public function getSelectedFulfillmentProperty(): ?Fulfillment
     {
         if ($this->selectedFulfillmentId === null) {
@@ -745,8 +780,14 @@ new class extends Component
                 'order.user:id,username',
                 'orderItem.product:id,name,slug',
                 'logs' => fn ($query) => $query->latest('created_at'),
+                'automationRuns' => fn ($query) => $query->latest('id')->limit(3),
             ])
             ->find($this->selectedFulfillmentId);
+    }
+
+    public function getLatestAutomationRunProperty(): ?FulfillmentAutomationRun
+    {
+        return $this->selectedFulfillment?->automationRuns?->first();
     }
 
     public function getPaymentTransactionProperty(): ?WalletTransaction
@@ -1649,6 +1690,56 @@ new class extends Component
                                 $hasDeliveredPayload = ! blank($deliveredPayload);
                             @endphp
 
+                            @if ($this->selectedFulfillment->isBrowserAutomated())
+                                @php($automationRun = $this->latestAutomationRun)
+                                <div class="mb-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800/60">
+                                    <div class="flex flex-wrap items-center justify-between gap-2">
+                                        <div class="text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                                            {{ __('messages.fulfillment_automation') }}
+                                        </div>
+                                        @if ($automationRun)
+                                            <flux:badge color="zinc">{{ $automationRun->status->value }}</flux:badge>
+                                        @endif
+                                    </div>
+                                    @if ($automationRun?->external_order_id)
+                                        <div class="mt-2 text-sm text-zinc-700 dark:text-zinc-300">
+                                            {{ __('messages.supplier_order_id') }}:
+                                            <span class="font-mono">{{ $automationRun->external_order_id }}</span>
+                                        </div>
+                                    @endif
+                                    @if (data_get($this->selectedFulfillment->meta, 'automation.requires_review'))
+                                        <flux:callout variant="warning" icon="exclamation-triangle" class="mt-2">
+                                            {{ __('messages.fulfillment_automation_needs_review') }}
+                                        </flux:callout>
+                                    @endif
+                                    @if ($automationRun && $automationRun->artifactPaths() !== [])
+                                        <div class="mt-2 flex flex-wrap gap-2">
+                                            @foreach ($automationRun->artifactPaths() as $artifactIndex => $artifactPath)
+                                                <flux:button
+                                                    size="sm"
+                                                    variant="ghost"
+                                                    href="{{ $automationRun->artifactShowUrl($artifactIndex) }}"
+                                                    target="_blank"
+                                                >
+                                                    {{ basename($artifactPath) }}
+                                                </flux:button>
+                                            @endforeach
+                                        </div>
+                                    @endif
+                                    @if ($this->selectedFulfillment->status === \App\Enums\FulfillmentStatus::Failed || $automationRun?->status?->value === 'needs_review')
+                                        <div class="mt-3">
+                                            <flux:button
+                                                size="sm"
+                                                variant="outline"
+                                                wire:click="retryAutomation({{ $this->selectedFulfillment->id }})"
+                                            >
+                                                {{ __('messages.retry_automation') }}
+                                            </flux:button>
+                                        </div>
+                                    @endif
+                                </div>
+                            @endif
+
                             @if ($this->selectedFulfillment->status === \App\Enums\FulfillmentStatus::Failed && $this->selectedFulfillment->last_error)
                                 <flux:callout variant="subtle" icon="exclamation-triangle" class="mb-3">
                                     <div class="text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
@@ -1730,6 +1821,12 @@ new class extends Component
                     {{ __('messages.fulfillment_payload_hint') }}
                 </flux:text>
             </div>
+
+            @if ($this->completeModalPendingRefund)
+                <flux:callout variant="subtle" icon="exclamation-triangle" data-test="complete-modal-pending-refund-warning">
+                    {{ __('messages.fulfillment_complete_pending_refund_warning') }}
+                </flux:callout>
+            @endif
 
         <div
             x-data="{ autoDonePayloadUi: false, deliveredPayload: @entangle('deliveredPayloadInput').defer }"

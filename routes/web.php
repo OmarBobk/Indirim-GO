@@ -6,6 +6,8 @@ use App\Http\Controllers\Api\SearchPackagesController;
 use App\Http\Controllers\BugAttachmentController;
 use App\Http\Controllers\BuyNowCustomAmountQuoteController;
 use App\Http\Controllers\TopupProofController;
+use App\Livewire\Admin\AssistantChat;
+use App\Livewire\Admin\AutomationMonitor;
 use App\Livewire\Admin\CommissionsTable;
 use App\Livewire\Admin\PayoutRequestsTable;
 use App\Models\User;
@@ -46,9 +48,11 @@ Route::livewire('/contact', 'pages::frontend.contact')->name('contact');
 Route::livewire('/cart', 'pages::frontend.cart')->name('cart');
 
 Route::middleware(['auth', 'verified'])->group(function () {
+    Route::livewire('/account', 'pages::frontend.account')->name('account');
     Route::livewire('/profile', 'pages::frontend.profile')->name('profile');
     Route::livewire('/profile/edit', 'pages::frontend.profile-edit')->name('profile.edit-information');
     Route::livewire('/wallet', 'pages::frontend.wallet')->name('wallet');
+    Route::livewire('/wallet/topup', 'pages::frontend.wallet-topup')->name('wallet.topup');
     Route::livewire('/loyalty', 'pages::frontend.loyalty')->name('loyalty');
     Route::livewire('/referral-link', 'pages::frontend.referral-link')
         ->middleware('can:view_referrals')
@@ -85,6 +89,9 @@ Route::middleware(['auth', 'verified', 'backend'])->group(function () {
     Route::livewire('/product-entry-prices', 'pages::backend.product-entry-prices.index')
         ->middleware('can:update_product_prices')
         ->name('product-entry-prices');
+    Route::livewire('/price-drift', 'pages::backend.price-drift.index')
+        ->middleware('can:update_product_prices')
+        ->name('price-drift');
     Route::livewire('/pricing-rules', 'pages::backend.pricing-rules.index')->name('pricing-rules');
     Route::livewire('/loyalty-tiers', 'pages::backend.loyalty-tiers.index')->name('loyalty-tiers');
     Route::livewire('/admin/orders', 'pages::backend.orders.index')->name('admin.orders.index');
@@ -105,6 +112,12 @@ Route::middleware(['auth', 'verified', 'backend'])->group(function () {
     Route::livewire('/refunds', 'pages::backend.refunds.index')->name('refunds');
     Route::livewire('/topups', 'pages::backend.topups.index')->name('topups');
     Route::livewire('/customer-funds', 'pages::backend.customer-funds.index')->name('customer-funds');
+    Route::livewire('/wallet-adjustments', 'pages::backend.wallet-adjustments.index')
+        ->middleware('can:adjust_wallets')
+        ->name('wallet-adjustments');
+    Route::livewire('/credit-facility', 'pages::backend.credit-facility.index')
+        ->middleware('can:manage_wallet_credit')
+        ->name('credit-facility');
     Route::livewire('/settlements', 'pages::backend.settlements.index')->name('settlements');
     Route::livewire('/admin/commissions', CommissionsTable::class)
         ->middleware('can:manage_settlements')
@@ -122,6 +135,10 @@ Route::middleware(['auth', 'verified', 'backend', 'can:manage_bugs'])->group(fun
 
 Route::middleware(['auth', 'verified', 'backend', 'admin'])->group(function () {
     Route::livewire('/admin/website-settings', 'pages::backend.website-settings.index')->name('admin.website-settings');
+    Route::livewire('/admin/automation', AutomationMonitor::class)->name('admin.automation.index');
+    Route::livewire('/admin/assistant', AssistantChat::class)
+        ->middleware('throttle:20,1')
+        ->name('admin.assistant.index');
 });
 
 require __DIR__.'/settings.php';

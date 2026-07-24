@@ -7,6 +7,7 @@ use App\Actions\Packages\GetPackageDetails;
 use App\Actions\Packages\GetPackageRequirementDetails;
 use App\Actions\Packages\GetPackageRequirements;
 use App\Actions\Packages\GetPackages;
+use App\Actions\Packages\TogglePackageFulfillment;
 use App\Actions\Packages\TogglePackageStatus;
 use App\Actions\Packages\UpsertPackage;
 use App\Actions\Packages\UpsertPackageRequirement;
@@ -43,6 +44,8 @@ new class extends Component
     public ?string $packageIcon = null;
     public $packageImageFile = null;
     public bool $packageIsActive = true;
+    public string $packageFulfillmentProvider = '';
+    public ?string $packageApi = null;
 
     public ?int $editingRequirementId = null;
     public string $requirementKey = 'id';
@@ -94,7 +97,71 @@ new class extends Component
             'packageIcon' => ['nullable', 'string', 'max:255'],
             'packageImageFile' => ['nullable', 'image', 'max:2048'],
             'packageIsActive' => ['boolean'],
+            'packageFulfillmentProvider' => ['nullable', 'string', Rule::in($this->allowedFulfillmentProviderValues())],
+            'packageApi' => ['nullable', 'string', 'max:2048'],
         ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function allowedFulfillmentProviderValues(): array
+    {
+        return array_keys($this->fulfillmentProviderOptions);
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function fulfillmentProviderOptions(): array
+    {
+        $options = [
+            '' => __('messages.package_fulfillment_manual'),
+        ];
+
+        foreach (config('fulfillment_automation.suppliers', []) as $supplierKey => $supplier) {
+            if (! is_string($supplierKey) || $supplierKey === '') {
+                continue;
+            }
+
+            $options['browser:'.$supplierKey] = __('messages.package_fulfillment_browser').' ('.$supplierKey.')';
+        }
+
+        return $options;
+    }
+
+    public function fulfillmentProviderLabel(?string $provider): string
+    {
+        if ($provider === null || $provider === '' || $provider === 'manual') {
+            return __('messages.package_fulfillment_manual');
+        }
+
+        if (str_starts_with($provider, 'browser:')) {
+            return __('messages.package_fulfillment_browser');
+        }
+
+        return $provider;
+    }
+
+    private function formValueForFulfillmentProvider(?string $provider): string
+    {
+        $normalized = UpsertPackage::normalizeFulfillmentProvider($provider);
+
+        if ($normalized === null) {
+            return '';
+        }
+
+        if (array_key_exists($normalized, $this->fulfillmentProviderOptions)) {
+            return $normalized;
+        }
+
+        $supplierKey = array_key_first(config('fulfillment_automation.suppliers', []));
+
+        if (is_string($supplierKey) && $supplierKey !== '' && str_starts_with($normalized, 'browser:')) {
+            return 'browser:'.$supplierKey;
+        }
+
+        return '';
     }
 
     /**
@@ -125,6 +192,8 @@ new class extends Component
                 'is_active' => $validated['packageIsActive'],
                 'order' => $validated['packageOrder'],
                 'icon' => $validated['packageIcon'],
+                'fulfillment_provider' => $validated['packageFulfillmentProvider'] ?? null,
+                'package_api' => $validated['packageApi'] ?? null,
             ],
             $this->packageImageFile
         );
@@ -151,6 +220,8 @@ new class extends Component
         $this->packageIcon = $package->icon;
         $this->packageImageFile = null;
         $this->packageIsActive = $package->is_active;
+        $this->packageFulfillmentProvider = $this->formValueForFulfillmentProvider($package->fulfillment_provider);
+        $this->packageApi = $package->package_api;
 
         $this->dispatch('open-package-panel');
     }
@@ -164,6 +235,16 @@ new class extends Component
     public function toggleStatus(int $packageId): void
     {
         app(TogglePackageStatus::class)->handle($packageId);
+    }
+
+    public function toggleFulfillment(int $packageId): void
+    {
+        app(TogglePackageFulfillment::class)->handle($packageId);
+    }
+
+    public function canTogglePackageFulfillment(): bool
+    {
+        return TogglePackageFulfillment::defaultBrowserProvider() !== null;
     }
 
     public function confirmDeletePackage(int $packageId): void
@@ -287,6 +368,8 @@ new class extends Component
             'packageIcon',
             'packageImageFile',
             'packageIsActive',
+            'packageFulfillmentProvider',
+            'packageApi',
         ]);
         $this->resetValidation();
     }
@@ -369,6 +452,14 @@ new class extends Component
             'number' => __('messages.requirement_type_number'),
             'select' => __('messages.requirement_type_select'),
         ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function getFulfillmentProviderOptionsProperty(): array
+    {
+        return $this->fulfillmentProviderOptions();
     }
 
     public function render(): View
@@ -653,6 +744,36 @@ new class extends Component
                         </div>
                     @endif
                 </div>
+                <div class="grid gap-2">
+                    <flux:select
+                        class="focus:!border-(--color-accent) focus:!border-1 focus:!ring-0 focus:!outline-none focus:!ring-offset-0"
+                        name="packageFulfillmentProvider"
+                        label="{{ __('messages.package_fulfillment_provider') }}"
+                        wire:model.defer="packageFulfillmentProvider"
+                    >
+                        @foreach ($this->fulfillmentProviderOptions as $value => $label)
+                            <flux:select.option value="{{ $value }}">{{ $label }}</flux:select.option>
+                        @endforeach
+                    </flux:select>
+                    @error('packageFulfillmentProvider')
+                        <flux:text color="red">{{ $message }}</flux:text>
+                    @enderror
+                </div>
+                <div class="grid gap-2" x-show="$wire.packageFulfillmentProvider.startsWith('browser:')" x-cloak>
+                    <flux:input
+                        class:input="focus:!border-(--color-accent) focus:!border-1 focus:!ring-0 focus:!outline-none focus:!ring-offset-0"
+                        name="packageApi"
+                        label="{{ __('messages.package_api') }}"
+                        placeholder="{{ __('messages.package_api_placeholder') }}"
+                        wire:model.defer="packageApi"
+                    />
+                    <flux:text class="text-xs text-zinc-500 dark:text-zinc-400">
+                        {{ __('messages.package_api_hint') }}
+                    </flux:text>
+                    @error('packageApi')
+                        <flux:text color="red">{{ $message }}</flux:text>
+                    @enderror
+                </div>
                 <div class="flex items-center gap-3">
                     <flux:label>{{ __('messages.active') }}:</flux:label>
                     <flux:switch
@@ -742,6 +863,7 @@ new class extends Component
                                     <th class="px-5 py-3 text-start font-semibold">{{ __('messages.category') }}</th>
                                     <th class="px-5 py-3 text-start font-semibold">{{ __('messages.order') }}</th>
                                     <th class="px-5 py-3 text-start font-semibold">{{ __('messages.status') }}</th>
+                                    <th class="px-5 py-3 text-start font-semibold">{{ __('messages.package_fulfillment_provider') }}</th>
                                     <th class="px-5 py-3 text-start font-semibold">{{ __('messages.requirements') }}</th>
                                     <th class="px-5 py-3 text-end font-semibold">{{ __('messages.actions') }}</th>
                                 </tr>
@@ -805,6 +927,38 @@ new class extends Component
                                                     wire:click="toggleStatus({{ $package->id }})"
                                                     aria-label="{{ __('messages.toggle_status_for', ['name' => $package->name]) }}"
                                                 />
+                                            </div>
+                                        </td>
+                                        <td class="px-5 py-4">
+                                            <div class="flex items-center justify-start">
+                                                @if ($this->canTogglePackageFulfillment())
+                                                    <button
+                                                        type="button"
+                                                        wire:click="toggleFulfillment({{ $package->id }})"
+                                                        wire:loading.attr="disabled"
+                                                        wire:target="toggleFulfillment({{ $package->id }})"
+                                                        @class([
+                                                            'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/70 disabled:cursor-not-allowed disabled:opacity-60',
+                                                            'border-cyan-300 bg-cyan-50 text-cyan-800 hover:bg-cyan-100 dark:border-cyan-700 dark:bg-cyan-950/60 dark:text-cyan-200 dark:hover:bg-cyan-950' => $package->isBrowserAutomated(),
+                                                            'border-zinc-200 bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700' => ! $package->isBrowserAutomated(),
+                                                        ])
+                                                        aria-label="{{ __('messages.toggle_fulfillment_for', ['name' => $package->name]) }}"
+                                                        aria-pressed="{{ $package->isBrowserAutomated() ? 'true' : 'false' }}"
+                                                    >
+                                                        @if ($package->isBrowserAutomated())
+                                                            <flux:icon icon="cpu-chip" class="size-3.5 shrink-0" />
+                                                            <span>{{ __('messages.package_fulfillment_automation_short') }}</span>
+                                                        @else
+                                                            <flux:icon icon="hand-raised" class="size-3.5 shrink-0" />
+                                                            <span>{{ __('messages.package_fulfillment_manual_short') }}</span>
+                                                        @endif
+                                                    </button>
+                                                @else
+                                                    <span class="inline-flex items-center gap-1.5 rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs font-semibold text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-400">
+                                                        <flux:icon icon="hand-raised" class="size-3.5 shrink-0" />
+                                                        <span>{{ __('messages.package_fulfillment_manual_short') }}</span>
+                                                    </span>
+                                                @endif
                                             </div>
                                         </td>
                                         <td class="px-5 py-4 text-zinc-600 dark:text-zinc-300">
@@ -892,6 +1046,10 @@ new class extends Component
                                 @else
                                     /{{ $this->selectedPackage->slug }}
                                 @endif
+                            </div>
+                            <div class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                                {{ __('messages.package_fulfillment_provider') }}:
+                                {{ $this->fulfillmentProviderLabel($this->selectedPackage->fulfillment_provider) }}
                             </div>
                         </div>
                     @else

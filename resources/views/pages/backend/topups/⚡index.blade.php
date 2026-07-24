@@ -9,6 +9,7 @@ use App\Models\TopupRequest;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\View\View;
 use Livewire\Attributes\On;
+use Livewire\Attributes\Url;
 use Livewire\Component;
 use Livewire\WithPagination;
 use Masmerise\Toaster\Toastable;
@@ -18,6 +19,7 @@ new class extends Component
     use Toastable;
     use WithPagination;
 
+    #[Url]
     public string $statusFilter = 'all';
     public int $perPage = 10;
 

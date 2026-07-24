@@ -71,6 +71,10 @@ class ProcessFulfillments extends Command
         $failed = 0;
 
         foreach ($fulfillments as $fulfillment) {
+            if (str_starts_with($fulfillment->provider, 'browser:')) {
+                continue;
+            }
+
             try {
                 if ($fulfillment->status === FulfillmentStatus::Queued) {
                     $startFulfillment->handle($fulfillment, 'system', null, ['source' => 'command']);

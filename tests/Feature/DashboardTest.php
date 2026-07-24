@@ -43,3 +43,21 @@ test('backend users without view_dashboard are forbidden from dashboard', functi
 
     $this->get('/dashboard')->assertForbidden();
 });
+
+test('salesperson sidebar hides admin-only navigation sections', function () {
+    $role = Role::firstOrCreate(['name' => 'salesperson']);
+    $role->syncPermissions([
+        Permission::firstOrCreate(['name' => 'view_referrals']),
+        Permission::firstOrCreate(['name' => 'view_orders']),
+    ]);
+
+    $user = User::factory()->create();
+    $user->assignRole($role);
+
+    $this->actingAs($user)
+        ->get(route('salesperson.dashboard'))
+        ->assertSuccessful()
+        ->assertDontSee(__('messages.nav_audit_monitoring'), false)
+        ->assertDontSee(__('messages.nav_website_settings'), false)
+        ->assertDontSee(__('messages.settings'), false);
+});

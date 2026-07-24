@@ -1,0 +1,467 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Services;
+
+use App\Enums\FulfillmentAutomationRunStatus;
+use App\Enums\FulfillmentStatus;
+use App\Enums\OrderStatus;
+use App\Enums\WalletTransactionType;
+use App\Models\Fulfillment;
+use App\Models\FulfillmentAutomationRun;
+use App\Models\Order;
+use App\Models\WalletTransaction;
+use App\Models\WebsiteSetting;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\URL;
+use Throwable;
+
+class FulfillmentAutomationService
+{
+    public function isEnabled(): bool
+    {
+        return (bool) config('fulfillment_automation.enabled', false)
+            && WebsiteSetting::getAutomationEnabled()
+            && config('fulfillment_automation.callback_secret') !== ''
+            && config('fulfillment_automation.worker_url') !== '';
+    }
+
+    public function isEligible(Fulfillment $fulfillment): bool
+    {
+        if (! $this->isEnabled()) {
+            return false;
+        }
+
+        if (! $fulfillment->isBrowserAutomated()) {
+            return false;
+        }
+
+        if ($fulfillment->status !== FulfillmentStatus::Queued) {
+            return false;
+        }
+
+        if ($fulfillment->claimed_by !== null) {
+            return false;
+        }
+
+        $supplierKey = $fulfillment->browserSupplierKey();
+
+        if ($supplierKey === null || ! $this->supplierConfig($supplierKey)) {
+            return false;
+        }
+
+        if ($this->hasActiveRun($fulfillment)) {
+            return false;
+        }
+
+        if ($this->hasSucceededRun($fulfillment)) {
+            return false;
+        }
+
+        if ($this->hasBlockingRefund($fulfillment)) {
+            return false;
+        }
+
+        $order = $fulfillment->order ?? Order::query()->find($fulfillment->order_id);
+
+        if ($order === null || $order->status !== OrderStatus::Paid) {
+            return false;
+        }
+
+        return true;
+    }
+
+    public function hasActiveRun(Fulfillment $fulfillment): bool
+    {
+        return FulfillmentAutomationRun::query()
+            ->where('fulfillment_id', $fulfillment->id)
+            ->active()
+            ->exists();
+    }
+
+    public function hasSucceededRun(Fulfillment $fulfillment): bool
+    {
+        return FulfillmentAutomationRun::query()
+            ->where('fulfillment_id', $fulfillment->id)
+            ->where('status', FulfillmentAutomationRunStatus::Succeeded)
+            ->exists();
+    }
+
+    public function hasBlockingRefund(Fulfillment $fulfillment): bool
+    {
+        return WalletTransaction::query()
+            ->where('type', WalletTransactionType::Refund->value)
+            ->whereIn('status', [WalletTransaction::STATUS_PENDING, WalletTransaction::STATUS_POSTED])
+            ->where(function ($query) use ($fulfillment): void {
+                $query->where(function ($subQuery) use ($fulfillment): void {
+                    $subQuery->where('reference_type', Fulfillment::class)
+                        ->where('reference_id', $fulfillment->id);
+                })->orWhere(function ($subQuery) use ($fulfillment): void {
+                    $subQuery->where('reference_type', \App\Models\OrderItem::class)
+                        ->where('reference_id', $fulfillment->order_item_id);
+                });
+            })
+            ->exists();
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    public function supplierConfig(string $supplierKey): ?array
+    {
+        $config = config('fulfillment_automation.suppliers.'.$supplierKey);
+
+        if (! is_array($config)) {
+            return null;
+        }
+
+        if ($supplierKey === 'wasim') {
+            $config = $this->mergeWasimCredentials($config);
+        }
+
+        return $config;
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     * @return array<string, mixed>
+     */
+    private function mergeWasimCredentials(array $config): array
+    {
+        $defaults = is_array($config['credentials'] ?? null) ? $config['credentials'] : [];
+        $fromDatabase = WebsiteSetting::instance()->wasimAutomationCredentialsFromDatabase();
+
+        $username = $fromDatabase['username'] ?? $defaults['username'] ?? null;
+        $password = $fromDatabase['password'] ?? $defaults['password'] ?? null;
+
+        $credentials = [];
+
+        if (is_string($username) && $username !== '') {
+            $credentials['username'] = $username;
+        }
+
+        if (is_string($password) && $password !== '') {
+            $credentials['password'] = $password;
+        }
+
+        $config['credentials'] = $credentials;
+
+        return $config;
+    }
+
+    public function nextAttemptNumber(Fulfillment $fulfillment): int
+    {
+        $latest = FulfillmentAutomationRun::query()
+            ->where('fulfillment_id', $fulfillment->id)
+            ->max('attempt');
+
+        return max(1, (int) $latest + 1);
+    }
+
+    public function buildIdempotencyKey(int $fulfillmentId, int $attempt): string
+    {
+        return 'automation:fulfillment:'.$fulfillmentId.':attempt:'.$attempt;
+    }
+
+    public function buildReconcileIdempotencyKey(int $fulfillmentId, int $attempt): string
+    {
+        return 'automation:fulfillment:'.$fulfillmentId.':reconcile:'.$attempt;
+    }
+
+    public function isReconcileRun(FulfillmentAutomationRun $run): bool
+    {
+        return str_contains($run->idempotency_key, ':reconcile:');
+    }
+
+    public function nextReconcileAttemptNumber(Fulfillment $fulfillment): int
+    {
+        $latest = FulfillmentAutomationRun::query()
+            ->where('fulfillment_id', $fulfillment->id)
+            ->where('idempotency_key', 'like', 'automation:fulfillment:'.$fulfillment->id.':reconcile:%')
+            ->max('attempt');
+
+        return max(1, (int) $latest + 1);
+    }
+
+    public function reconcileAttempts(Fulfillment $fulfillment): int
+    {
+        return (int) data_get($fulfillment->meta, 'automation.reconcile_attempts', 0);
+    }
+
+    public function isEligibleForReconcile(Fulfillment $fulfillment): bool
+    {
+        if (! $this->isEnabled()) {
+            return false;
+        }
+
+        if ($fulfillment->browserSupplierKey() !== 'wasim') {
+            return false;
+        }
+
+        if ($fulfillment->status !== FulfillmentStatus::Processing) {
+            return false;
+        }
+
+        if (! (bool) data_get($fulfillment->meta, 'automation.awaiting_wasim_reconcile', false)) {
+            return false;
+        }
+
+        $supplierOrderId = data_get($fulfillment->meta, 'automation.supplier_order_id');
+
+        if (! is_string($supplierOrderId) || trim($supplierOrderId) === '') {
+            return false;
+        }
+
+        if ($this->hasActiveRun($fulfillment)) {
+            return false;
+        }
+
+        if ($this->hasBlockingRefund($fulfillment)) {
+            return false;
+        }
+
+        return true;
+    }
+
+    public function shouldScheduleReconcile(Fulfillment $fulfillment, ?int $attemptNumber = null): bool
+    {
+        if (! (bool) data_get($fulfillment->meta, 'automation.awaiting_wasim_reconcile', false)) {
+            return false;
+        }
+
+        if ($fulfillment->status !== FulfillmentStatus::Processing) {
+            return false;
+        }
+
+        $attemptNumber ??= $this->reconcileAttempts($fulfillment);
+        $maxAttempts = (int) config('fulfillment_automation.reconcile.max_attempts', 48);
+
+        return $attemptNumber < $maxAttempts;
+    }
+
+    public function reconcileDelaySeconds(?int $attemptNumber = null): int
+    {
+        $delays = config('fulfillment_automation.reconcile.delays_seconds', [60, 120, 300, 600, 900, 1800, 3600]);
+
+        if (! is_array($delays) || $delays === []) {
+            return (int) config('fulfillment_automation.reconcile.initial_delay_seconds', 60);
+        }
+
+        $index = max(0, ($attemptNumber ?? 0));
+
+        if ($index >= count($delays)) {
+            return (int) end($delays);
+        }
+
+        return (int) $delays[$index];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function buildWorkerPayload(FulfillmentAutomationRun $run, Fulfillment $fulfillment): array
+    {
+        $fulfillment->loadMissing(['orderItem.product', 'orderItem.package']);
+
+        $orderItem = $fulfillment->orderItem;
+        $supplierKey = $run->supplier_key;
+        $supplier = $this->supplierConfig($supplierKey) ?? [];
+        $phase = $this->isReconcileRun($run) ? 'reconcile' : 'purchase';
+        $supplierOrderId = data_get($fulfillment->meta, 'automation.supplier_order_id');
+
+        $requirements = data_get($fulfillment->meta, 'requirements_payload')
+            ?? $orderItem?->requirements_payload
+            ?? [];
+
+        $customAmount = null;
+        if (data_get($fulfillment->meta, 'type') === 'custom_amount') {
+            $customAmount = [
+                'amount' => data_get($fulfillment->meta, 'amount'),
+                'unit' => data_get($fulfillment->meta, 'unit'),
+            ];
+        }
+
+        return [
+            'run_uuid' => $run->uuid,
+            'fulfillment_id' => $fulfillment->id,
+            'supplier_key' => $supplierKey,
+            'driver' => $supplier['driver'] ?? $supplierKey,
+            'session_key' => $supplier['session_key'] ?? $supplierKey.'-main',
+            'automation_phase' => $phase,
+            'supplier_order_id' => is_string($supplierOrderId) ? $supplierOrderId : null,
+            'idempotency_reference' => 'fulfillment:'.$fulfillment->id,
+            'requirements' => $requirements,
+            'custom_amount' => $customAmount,
+            'product_slug' => $orderItem?->product?->slug,
+            'package_slug' => $orderItem?->package?->slug,
+            'package_api' => $orderItem?->package?->package_api,
+            'product_api' => $orderItem?->product?->product_api,
+            'product_amount_mode' => $orderItem?->amount_mode?->value
+                ?? $orderItem?->product?->amount_mode?->value,
+            'unit_price' => $orderItem !== null ? (float) $orderItem->unit_price : null,
+            'line_total' => $orderItem !== null ? (float) $orderItem->line_total : null,
+            'credentials' => $supplier['credentials'] ?? [],
+            'callback_urls' => [
+                'result' => URL::to('/internal/automation/runs/'.$run->uuid.'/result'),
+                'artifacts' => URL::to('/internal/automation/runs/'.$run->uuid.'/artifacts'),
+            ],
+            'expires_at' => now()->addSeconds((int) config('fulfillment_automation.timeouts.run_seconds', 300))->toIso8601String(),
+        ];
+    }
+
+    public function signPayload(string $rawBody, ?int $timestamp = null): string
+    {
+        $timestamp ??= time();
+        $secret = (string) config('fulfillment_automation.callback_secret');
+        $signature = hash_hmac('sha256', $timestamp.'.'.$rawBody, $secret);
+
+        return 'sha256='.$signature;
+    }
+
+    public function verifySignature(string $rawBody, string $signatureHeader, string $timestampHeader): bool
+    {
+        $secret = (string) config('fulfillment_automation.callback_secret');
+
+        if ($secret === '') {
+            return false;
+        }
+
+        if (! ctype_digit($timestampHeader)) {
+            return false;
+        }
+
+        $timestamp = (int) $timestampHeader;
+        $skew = (int) config('fulfillment_automation.timeouts.signature_skew_seconds', 300);
+
+        if (abs(time() - $timestamp) > $skew) {
+            return false;
+        }
+
+        $expected = hash_hmac('sha256', $timestamp.'.'.$rawBody, $secret);
+        $provided = str_starts_with($signatureHeader, 'sha256=')
+            ? substr($signatureHeader, 7)
+            : $signatureHeader;
+
+        return hash_equals($expected, $provided);
+    }
+
+    public function signArtifactPayload(
+        string $runUuid,
+        string $label,
+        string $fileHash,
+        ?int $timestamp = null,
+    ): string {
+        $timestamp ??= time();
+        $secret = (string) config('fulfillment_automation.callback_secret');
+        $payload = $timestamp.'.'.$runUuid.'.'.$label.'.'.$fileHash;
+
+        return 'sha256='.hash_hmac('sha256', $payload, $secret);
+    }
+
+    public function verifyArtifactSignature(
+        string $runUuid,
+        string $label,
+        string $fileHash,
+        string $signatureHeader,
+        string $timestampHeader,
+    ): bool {
+        $secret = (string) config('fulfillment_automation.callback_secret');
+
+        if ($secret === '' || $runUuid === '' || $label === '' || $fileHash === '') {
+            return false;
+        }
+
+        if (! ctype_digit($timestampHeader)) {
+            return false;
+        }
+
+        $timestamp = (int) $timestampHeader;
+        $skew = (int) config('fulfillment_automation.timeouts.signature_skew_seconds', 300);
+
+        if (abs(time() - $timestamp) > $skew) {
+            return false;
+        }
+
+        $expected = hash_hmac('sha256', $timestamp.'.'.$runUuid.'.'.$label.'.'.$fileHash, $secret);
+        $provided = str_starts_with($signatureHeader, 'sha256=')
+            ? substr($signatureHeader, 7)
+            : $signatureHeader;
+
+        return hash_equals($expected, $provided);
+    }
+
+    public function artifactStorageDirectory(string $runUuid): string
+    {
+        return 'fulfillment-automation/'.$runUuid;
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $resultPayload
+     * @return array<string, mixed>|null
+     */
+    public function enrichResultPayload(Fulfillment $fulfillment, ?array $resultPayload): ?array
+    {
+        $payload = is_array($resultPayload) ? $resultPayload : [];
+
+        $fulfillment->loadMissing('orderItem.product');
+
+        $productApi = $payload['product_api'] ?? $fulfillment->orderItem?->product?->product_api;
+
+        if (! is_string($productApi) || trim($productApi) === '') {
+            return $payload === [] ? null : $payload;
+        }
+
+        $productApi = trim($productApi);
+        $payload['product_api'] = $productApi;
+        $payload['product_url'] ??= $this->buildWasimProductUrl($productApi);
+
+        return $payload;
+    }
+
+    public function buildWasimProductUrl(string $productApi): string
+    {
+        $trimmed = trim($productApi);
+
+        if (str_starts_with($trimmed, 'http://') || str_starts_with($trimmed, 'https://')) {
+            return $trimmed;
+        }
+
+        return 'https://wasim-store.com/'.ltrim($trimmed, '/');
+    }
+
+    public function clearWorkerBrowserSession(string $sessionKey): bool
+    {
+        $sessionKey = trim($sessionKey);
+
+        if ($sessionKey === '') {
+            return false;
+        }
+
+        $workerUrl = rtrim((string) config('fulfillment_automation.worker_url'), '/');
+
+        if ($workerUrl === '' || config('fulfillment_automation.callback_secret') === '') {
+            return false;
+        }
+
+        $rawBody = json_encode(['session_key' => $sessionKey], JSON_THROW_ON_ERROR);
+        $timestamp = time();
+        $signature = $this->signPayload($rawBody, $timestamp);
+        $timeout = (int) config('fulfillment_automation.timeouts.dispatch_seconds', 15);
+
+        try {
+            $response = Http::timeout($timeout)
+                ->withHeaders([
+                    'Content-Type' => 'application/json',
+                    'X-Automation-Timestamp' => (string) $timestamp,
+                    'X-Automation-Signature' => $signature,
+                ])
+                ->withBody($rawBody, 'application/json')
+                ->post($workerUrl.'/v1/sessions/clear');
+
+            return $response->successful();
+        } catch (Throwable) {
+            return false;
+        }
+    }
+}

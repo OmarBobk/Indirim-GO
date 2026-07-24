@@ -4,29 +4,33 @@ declare(strict_types=1);
 
 namespace App\Livewire\Sidebar;
 
-use App\Models\Bug;
+use App\Livewire\Sidebar\Concerns\RefreshesSidebarMetric;
 use Livewire\Attributes\On;
 use Livewire\Component;
 
 class BugReportsIndicator extends Component
 {
-    public int $count = 0;
+    use RefreshesSidebarMetric;
 
     public function mount(): void
+    {
+        $this->mountRefreshesSidebarMetric();
+    }
+
+    #[On('bug-inbox-updated')]
+    public function onBugInboxUpdated(): void
     {
         $this->refreshCount();
     }
 
-    #[On('bug-inbox-updated')]
-    public function refreshCount(): void
+    protected function sidebarMetricKey(): string
     {
-        if (! auth()->check() || ! auth()->user()->can('manage_bugs')) {
-            $this->count = 0;
+        return 'open_bugs';
+    }
 
-            return;
-        }
-
-        $this->count = Bug::query()->openOrInProgress()->count();
+    protected function canViewSidebarMetric(): bool
+    {
+        return auth()->user()?->can('manage_bugs') ?? false;
     }
 
     public function render()

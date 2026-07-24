@@ -19,17 +19,19 @@ new #[Layout('layouts::frontend')] class extends Component
 };
 ?>
 
-<div class="mx-auto w-full max-w-4xl space-y-8 py-8">
-    @php
-        $referralUrl = route('home').'?ref='.urlencode((string) auth()->user()->referral_code);
-    @endphp
+@php
+    $referralUrl = route('home').'?ref='.urlencode((string) auth()->user()->referral_code);
+@endphp
 
-    <section class="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
-        <flux:heading size="lg" class="mb-2">{{ __('messages.referral_link') }}</flux:heading>
-        <flux:text class="mb-3 text-sm text-zinc-600 dark:text-zinc-400">
-            {{ __('messages.referral_link_hint') }}
-        </flux:text>
+<x-storefront.page width="work">
+    <x-storefront.page-header
+        :title="__('messages.referral_link')"
+        :description="__('messages.referral_link_hint')"
+        :show-back="true"
+        :back-fallback="route('account')"
+    />
 
+    <x-storefront.card>
         <div class="flex flex-col gap-2 sm:flex-row sm:items-center" x-data="{ copied: false }">
             <flux:input readonly :value="$referralUrl" class="flex-1" />
             <flux:button
@@ -42,8 +44,8 @@ new #[Layout('layouts::frontend')] class extends Component
                 variant="ghost"
             >
                 <span x-show="!copied">{{ __('messages.copy_to_clipboard') }}</span>
-                <span x-show="copied" x-cloak>Copied!</span>
+                <span x-show="copied" x-cloak>{{ __('messages.copied') }}</span>
             </flux:button>
         </div>
-    </section>
-</div>
+    </x-storefront.card>
+</x-storefront.page>

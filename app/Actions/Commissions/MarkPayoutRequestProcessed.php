@@ -7,6 +7,7 @@ namespace App\Actions\Commissions;
 use App\Enums\PayoutRequestStatus;
 use App\Models\PayoutRequest;
 use App\Models\User;
+use App\Support\AdminOpsBroadcaster;
 use Illuminate\Support\Facades\Schema;
 
 final class MarkPayoutRequestProcessed
@@ -37,5 +38,7 @@ final class MarkPayoutRequestProcessed
                 ])
                 ->log('Payout request marked processed');
         }
+
+        AdminOpsBroadcaster::dispatch('payout-processed');
     }
 }

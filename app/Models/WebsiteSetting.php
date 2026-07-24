@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Database\Eloquent\Model;
 
 class WebsiteSetting extends Model
@@ -18,6 +19,9 @@ class WebsiteSetting extends Model
         'commission_payout_wait_days',
         'commission_payout_min_amount',
         'default_commission_rate_percent',
+        'automation_enabled',
+        'wasim_automation_username',
+        'wasim_automation_password',
     ];
 
     /**
@@ -32,6 +36,48 @@ class WebsiteSetting extends Model
             'commission_payout_wait_days' => 'integer',
             'commission_payout_min_amount' => 'decimal:2',
             'default_commission_rate_percent' => 'decimal:2',
+            'automation_enabled' => 'boolean',
+            'wasim_automation_password' => 'encrypted',
+        ];
+    }
+
+    public function hasWasimAutomationPassword(): bool
+    {
+        $ciphertext = $this->getAttributes()['wasim_automation_password'] ?? null;
+
+        return is_string($ciphertext) && $ciphertext !== '';
+    }
+
+    public function getWasimAutomationPassword(): ?string
+    {
+        if (! $this->hasWasimAutomationPassword()) {
+            return null;
+        }
+
+        try {
+            $password = $this->wasim_automation_password;
+
+            return is_string($password) && $password !== '' ? $password : null;
+        } catch (DecryptException) {
+            return null;
+        }
+    }
+
+    public function isWasimAutomationPasswordUsable(): bool
+    {
+        return $this->getWasimAutomationPassword() !== null;
+    }
+
+    /**
+     * @return array{username: ?string, password: ?string}
+     */
+    public function wasimAutomationCredentialsFromDatabase(): array
+    {
+        $username = $this->wasim_automation_username;
+
+        return [
+            'username' => is_string($username) && $username !== '' ? $username : null,
+            'password' => $this->getWasimAutomationPassword(),
         ];
     }
 
@@ -55,7 +101,13 @@ class WebsiteSetting extends Model
             'commission_payout_wait_days' => 3,
             'commission_payout_min_amount' => 200,
             'default_commission_rate_percent' => 20,
+            'automation_enabled' => true,
         ]);
+    }
+
+    public static function getAutomationEnabled(): bool
+    {
+        return (bool) self::instance()->automation_enabled;
     }
 
     public static function getContactEmail(): ?string

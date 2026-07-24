@@ -14,13 +14,14 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Str;
+use Laravel\Ai\Concerns\HasConversations;
 use Laravel\Fortify\TwoFactorAuthenticatable;
 use Spatie\Permission\Traits\HasRoles;
 
 class User extends Authenticatable implements HasLocalePreference
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasFactory, HasRoles, Notifiable, TwoFactorAuthenticatable;
+    use HasConversations, HasFactory, HasRoles, Notifiable, TwoFactorAuthenticatable;
 
     protected static function booted(): void
     {
@@ -185,13 +186,13 @@ class User extends Authenticatable implements HasLocalePreference
     }
 
     /**
-     * Admin-defined custom prices for this user (per product).
+     * Admin-defined pricing rules for this user (retail + wholesale markups).
      *
-     * @return HasMany<UserProductPrice, $this>
+     * @return HasMany<UserPricingRule, $this>
      */
-    public function userProductPrices(): HasMany
+    public function userPricingRules(): HasMany
     {
-        return $this->hasMany(UserProductPrice::class);
+        return $this->hasMany(UserPricingRule::class);
     }
 
     /**

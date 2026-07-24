@@ -78,7 +78,8 @@ test('admin can view orders index and detail', function () {
     $this->actingAs($admin)
         ->get(route('admin.orders.show', $order))
         ->assertOk()
-        ->assertSee($order->order_number);
+        ->assertSee($order->order_number)
+        ->assertSee($user->username);
 });
 
 test('admin order detail does not render refund action', function () {

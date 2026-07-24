@@ -22,6 +22,7 @@ use App\Models\WalletTransaction;
 use App\Notifications\RefundApprovedNotification;
 use App\Services\OperationalIntelligenceService;
 use App\Services\SystemEventService;
+use App\Support\AdminOpsBroadcaster;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -376,6 +377,8 @@ class ApproveRefundRequest
                     }
                     dispatch(new EvaluateLoyaltyForUser((int) $userId));
                 });
+
+                AdminOpsBroadcaster::dispatch('refund-approved');
 
                 return $transaction;
             });

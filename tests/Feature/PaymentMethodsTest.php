@@ -67,9 +67,37 @@ test('wallet page shows active payment methods only', function () {
     $this->actingAs($user)
         ->get(route('wallet'))
         ->assertOk()
+        ->assertDontSee('data-test="wallet-payment-methods"', false)
+        ->assertSee('data-test="wallet-add-funds"', false);
+
+    $this->actingAs($user)
+        ->get(route('wallet.topup'))
+        ->assertOk()
         ->assertSee('data-test="wallet-payment-methods"', false)
         ->assertSee('Sham Cash')
         ->assertDontSee('EFT Transfer');
+});
+
+test('wallet topup defaults payment method to the first ordered active method', function () {
+    PaymentMethod::query()->delete();
+    $second = PaymentMethod::factory()->eftTransfer()->create([
+        'is_active' => true,
+        'sort_order' => 20,
+    ]);
+    $first = PaymentMethod::factory()->shamCash()->create([
+        'is_active' => true,
+        'sort_order' => 10,
+    ]);
+
+    $user = User::factory()->create();
+
+    Livewire::actingAs($user)
+        ->test('pages::frontend.wallet-topup')
+        ->assertSet('paymentMethodId', $first->id)
+        ->assertSee('Sham Cash')
+        ->assertSee('EFT Transfer');
+
+    expect($first->id)->not->toBe($second->id);
 });
 
 test('payment method account text allows limited html formatting', function () {
@@ -96,7 +124,7 @@ TR72 0001
     $user = User::factory()->create();
 
     $this->actingAs($user)
-        ->get(route('wallet'))
+        ->get(route('wallet.topup'))
         ->assertOk()
         ->assertSee('<strong>Ahmet Omer</strong>', false)
         ->assertSee('<strong>0090 1021 6057 1050 06</strong>', false)

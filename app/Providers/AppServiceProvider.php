@@ -2,8 +2,14 @@
 
 namespace App\Providers;
 
+use App\Domain\Security\Contracts\HumanVerifier;
+use App\Domain\Security\Services\TurnstileVerifier;
 use App\Events\ActivityLogChanged;
+use App\Events\AutomationRunChanged;
 use App\Events\BugInboxChanged;
+use App\Events\FulfillmentListChanged;
+use App\Events\TopupRequestsChanged;
+use App\Listeners\BroadcastAdminOpsInboxOnDomainEvents;
 use App\Listeners\SendBugRecordedAdminNotifications;
 use App\Services\CustomerPriceService;
 use App\Services\PriceCalculator;
@@ -29,6 +35,8 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(CustomerPriceService::class, function ($app): CustomerPriceService {
             return new CustomerPriceService($app->make(PriceCalculator::class));
         });
+
+        $this->app->bind(HumanVerifier::class, TurnstileVerifier::class);
     }
 
     /**
@@ -40,6 +48,7 @@ class AppServiceProvider extends ServiceProvider
         $this->registerAuthActivityHooks();
         $this->registerActivityBroadcasting();
         $this->registerBugNotifications();
+        $this->registerAdminOpsBroadcasting();
         $this->registerNotificationChannels();
         $this->registerPwaInstallButtonPermission();
         $this->configureVitePreload();
@@ -142,6 +151,16 @@ class AppServiceProvider extends ServiceProvider
     protected function registerBugNotifications(): void
     {
         Event::listen(BugInboxChanged::class, SendBugRecordedAdminNotifications::class);
+    }
+
+    protected function registerAdminOpsBroadcasting(): void
+    {
+        $listener = BroadcastAdminOpsInboxOnDomainEvents::class;
+
+        Event::listen(FulfillmentListChanged::class, [$listener, 'handleFulfillmentListChanged']);
+        Event::listen(TopupRequestsChanged::class, [$listener, 'handleTopupRequestsChanged']);
+        Event::listen(BugInboxChanged::class, [$listener, 'handleBugInboxChanged']);
+        Event::listen(AutomationRunChanged::class, [$listener, 'handleAutomationRunChanged']);
     }
 
     protected function registerActivityBroadcasting(): void

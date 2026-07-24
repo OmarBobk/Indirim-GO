@@ -77,12 +77,28 @@ class CachedFulfillmentAnalyticsProvider
 
         $load = $processing >= 20 ? 'high' : ($processing >= 8 ? 'medium' : 'normal');
 
+        $browserQueued = Fulfillment::query()
+            ->where('provider', 'like', 'browser:%')
+            ->where('status', FulfillmentStatus::Queued)
+            ->count();
+
+        $browserRunning = \App\Models\FulfillmentAutomationRun::query()
+            ->where('status', \App\Enums\FulfillmentAutomationRunStatus::Running)
+            ->count();
+
+        $browserNeedsReview = \App\Models\FulfillmentAutomationRun::query()
+            ->where('status', \App\Enums\FulfillmentAutomationRunStatus::NeedsReview)
+            ->count();
+
         return [
             'queued' => $queued,
             'processing' => $processing,
             'completed' => $completed,
             'active_supervisors' => $activeSupervisors,
             'load' => $load,
+            'browser_queued' => $browserQueued,
+            'browser_running' => $browserRunning,
+            'browser_needs_review' => $browserNeedsReview,
         ];
     }
 

@@ -6,8 +6,12 @@ use App\Actions\Fortify\CreateNewUser;
 use App\Actions\Fortify\LoginResponse;
 use App\Actions\Fortify\ResetUserPassword;
 use App\Actions\Fortify\TwoFactorLoginResponse;
+use App\Domain\Security\Listeners\RecordSuccessfulRegistration;
+use App\Http\Controllers\Auth\RegisteredUserController;
+use Illuminate\Auth\Events\Registered;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
@@ -15,6 +19,7 @@ use Laravel\Fortify\Contracts\LoginResponse as LoginResponseContract;
 use Laravel\Fortify\Contracts\TwoFactorLoginResponse as TwoFactorLoginResponseContract;
 use Laravel\Fortify\Features;
 use Laravel\Fortify\Fortify;
+use Laravel\Fortify\Http\Controllers\RegisteredUserController as FortifyRegisteredUserController;
 
 class FortifyServiceProvider extends ServiceProvider
 {
@@ -23,7 +28,8 @@ class FortifyServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // Swap Fortify's registration controller so security runs before CreateNewUser.
+        $this->app->bind(FortifyRegisteredUserController::class, RegisteredUserController::class);
     }
 
     /**
@@ -34,6 +40,7 @@ class FortifyServiceProvider extends ServiceProvider
         $this->configureActions();
         $this->configureViews();
         $this->configureRateLimiting();
+        $this->configureRegistrationProtection();
     }
 
     /**
@@ -102,5 +109,14 @@ class FortifyServiceProvider extends ServiceProvider
 
             return Limit::perMinute(5)->by($throttleKey);
         });
+    }
+
+    /**
+     * Record success budgets after Fortify creates the user (Registered event).
+     * Pre-create security runs in {@see RegisteredUserController}.
+     */
+    private function configureRegistrationProtection(): void
+    {
+        Event::listen(Registered::class, RecordSuccessfulRegistration::class);
     }
 }

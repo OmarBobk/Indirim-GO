@@ -1,6 +1,10 @@
 <div>
     @if ($canReport)
-        <div class="fixed bottom-4 end-4 z-[70]" wire:key="quick-report-button-wrapper">
+        <div
+            class="storefront-fab fixed bottom-4 end-4 z-[70]"
+            wire:key="quick-report-button-wrapper"
+            data-test="storefront-bug-fab"
+        >
             <flux:button variant="primary" icon="bug-ant" wire:click="show">
                 {{ __('Report Bug') }}
             </flux:button>

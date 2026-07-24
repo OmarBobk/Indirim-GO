@@ -9,18 +9,17 @@
             <flux:button
                 variant="ghost"
                 icon="bell"
-                class="!h-10 !w-10 !p-0 [&>div>svg]:size-5 !text-zinc-700 dark:!text-zinc-300 hover:!bg-zinc-200 dark:hover:!bg-zinc-800 rounded-full"
-                aria-label="{{ __('messages.notifications') }}"
+                class="storefront-shell-icon-btn !h-10 !w-10 !p-0 [&>div>svg]:size-5 !text-zinc-700 dark:!text-zinc-300 hover:!bg-zinc-200 dark:hover:!bg-zinc-800 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--color-accent)/40 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-zinc-900"
+                aria-label="{{ $this->unreadCount > 0 ? __('main.notifications_unread_aria', ['count' => $this->unreadCount > 9 ? '9+' : $this->unreadCount]) : __('messages.notifications') }}"
                 x-on:click="
                     if (! markDelay) {
-                        $wire.markAsReadOnOpen();
                         markDelay = true;
                         setTimeout(() => markDelay = false, 300);
                     }
                 "
             />
             @if ($this->unreadCount > 0)
-                <span class="absolute -end-0.5 -top-0.5 flex size-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white" aria-hidden="true">
+                <span class="storefront-unread-badge absolute -end-0.5 -top-0.5" aria-hidden="true">
                     {{ $this->unreadCount > 9 ? '9+' : $this->unreadCount }}
                 </span>
             @endif

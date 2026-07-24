@@ -11,7 +11,7 @@ The Laravel Boost guidelines are specifically curated by Laravel maintainers for
 ## Foundational Context
 This application is a Laravel application and its main Laravel ecosystems package & versions are below. You are an expert with them all. Ensure you abide by these specific packages & versions.
 
-- php - 8.4.16
+- php - 8.4.21
 - laravel/fortify (FORTIFY) - v1
 - laravel/framework (LARAVEL) - v12
 - laravel/pint (PINT) - v1
@@ -47,16 +47,6 @@ This application is a Laravel application and its main Laravel ecosystems packag
 
 ## Documentation Files
 - You must only create documentation files if explicitly requested by the user.
-
-## Project-Specific Guardrails (karman.store)
-- Treat `wallet_transactions` + `wallets.balance` as the only financial source of truth. Do not derive money state from `system_events`.
-- Every wallet balance mutation must be transactional, idempotent, and mirrored by exactly one financial `system_events` record.
-- Keep financial side-effects and broadcasts in `DB::afterCommit()` to avoid emitting events on rolled-back transactions.
-- Do not trust client cart totals or pricing. Recompute server-side through existing pricing flow and domain classes.
-- Keep custom amount semantics intact: order lines use `requested_amount` and custom-amount lines are treated as quantity 1.
-- Never bypass backend access boundaries. Respect `backend` middleware and permission checks from `config('permission.backend_permissions')`.
-- For changes touching pricing, checkout, wallet, refunds, topups, fulfillments, or commissions, inspect and preserve existing behavior in sibling Actions before refactoring.
-- Preserve referral/commission flow contracts: referral attribution from cookie/server-side metadata, commission creation on payment flow, commission failure updates on refund flow.
 
 === boost rules ===
 
@@ -124,13 +114,6 @@ protected function isAccessible(User $user, ?string $path = null): bool
 
 ## Enums
 - Typically, keys in an Enum should be TitleCase. For example: `FavoritePerson`, `BestLake`, `Monthly`.
-
-=== tests rules ===
-
-## Test Enforcement
-
-- Every change must be programmatically tested. Write a new test or update an existing test, then run the affected tests to make sure they pass.
-- Run the minimum number of tests needed to ensure code quality and speed. Use `php artisan test --compact` with a specific filename or filter.
 
 === laravel/core rules ===
 

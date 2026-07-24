@@ -290,7 +290,7 @@ new class extends Component
 
     @can('manage_user_prices')
         <section class="rounded-2xl border border-cyan-200/60 bg-gradient-to-b from-cyan-50/40 via-white to-white p-5 shadow-sm ring-1 ring-cyan-500/10 dark:border-cyan-500/25 dark:from-cyan-950/30 dark:via-zinc-900 dark:to-zinc-900 dark:ring-cyan-400/10 sm:p-6">
-            <livewire:users.user-product-prices :user="$user" :key="'user-prices-'.$user->id" />
+            <livewire:users.user-pricing-rules :user="$user" :key="'user-pricing-rules-'.$user->id" />
         </section>
     @endcan
 

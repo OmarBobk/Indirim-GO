@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Notifications\SalespersonPayoutRequestedNotification;
 use App\Services\NotificationRecipientService;
 use App\Services\SalespersonDashboardService;
+use App\Support\AdminOpsBroadcaster;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -68,6 +69,8 @@ final class RequestSalespersonPayout
             foreach (app(NotificationRecipientService::class)->adminUsers() as $admin) {
                 $admin->notify(SalespersonPayoutRequestedNotification::forPayoutRequest($request, $salesperson));
             }
+
+            AdminOpsBroadcaster::dispatch('payout-requested');
 
             return 'created';
         });

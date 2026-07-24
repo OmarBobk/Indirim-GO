@@ -1,0 +1,852 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Livewire\Admin;
+
+use App\Actions\Fulfillments\CancelFulfillmentAutomationRun;
+use App\Actions\Fulfillments\ResolveFulfillmentAutomationReview;
+use App\Actions\Fulfillments\RetryFulfillmentAutomation;
+use App\Enums\FulfillmentAutomationRunStatus;
+use App\Models\FulfillmentAutomationRun;
+use App\Models\WebsiteSetting;
+use App\Services\FulfillmentAutomationService;
+use Carbon\CarbonInterface;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Contracts\View\View;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
+use Livewire\Attributes\Computed;
+use Livewire\Attributes\Layout;
+use Livewire\Attributes\On;
+use Livewire\Attributes\Url;
+use Livewire\Component;
+use Livewire\WithPagination;
+use Masmerise\Toaster\Toastable;
+use Throwable;
+
+#[Layout('layouts.app')]
+final class AutomationMonitor extends Component
+{
+    use Toastable;
+    use WithPagination;
+
+    #[Url]
+    public string $statusFilter = 'all';
+
+    #[Url]
+    public string $search = '';
+
+    public ?string $selectedRunUuid = null;
+
+    public bool $automationEnabled = true;
+
+    public string $wasimUsername = '';
+
+    public string $wasimPassword = '';
+
+    public bool $wasimPasswordConfigured = false;
+
+    public bool $wasimCredentialsFromEnv = false;
+
+    public bool $wasimPasswordDecryptFailed = false;
+
+    public function mount(): void
+    {
+        abort_unless(auth()->user()?->hasRole('admin'), 403);
+
+        $settings = WebsiteSetting::instance();
+
+        $this->automationEnabled = WebsiteSetting::getAutomationEnabled();
+        $this->wasimUsername = (string) ($settings->wasim_automation_username ?? '');
+        $this->wasimPasswordConfigured = $settings->hasWasimAutomationPassword();
+        $this->wasimCredentialsFromEnv = $this->envWasimCredentialsConfigured();
+        $this->wasimPasswordDecryptFailed = $this->wasimPasswordConfigured && ! $settings->isWasimAutomationPasswordUsable();
+    }
+
+    public function clearWasimBrowserSession(): void
+    {
+        abort_unless(auth()->user()?->hasRole('admin'), 403);
+
+        $sessionKey = (string) (config('fulfillment_automation.suppliers.wasim.session_key') ?? 'wasim-main');
+
+        if (! app(FulfillmentAutomationService::class)->clearWorkerBrowserSession($sessionKey)) {
+            $this->error(__('messages.automation_wasim_session_clear_failed'));
+
+            return;
+        }
+
+        $this->success(__('messages.automation_wasim_session_cleared'));
+    }
+
+    public function saveWasimCredentials(): void
+    {
+        abort_unless(auth()->user()?->hasRole('admin'), 403);
+
+        if (! Schema::hasColumn('website_settings', 'wasim_automation_username')) {
+            $this->error(__('messages.automation_wasim_credentials_migration_required'));
+
+            return;
+        }
+
+        $settings = WebsiteSetting::instance();
+
+        $this->validate([
+            'wasimUsername' => ['required', 'string', 'max:255'],
+            'wasimPassword' => [
+                'nullable',
+                'string',
+                'max:255',
+                Rule::requiredIf(fn (): bool => ! $settings->hasWasimAutomationPassword() && ! $this->envWasimCredentialsConfigured()),
+            ],
+        ]);
+
+        $payload = [
+            'wasim_automation_username' => trim($this->wasimUsername),
+        ];
+
+        if ($this->wasimPassword !== '') {
+            $payload['wasim_automation_password'] = $this->wasimPassword;
+        }
+
+        try {
+            $settings->update($payload);
+        } catch (Throwable $exception) {
+            report($exception);
+            $this->error(__('messages.automation_wasim_credentials_save_failed'));
+
+            return;
+        }
+
+        $this->wasimPassword = '';
+        $settings->refresh();
+        $this->wasimPasswordConfigured = $settings->hasWasimAutomationPassword();
+        $this->wasimCredentialsFromEnv = $this->envWasimCredentialsConfigured();
+        $this->wasimPasswordDecryptFailed = $this->wasimPasswordConfigured && ! $settings->isWasimAutomationPasswordUsable();
+
+        $sessionKey = (string) (config('fulfillment_automation.suppliers.wasim.session_key') ?? 'wasim-main');
+        $sessionCleared = app(FulfillmentAutomationService::class)->clearWorkerBrowserSession($sessionKey);
+
+        if ($sessionCleared) {
+            $this->success(__('messages.automation_wasim_credentials_saved_session_cleared'));
+        } else {
+            $this->success(__('messages.automation_wasim_credentials_saved'));
+        }
+    }
+
+    public function updatedStatusFilter(): void
+    {
+        $this->resetPage();
+    }
+
+    public function updatedSearch(): void
+    {
+        $this->resetPage();
+    }
+
+    #[On('automation-run-updated')]
+    public function refreshFromBroadcast(array $payload = []): void
+    {
+        unset($this->stats, $this->runs, $this->runGroups, $this->selectedRun, $this->selectedRunIsGlobalLatest);
+    }
+
+    public function selectRun(string $uuid, bool $focusScreenshots = false): void
+    {
+        abort_unless(auth()->user()?->hasRole('admin'), 403);
+
+        $this->selectedRunUuid = $uuid;
+        $this->dispatch('open-panel', focusScreenshots: $focusScreenshots);
+    }
+
+    public function closePanel(): void
+    {
+        $this->selectedRunUuid = null;
+        $this->dispatch('close-panel');
+    }
+
+    public function toggleAutomation(): void
+    {
+        abort_unless(auth()->user()?->hasRole('admin'), 403);
+
+        $next = ! $this->automationEnabled;
+
+        try {
+            WebsiteSetting::instance()->update(['automation_enabled' => $next]);
+            $this->automationEnabled = $next;
+            $this->success(__('messages.automation_settings_saved'));
+        } catch (Throwable) {
+            $this->automationEnabled = WebsiteSetting::getAutomationEnabled();
+            $this->error(__('messages.automation_toggle_failed'));
+        }
+    }
+
+    public function retryRun(string $uuid): void
+    {
+        $run = $this->findAuthorizedRun($uuid);
+        $fulfillment = $run->fulfillment;
+
+        if ($fulfillment === null) {
+            return;
+        }
+
+        $this->authorize('update', $fulfillment);
+
+        app(RetryFulfillmentAutomation::class)->handle($fulfillment, auth()->id());
+
+        $this->success(__('messages.fulfillment_automation_retry_queued'));
+        $this->closePanel();
+    }
+
+    public function cancelRun(string $uuid): void
+    {
+        $run = $this->findAuthorizedRun($uuid);
+        $fulfillment = $run->fulfillment;
+
+        if ($fulfillment === null || ! $run->isActive()) {
+            return;
+        }
+
+        $this->authorize('update', $fulfillment);
+
+        app(CancelFulfillmentAutomationRun::class)->handle($fulfillment, 'admin_cancel');
+
+        $this->success(__('messages.automation_run_cancelled'));
+        $this->closePanel();
+    }
+
+    public function markReviewSucceeded(string $uuid): void
+    {
+        $run = $this->findAuthorizedRun($uuid);
+        $fulfillment = $run->fulfillment;
+
+        if ($fulfillment !== null) {
+            $this->authorize('update', $fulfillment);
+        }
+
+        app(ResolveFulfillmentAutomationReview::class)->handle($run, 'succeeded', auth()->id());
+
+        $this->success(__('messages.automation_review_succeeded'));
+        $this->closePanel();
+    }
+
+    public function markReviewFailed(string $uuid): void
+    {
+        $run = $this->findAuthorizedRun($uuid);
+        $fulfillment = $run->fulfillment;
+
+        if ($fulfillment !== null) {
+            $this->authorize('update', $fulfillment);
+        }
+
+        app(ResolveFulfillmentAutomationReview::class)->handle($run, 'failed', auth()->id());
+
+        $this->success(__('messages.automation_review_failed'));
+        $this->closePanel();
+    }
+
+    /**
+     * @return array{
+     *     running_count: int,
+     *     needs_review_count: int,
+     *     failed_today_count: int,
+     *     worker_health: array{state: string, label: string}
+     * }
+     */
+    #[Computed]
+    public function stats(): array
+    {
+        $today = Carbon::today();
+
+        $runningCount = FulfillmentAutomationRun::query()->active()->count();
+
+        $needsReviewCount = FulfillmentAutomationRun::query()
+            ->where('status', FulfillmentAutomationRunStatus::NeedsReview)
+            ->count();
+
+        $failedTodayCount = FulfillmentAutomationRun::query()
+            ->where('status', FulfillmentAutomationRunStatus::Failed)
+            ->where('updated_at', '>=', $today)
+            ->count();
+
+        return [
+            'running_count' => $runningCount,
+            'needs_review_count' => $needsReviewCount,
+            'failed_today_count' => $failedTodayCount,
+            'worker_health' => $this->resolveWorkerHealth(),
+            'worker_build' => $this->resolveWorkerBuild(),
+        ];
+    }
+
+    #[Computed]
+    public function runs(): LengthAwarePaginator
+    {
+        $search = trim($this->search);
+
+        return FulfillmentAutomationRun::query()
+            ->with([
+                'fulfillment.order:id,order_number,user_id,created_at',
+                'fulfillment.order.user:id,username',
+                'fulfillment.orderItem.package:id,name',
+            ])
+            ->when($this->statusFilter === 'running', fn (Builder $query): Builder => $query->active())
+            ->when(
+                $this->statusFilter !== 'all' && $this->statusFilter !== 'running',
+                fn (Builder $query): Builder => $query->where('status', $this->statusFilter),
+            )
+            ->when($search !== '', function (Builder $query) use ($search): void {
+                $like = '%'.$search.'%';
+
+                $query->where(function (Builder $sub) use ($like, $search): void {
+                    $sub->where('external_order_id', 'like', $like)
+                        ->orWhere('result_payload->supplier_order_id', 'like', $like)
+                        ->orWhere('uuid', 'like', $like)
+                        ->orWhere('supplier_key', 'like', $like)
+                        ->orWhere('error_code', 'like', $like)
+                        ->orWhereHas('fulfillment', function (Builder $fulfillmentQuery) use ($like, $search): void {
+                            $fulfillmentQuery
+                                ->where('id', 'like', $like)
+                                ->orWhereHas('order', fn (Builder $orderQuery): Builder => $orderQuery->where('order_number', 'like', $like));
+
+                            if (ctype_digit($search)) {
+                                $fulfillmentQuery->orWhere('order_id', (int) $search);
+                            }
+                        });
+                });
+            })
+            ->latest('created_at')
+            ->paginate(25);
+    }
+
+    /**
+     * Runs on the current page grouped by fulfillment (newest attempt shown first).
+     *
+     * @return Collection<int, object{
+     *     fulfillment_id: int,
+     *     primary: FulfillmentAutomationRun,
+     *     others: Collection<int, FulfillmentAutomationRun>,
+     *     count: int,
+     *     global_latest_uuid: string|null
+     * }>
+     */
+    #[Computed]
+    public function runGroups(): Collection
+    {
+        $runs = $this->runs->getCollection();
+
+        if ($runs->isEmpty()) {
+            return collect();
+        }
+
+        /** @var list<int> $fulfillmentIds */
+        $fulfillmentIds = $runs->pluck('fulfillment_id')
+            ->unique()
+            ->filter()
+            ->map(fn ($id): int => (int) $id)
+            ->values()
+            ->all();
+
+        $latestUuidByFulfillment = $this->latestRunUuidByFulfillmentIds($fulfillmentIds);
+
+        return $runs->groupBy('fulfillment_id')
+            ->map(function (Collection $groupRuns, int|string $fulfillmentId) use ($latestUuidByFulfillment): object {
+                $sorted = $groupRuns
+                    ->sortByDesc(fn (FulfillmentAutomationRun $run): CarbonInterface => $run->created_at)
+                    ->values();
+
+                $fulfillmentId = (int) $fulfillmentId;
+
+                return (object) [
+                    'fulfillment_id' => $fulfillmentId,
+                    'primary' => $sorted->first(),
+                    'others' => $sorted->slice(1)->values(),
+                    'count' => $sorted->count(),
+                    'global_latest_uuid' => $latestUuidByFulfillment[$fulfillmentId] ?? null,
+                ];
+            })
+            ->sortByDesc(fn (object $group): CarbonInterface => $group->primary->created_at)
+            ->values();
+    }
+
+    #[Computed]
+    public function selectedRunIsGlobalLatest(): bool
+    {
+        $run = $this->selectedRun;
+
+        if ($run === null) {
+            return false;
+        }
+
+        return $this->isGlobalLatestRun($run, $this->latestRunUuidForFulfillment($run->fulfillment_id));
+    }
+
+    public function isGlobalLatestRun(FulfillmentAutomationRun $run, ?string $globalLatestUuid): bool
+    {
+        return $globalLatestUuid !== null && $run->uuid === $globalLatestUuid;
+    }
+
+    public function latestRunUuidForFulfillment(int $fulfillmentId): ?string
+    {
+        return $this->latestRunUuidByFulfillmentIds([$fulfillmentId])[$fulfillmentId] ?? null;
+    }
+
+    #[Computed]
+    public function selectedRun(): ?FulfillmentAutomationRun
+    {
+        if ($this->selectedRunUuid === null || $this->selectedRunUuid === '') {
+            return null;
+        }
+
+        return FulfillmentAutomationRun::query()
+            ->with([
+                'fulfillment.order:id,order_number,user_id,created_at',
+                'fulfillment.order.user:id,username',
+                'fulfillment.orderItem.package:id,name',
+            ])
+            ->where('uuid', $this->selectedRunUuid)
+            ->first();
+    }
+
+    public function runDurationLabel(FulfillmentAutomationRun $run): string
+    {
+        if ($run->finished_at === null) {
+            return '—';
+        }
+
+        $start = $run->started_at ?? $run->dispatched_at ?? $run->created_at;
+
+        if ($start === null) {
+            return '—';
+        }
+
+        $seconds = max(0, (int) $start->diffInSeconds($run->finished_at));
+
+        if ($seconds < 60) {
+            return $seconds.'s';
+        }
+
+        return intdiv($seconds, 60).'m '.($seconds % 60).'s';
+    }
+
+    public function runStartedAt(FulfillmentAutomationRun $run): ?CarbonInterface
+    {
+        return $run->started_at ?? $run->dispatched_at ?? $run->created_at;
+    }
+
+    public function orderDateLabel(FulfillmentAutomationRun $run): string
+    {
+        $createdAt = $run->fulfillment?->order?->created_at;
+
+        if ($createdAt === null) {
+            return '—';
+        }
+
+        return $createdAt->format('M d, Y H:i');
+    }
+
+    public function supplierLabel(FulfillmentAutomationRun $run): string
+    {
+        if ($run->supplier_key !== '') {
+            return $run->supplier_key;
+        }
+
+        $provider = $run->fulfillment?->provider ?? '';
+
+        return str_starts_with($provider, 'browser:')
+            ? substr($provider, strlen('browser:'))
+            : ($provider !== '' ? $provider : '—');
+    }
+
+    public function statusBadgeClass(FulfillmentAutomationRunStatus $status): string
+    {
+        return match ($status) {
+            FulfillmentAutomationRunStatus::Running,
+            FulfillmentAutomationRunStatus::Dispatched => 'border-blue-300 bg-blue-50 text-blue-800 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-200',
+            FulfillmentAutomationRunStatus::Reserved => 'border-slate-300 bg-slate-50 text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200',
+            FulfillmentAutomationRunStatus::Succeeded => 'border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200',
+            FulfillmentAutomationRunStatus::Failed => 'border-red-300 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-950/50 dark:text-red-200',
+            FulfillmentAutomationRunStatus::NeedsReview => 'border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-200',
+            FulfillmentAutomationRunStatus::Cancelled => 'border-zinc-300 bg-zinc-50 text-zinc-600 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300',
+        };
+    }
+
+    public function healthCardClass(string $state): string
+    {
+        return match ($state) {
+            'healthy' => 'border-emerald-200 ring-emerald-100 bg-emerald-50/80 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:ring-emerald-900/40',
+            'slow' => 'border-amber-200 ring-amber-100 bg-amber-50/80 dark:border-amber-900/60 dark:bg-amber-950/40 dark:ring-amber-900/40',
+            default => 'border-red-200 ring-red-100 bg-red-50/80 dark:border-red-900/60 dark:bg-red-950/40 dark:ring-red-900/40',
+        };
+    }
+
+    /**
+     * One-line purchase summary for the runs table, e.g. order=12399 status=Processing_OK_wait price=1.11…
+     */
+    public function runLogSummary(FulfillmentAutomationRun $run): ?string
+    {
+        $fromLog = $this->purchaseParsedMessageFromLog($run);
+
+        if ($fromLog !== null) {
+            return $fromLog;
+        }
+
+        return $this->purchaseSummaryFromPayload($run);
+    }
+
+    public function runHasExpandableDetails(FulfillmentAutomationRun $run): bool
+    {
+        if ($this->formattedLogExcerpt($run) !== []) {
+            return true;
+        }
+
+        $payload = $run->result_payload;
+
+        if (is_array($payload) && $payload !== []) {
+            return true;
+        }
+
+        return filled($run->error_message) || filled($run->error_code);
+    }
+
+    /**
+     * Structured supplier purchase fields for the details toggle panel.
+     *
+     * @return array{order: string, status: string, price: string}|null
+     */
+    public function runPurchaseDetails(FulfillmentAutomationRun $run): ?array
+    {
+        $parsed = $this->parsePurchaseSummaryString($this->purchaseParsedMessageFromLog($run));
+
+        if ($parsed !== null) {
+            return $parsed;
+        }
+
+        $payload = is_array($run->result_payload) ? $run->result_payload : [];
+
+        $order = $payload['supplier_order_id'] ?? $run->external_order_id;
+        $status = $payload['supplier_status'] ?? null;
+        $price = $payload['supplier_entry_price'] ?? null;
+
+        if ($order === null && $status === null && $price === null) {
+            return null;
+        }
+
+        return [
+            'order' => (string) ($order ?? 'n/a'),
+            'status' => (string) ($status ?? 'n/a'),
+            'price' => $price !== null ? (string) $price : 'n/a',
+        ];
+    }
+
+    /**
+     * Normalize automation log lines for the detail panel: sequential ids first, sorted by step order.
+     *
+     * @return list<array{id: int, step: string, level: string, message: string, at: string|null, ms: int|null}>
+     */
+    public function formattedLogExcerpt(FulfillmentAutomationRun $run): array
+    {
+        $raw = $run->log_excerpt;
+
+        if (! is_array($raw) || $raw === []) {
+            return [];
+        }
+
+        $lines = [];
+
+        foreach (array_values($raw) as $index => $line) {
+            if (! is_array($line)) {
+                continue;
+            }
+
+            $lines[] = [
+                'line' => $line,
+                'fallback_order' => $index,
+            ];
+        }
+
+        usort($lines, function (array $a, array $b): int {
+            $lineA = $a['line'];
+            $lineB = $b['line'];
+
+            $idA = isset($lineA['id']) && is_numeric($lineA['id']) ? (int) $lineA['id'] : null;
+            $idB = isset($lineB['id']) && is_numeric($lineB['id']) ? (int) $lineB['id'] : null;
+
+            if ($idA !== null && $idB !== null && $idA !== $idB) {
+                return $idA <=> $idB;
+            }
+
+            if ($idA !== null && $idB === null) {
+                return -1;
+            }
+
+            if ($idA === null && $idB !== null) {
+                return 1;
+            }
+
+            $atA = is_string($lineA['at'] ?? null) ? strtotime($lineA['at']) : false;
+            $atB = is_string($lineB['at'] ?? null) ? strtotime($lineB['at']) : false;
+
+            if ($atA !== false && $atB !== false && $atA !== $atB) {
+                return $atA <=> $atB;
+            }
+
+            return $a['fallback_order'] <=> $b['fallback_order'];
+        });
+
+        $formatted = [];
+
+        foreach ($lines as $position => $entry) {
+            $line = $entry['line'];
+
+            $formatted[] = [
+                'id' => $position + 1,
+                'step' => (string) ($line['step'] ?? 'unknown'),
+                'level' => (string) ($line['level'] ?? 'info'),
+                'message' => (string) ($line['message'] ?? ''),
+                'at' => is_string($line['at'] ?? null) ? $line['at'] : null,
+                'ms' => isset($line['ms']) && is_numeric($line['ms']) ? (int) $line['ms'] : null,
+            ];
+        }
+
+        return $formatted;
+    }
+
+    /**
+     * @return list<array{src: string, alt: string, label: string}>
+     */
+    public function artifactItemsForRun(FulfillmentAutomationRun $run): array
+    {
+        $items = [];
+
+        foreach ($run->artifactPaths() as $index => $path) {
+            $items[] = [
+                'src' => $run->artifactShowUrl($index, absolute: false),
+                'alt' => basename($path),
+                'label' => Str::of(basename($path))->beforeLast('.')->replace(['-', '_'], ' ')->title()->toString(),
+            ];
+        }
+
+        return $items;
+    }
+
+    public function render(): View
+    {
+        return view('livewire.admin.automation-monitor');
+    }
+
+    /**
+     * @param  list<int>  $fulfillmentIds
+     * @return array<int, string>
+     */
+    private function latestRunUuidByFulfillmentIds(array $fulfillmentIds): array
+    {
+        if ($fulfillmentIds === []) {
+            return [];
+        }
+
+        return FulfillmentAutomationRun::query()
+            ->whereIn('fulfillment_id', $fulfillmentIds)
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->get(['fulfillment_id', 'uuid'])
+            ->unique('fulfillment_id')
+            ->mapWithKeys(fn (FulfillmentAutomationRun $run): array => [(int) $run->fulfillment_id => $run->uuid])
+            ->all();
+    }
+
+    private function purchaseParsedMessageFromLog(FulfillmentAutomationRun $run): ?string
+    {
+        $raw = $run->log_excerpt;
+
+        if (! is_array($raw)) {
+            return null;
+        }
+
+        foreach ($raw as $line) {
+            if (! is_array($line)) {
+                continue;
+            }
+
+            if (($line['step'] ?? '') !== 'purchase_parsed') {
+                continue;
+            }
+
+            $message = trim((string) ($line['message'] ?? ''));
+
+            if ($message !== '') {
+                return $message;
+            }
+        }
+
+        return null;
+    }
+
+    private function purchaseSummaryFromPayload(FulfillmentAutomationRun $run): ?string
+    {
+        $details = $this->runPurchaseDetails($run);
+
+        if ($details === null) {
+            if (filled($run->error_code) || filled($run->error_message)) {
+                return trim(($run->error_code ?? '').': '.($run->error_message ?? ''));
+            }
+
+            return null;
+        }
+
+        return sprintf(
+            'order=%s status=%s price=%s',
+            $details['order'],
+            $details['status'],
+            $details['price'],
+        );
+    }
+
+    /**
+     * @return array{order: string, status: string, price: string}|null
+     */
+    private function parsePurchaseSummaryString(?string $summary): ?array
+    {
+        if ($summary === null || $summary === '') {
+            return null;
+        }
+
+        if (! preg_match('/order=(\S+)\s+status=(\S+)\s+price=(\S+)/u', $summary, $matches)) {
+            return null;
+        }
+
+        return [
+            'order' => $matches[1],
+            'status' => $matches[2],
+            'price' => $matches[3],
+        ];
+    }
+
+    private function findAuthorizedRun(string $uuid): FulfillmentAutomationRun
+    {
+        abort_unless(auth()->user()?->hasRole('admin'), 403);
+
+        $run = FulfillmentAutomationRun::query()
+            ->with('fulfillment')
+            ->where('uuid', $uuid)
+            ->firstOrFail();
+
+        $this->authorize('view', $run);
+
+        return $run;
+    }
+
+    /**
+     * @return array{state: string, label: string}
+     */
+    private function envWasimCredentialsConfigured(): bool
+    {
+        return filled(config('fulfillment_automation.suppliers.wasim.credentials.username'))
+            && filled(config('fulfillment_automation.suppliers.wasim.credentials.password'));
+    }
+
+    /**
+     * @return array{label: string, state: string, supports_submit: bool}
+     */
+    private function resolveWorkerBuild(): array
+    {
+        $workerUrl = rtrim((string) config('fulfillment_automation.worker_url'), '/');
+
+        if ($workerUrl === '') {
+            return [
+                'label' => __('messages.automation_worker_build_unknown'),
+                'state' => 'unknown',
+                'supports_submit' => false,
+            ];
+        }
+
+        try {
+            $response = Http::timeout(3)->get($workerUrl.'/health');
+
+            if (! $response->successful()) {
+                return [
+                    'label' => __('messages.automation_worker_build_unreachable'),
+                    'state' => 'unreachable',
+                    'supports_submit' => false,
+                ];
+            }
+
+            $build = (string) ($response->json('build') ?? '');
+            $supportsSubmit = (bool) ($response->json('wasim_submit_purchase') ?? false);
+            $supportsReconcile = (bool) ($response->json('wasim_reconcile') ?? false);
+
+            if ($build === '' || ! $supportsSubmit || ! $supportsReconcile) {
+                return [
+                    'label' => __('messages.automation_worker_build_outdated'),
+                    'state' => 'outdated',
+                    'supports_submit' => false,
+                ];
+            }
+
+            return [
+                'label' => __('messages.automation_worker_build_ok', ['build' => $build]),
+                'state' => 'ok',
+                'supports_submit' => true,
+            ];
+        } catch (Throwable) {
+            return [
+                'label' => __('messages.automation_worker_build_unreachable'),
+                'state' => 'unreachable',
+                'supports_submit' => false,
+            ];
+        }
+    }
+
+    private function resolveWorkerHealth(): array
+    {
+        $hasRunsToday = FulfillmentAutomationRun::query()
+            ->where(function (Builder $query): void {
+                $query->whereDate('dispatched_at', today())
+                    ->orWhereDate('created_at', today());
+            })
+            ->exists();
+
+        if (! $hasRunsToday) {
+            return [
+                'state' => 'no_signal',
+                'label' => __('messages.automation_worker_no_signal'),
+            ];
+        }
+
+        $lastDispatched = FulfillmentAutomationRun::query()
+            ->whereNotNull('dispatched_at')
+            ->latest('dispatched_at')
+            ->value('dispatched_at');
+
+        if ($lastDispatched === null) {
+            return [
+                'state' => 'no_signal',
+                'label' => __('messages.automation_worker_no_signal'),
+            ];
+        }
+
+        $minutes = Carbon::parse($lastDispatched)->diffInMinutes(now());
+
+        if ($minutes < 3) {
+            return [
+                'state' => 'healthy',
+                'label' => __('messages.automation_worker_healthy'),
+            ];
+        }
+
+        if ($minutes <= 10) {
+            return [
+                'state' => 'slow',
+                'label' => __('messages.automation_worker_slow'),
+            ];
+        }
+
+        return [
+            'state' => 'no_signal',
+            'label' => __('messages.automation_worker_no_signal'),
+        ];
+    }
+}

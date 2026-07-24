@@ -24,7 +24,7 @@
                         copiedAnnouncement: @js(__('messages.account_details_copied')),
                     })"
                     class="overflow-hidden rounded-2xl border-2 bg-white shadow-sm transition dark:bg-zinc-900"
-                    x-bind:class="paymentRoot().selectedId === {{ $method->id }}
+                    x-bind:class="Number(paymentRoot().selectedId) === {{ $method->id }}
                         ? 'border-(--color-accent) ring-2 ring-(--color-accent)/25'
                         : 'border-zinc-200 dark:border-zinc-700'"
                 >
@@ -39,7 +39,7 @@
                             </flux:heading>
                             <flux:badge
                                 color="amber"
-                                x-show="paymentRoot().selectedId === {{ $method->id }}"
+                                x-show="Number(paymentRoot().selectedId) === {{ $method->id }}"
                                 x-cloak
                             >
                                 {{ __('messages.wallet_payment_method_selected') }}
