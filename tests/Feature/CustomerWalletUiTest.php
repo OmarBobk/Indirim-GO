@@ -184,7 +184,7 @@ test('header surfaces active credit limit at zero balance for mobile chrome', fu
     $limitAmount = $money->format(250.00, 'USD', 2);
     $limitHint = __('messages.wallet_nav_limit', ['amount' => $limitAmount]);
 
-    $this->actingAs($user)
+    $html = $this->actingAs($user)
         ->get(route('home'))
         ->assertOk()
         ->assertSeeHtml('data-wallet-tone="zero"')
@@ -194,7 +194,30 @@ test('header surfaces active credit limit at zero balance for mobile chrome', fu
         ->assertSeeHtml('>'.e($limitAmount).'</span>')
         ->assertSeeHtml('data-test="wallet-chrome-summary"')
         ->assertSee(__('messages.wallet_credit_limit_label'))
-        ->assertSeeHtml('data-wallet-cta-badge="'.e($balance.' · '.$limitHint).'"');
+        ->assertSeeHtml('data-wallet-cta-badge="'.e($balance.' · '.$limitHint).'"')
+        ->assertSeeHtml('data-chrome-surface="mobile-top"')
+        ->assertSeeHtml('data-chrome-surface="desktop-header"')
+        ->getContent();
+
+    expect(substr_count($html, 'data-test="wallet-balance"'))->toBeGreaterThanOrEqual(2)
+        ->and(substr_count($html, 'data-chrome-surface="mobile-top"'))->toBe(1);
+});
+
+test('mobile top bar shows wallet amount chrome for authenticated customers', function () {
+    $user = User::factory()->create(['locale' => 'en']);
+    Wallet::forUser($user)->update(['balance' => '42.00']);
+
+    $money = FrontendMoney::for($user);
+    $balance = $money->format(42.00, 'USD', 2);
+
+    $this->actingAs($user)
+        ->get(route('home'))
+        ->assertOk()
+        ->assertSeeHtml('data-test="storefront-mobile-top"')
+        ->assertSeeHtml('data-chrome-surface="mobile-top"')
+        ->assertSeeHtml('data-event="top-nav-wallet"')
+        ->assertSeeHtml('data-test="wallet-nav-amount"')
+        ->assertSee($balance);
 });
 
 test('wallet page shows owed amount and credit facility when overdrawn with active credit', function () {

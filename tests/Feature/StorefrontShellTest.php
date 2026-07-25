@@ -45,6 +45,9 @@ test('authenticated home renders auth bottom navigation and hides announcement',
     $response->assertSee('data-event="bottom-nav-wallet"', false);
     $response->assertSee('data-event="bottom-nav-orders"', false);
     $response->assertSee('data-test="mobile-notifications"', false);
+    $response->assertSee('data-chrome-surface="mobile-top"', false);
+    $response->assertSee('data-test="wallet-balance"', false);
+    $response->assertSee('data-event="top-nav-wallet"', false);
     $response->assertDontSee('data-event="wallet-chip"', false);
     $response->assertDontSee('data-test="bottom-nav-login"', false);
     $response->assertDontSee('data-test="frontend-announcement-bar"', false);
