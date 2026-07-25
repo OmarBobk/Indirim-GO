@@ -76,18 +76,13 @@
                 </div>
             </div>
         @else
+            {{-- No edge-fade overlay: patterned page bg never matches a solid gradient, so fades read as a stuck shadow bar while swiping (esp. RTL). --}}
             <div class="relative" data-test="customer-home-frequently-ordered-rail">
-                {{-- Edge fade must use logical end + direction-aware gradient; physical to-l inverts in RTL and paints a solid bar over cards while swiping. --}}
-                <div
-                    class="pointer-events-none absolute inset-y-0 end-0 z-10 w-14 from-white to-transparent ltr:bg-gradient-to-l rtl:bg-gradient-to-r dark:from-zinc-900 max-sm:w-16"
-                    aria-hidden="true"
-                    data-test="customer-home-frequently-ordered-edge-fade"
-                ></div>
                 <div
                     role="region"
                     aria-roledescription="{{ __('main.home_horizontal_rail') }}"
                     aria-label="{{ __('main.home_frequently_ordered') }}"
-                    class="-mx-1 flex gap-3 overflow-x-auto px-1 pb-1 pe-12 scrollbar-hide snap-x snap-proximity scroll-ps-1 scroll-pe-12 sm:pe-14 sm:scroll-pe-14"
+                    class="-mx-1 flex gap-3 overflow-x-auto px-1 pb-1 scrollbar-hide snap-x snap-proximity scroll-ps-1 sm:scroll-ps-1"
                     data-test="customer-home-frequently-ordered-scroller"
                 >
                     @foreach ($items as $item)

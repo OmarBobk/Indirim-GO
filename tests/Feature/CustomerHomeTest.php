@@ -151,7 +151,7 @@ test('frequently ordered lists distinct packages ranked by purchase count', func
         ->assertDontSeeHtml('data-test="customer-home-frequently-ordered-empty"');
 });
 
-test('frequently ordered edge fade is direction-aware for rtl swipe', function () {
+test('frequently ordered rail does not paint an edge fade over swiping cards', function () {
     $user = User::factory()->create();
     $package = Package::factory()->create(['name' => 'Fade Pack', 'is_active' => true]);
     $product = Product::factory()->create(['package_id' => $package->id, 'entry_price' => 10]);
@@ -176,16 +176,12 @@ test('frequently ordered edge fade is direction-aware for rtl swipe', function (
         'status' => OrderItemStatus::Pending,
     ]);
 
-    $html = $this->actingAs($user)
+    $this->actingAs($user)
         ->get(route('home'))
         ->assertOk()
-        ->assertSeeHtml('data-test="customer-home-frequently-ordered-edge-fade"')
-        ->getContent();
-
-    expect($html)
-        ->toContain('ltr:bg-gradient-to-l')
-        ->toContain('rtl:bg-gradient-to-r')
-        ->not->toContain('bg-gradient-to-l from-white from-30%');
+        ->assertSeeHtml('data-test="customer-home-frequently-ordered-rail"')
+        ->assertSeeHtml('data-test="customer-home-frequently-ordered-scroller"')
+        ->assertDontSeeHtml('data-test="customer-home-frequently-ordered-edge-fade"');
 });
 
 test('CustomerHomeRecentOrders remains capped at three for future operational use', function () {
