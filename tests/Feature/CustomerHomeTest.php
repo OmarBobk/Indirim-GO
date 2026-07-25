@@ -151,6 +151,39 @@ test('frequently ordered lists distinct packages ranked by purchase count', func
         ->assertDontSeeHtml('data-test="customer-home-frequently-ordered-empty"');
 });
 
+test('frequently ordered rail does not paint an edge fade over swiping cards', function () {
+    $user = User::factory()->create();
+    $package = Package::factory()->create(['name' => 'Fade Pack', 'is_active' => true]);
+    $product = Product::factory()->create(['package_id' => $package->id, 'entry_price' => 10]);
+
+    $order = Order::create([
+        'user_id' => $user->id,
+        'order_number' => Order::temporaryOrderNumber(),
+        'currency' => 'USD',
+        'subtotal' => 10,
+        'fee' => 0,
+        'total' => 10,
+        'status' => OrderStatus::Paid,
+    ]);
+    OrderItem::create([
+        'order_id' => $order->id,
+        'product_id' => $product->id,
+        'package_id' => $package->id,
+        'name' => $product->name,
+        'unit_price' => 10,
+        'quantity' => 1,
+        'line_total' => 10,
+        'status' => OrderItemStatus::Pending,
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('home'))
+        ->assertOk()
+        ->assertSeeHtml('data-test="customer-home-frequently-ordered-rail"')
+        ->assertSeeHtml('data-test="customer-home-frequently-ordered-scroller"')
+        ->assertDontSeeHtml('data-test="customer-home-frequently-ordered-edge-fade"');
+});
+
 test('CustomerHomeRecentOrders remains capped at three for future operational use', function () {
     $user = User::factory()->create();
 
@@ -193,17 +226,30 @@ test('authenticated home shows category chips instead of category explorer grid'
         'order' => 1,
     ]);
 
-    $this->actingAs($user)
+    $html = $this->actingAs($user)
         ->get(route('home'))
         ->assertOk()
         ->assertSeeHtml('data-test="customer-home-category-chips"')
         ->assertSeeHtml('data-test="customer-home-category-chip"')
+        ->assertSeeHtml('data-test="customer-home-category-rail"')
         ->assertSeeHtml('data-test="customer-home-category-scroller"')
         ->assertSee(__('main.home_browse_hint'), false)
         ->assertSee(__('main.home_popular_packages'), false)
         ->assertSee(__('main.home_catalog_shelf_hint'), false)
         ->assertSee('Chip Category', false)
-        ->assertDontSeeHtml('data-test="homepage-categories-grid"');
+        ->assertDontSeeHtml('data-test="homepage-categories-grid"')
+        ->getContent();
+
+    preg_match(
+        '/data-test="customer-home-category-rail"[^>]*>(.*?)<\/section>/s',
+        $html,
+        $matches,
+    );
+
+    expect($matches[1] ?? '')
+        ->not->toContain('bg-gradient-to')
+        ->not->toContain('from-zinc-50')
+        ->not->toContain('pe-12');
 });
 
 test('browse empty state guides toward search and catalog', function () {

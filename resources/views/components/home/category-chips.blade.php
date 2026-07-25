@@ -69,45 +69,39 @@
                 </div>
             </div>
         @else
-            {{-- Soft tray invites tap; wrap on large screens so nothing is hidden. --}}
+            {{-- Soft tray invites tap; wrap on large screens so nothing is hidden. No edge-fade: it reads as a stuck shadow bar while swiping. --}}
             <div
                 class="rounded-2xl bg-zinc-50/90 p-2.5 sm:p-3 dark:bg-zinc-800/50"
                 data-test="customer-home-category-rail"
             >
-                <div class="relative">
-                    <div
-                        class="pointer-events-none absolute inset-y-0 end-0 z-10 w-14 bg-gradient-to-l from-zinc-50 from-30% to-transparent dark:from-zinc-800 max-lg:block lg:hidden sm:w-16"
-                        aria-hidden="true"
-                    ></div>
-                    <div
-                        role="navigation"
-                        aria-label="{{ __('messages.categories') }}"
-                        class="-mx-0.5 flex gap-2 overflow-x-auto px-0.5 pb-0.5 pe-12 scrollbar-hide snap-x snap-proximity scroll-ps-0.5 scroll-pe-12 sm:gap-2.5 sm:pe-14 sm:scroll-pe-14 lg:flex-wrap lg:gap-3 lg:overflow-visible lg:pe-0 lg:snap-none"
-                        data-test="customer-home-category-scroller"
-                    >
-                        @foreach ($categories as $category)
-                            <a
-                                href="{{ route('categories.show', ['category' => $category['slug']]) }}"
-                                wire:navigate
-                                wire:key="home-cat-chip-{{ $category['id'] }}"
-                                class="inline-flex min-h-11 shrink-0 snap-start items-center gap-2.5 rounded-full border border-zinc-200/90 bg-white py-2 ps-2 pe-3.5 text-sm font-medium text-zinc-800 shadow-sm transition-[border-color,box-shadow,transform] hover:border-(--color-accent) hover:shadow focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-accent) active:scale-[0.98] active:border-(--color-accent) motion-reduce:transition-none motion-reduce:active:scale-100 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
-                                data-test="customer-home-category-chip"
-                                data-event="home-category-chip"
-                                title="{{ $category['name'] }}"
-                            >
-                                <img
-                                    src="{{ $category['image'] }}"
-                                    alt=""
-                                    class="size-8 rounded-full object-cover"
-                                    width="32"
-                                    height="32"
-                                    loading="lazy"
-                                    decoding="async"
-                                />
-                                <span class="max-w-[10rem] truncate">{{ $category['name'] }}</span>
-                            </a>
-                        @endforeach
-                    </div>
+                <div
+                    role="navigation"
+                    aria-label="{{ __('messages.categories') }}"
+                    class="-mx-0.5 flex gap-2 overflow-x-auto px-0.5 pb-0.5 scrollbar-hide snap-x snap-proximity scroll-ps-0.5 sm:gap-2.5 lg:flex-wrap lg:gap-3 lg:overflow-visible lg:snap-none"
+                    data-test="customer-home-category-scroller"
+                >
+                    @foreach ($categories as $category)
+                        <a
+                            href="{{ route('categories.show', ['category' => $category['slug']]) }}"
+                            wire:navigate
+                            wire:key="home-cat-chip-{{ $category['id'] }}"
+                            class="inline-flex min-h-11 shrink-0 snap-start items-center gap-2.5 rounded-full border border-zinc-200/90 bg-white py-2 ps-2 pe-3.5 text-sm font-medium text-zinc-800 shadow-sm transition-[border-color,box-shadow,transform] hover:border-(--color-accent) hover:shadow focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-accent) active:scale-[0.98] active:border-(--color-accent) motion-reduce:transition-none motion-reduce:active:scale-100 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
+                            data-test="customer-home-category-chip"
+                            data-event="home-category-chip"
+                            title="{{ $category['name'] }}"
+                        >
+                            <img
+                                src="{{ $category['image'] }}"
+                                alt=""
+                                class="size-8 rounded-full object-cover"
+                                width="32"
+                                height="32"
+                                loading="lazy"
+                                decoding="async"
+                            />
+                            <span class="max-w-[10rem] truncate">{{ $category['name'] }}</span>
+                        </a>
+                    @endforeach
                 </div>
             </div>
         @endif
