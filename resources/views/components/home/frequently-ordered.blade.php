@@ -77,9 +77,11 @@
             </div>
         @else
             <div class="relative" data-test="customer-home-frequently-ordered-rail">
+                {{-- Edge fade must use logical end + direction-aware gradient; physical to-l inverts in RTL and paints a solid bar over cards while swiping. --}}
                 <div
-                    class="pointer-events-none absolute inset-y-0 end-0 z-10 w-14 bg-gradient-to-l from-white from-30% to-transparent dark:from-zinc-900 max-sm:w-16"
+                    class="pointer-events-none absolute inset-y-0 end-0 z-10 w-14 from-white to-transparent ltr:bg-gradient-to-l rtl:bg-gradient-to-r dark:from-zinc-900 max-sm:w-16"
                     aria-hidden="true"
+                    data-test="customer-home-frequently-ordered-edge-fade"
                 ></div>
                 <div
                     role="region"

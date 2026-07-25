@@ -76,7 +76,7 @@
             >
                 <div class="relative">
                     <div
-                        class="pointer-events-none absolute inset-y-0 end-0 z-10 w-14 bg-gradient-to-l from-zinc-50 from-30% to-transparent dark:from-zinc-800 max-lg:block lg:hidden sm:w-16"
+                        class="pointer-events-none absolute inset-y-0 end-0 z-10 w-14 from-zinc-50 to-transparent ltr:bg-gradient-to-l rtl:bg-gradient-to-r dark:from-zinc-800 max-lg:block lg:hidden sm:w-16"
                         aria-hidden="true"
                     ></div>
                     <div
