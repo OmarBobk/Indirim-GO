@@ -226,17 +226,30 @@ test('authenticated home shows category chips instead of category explorer grid'
         'order' => 1,
     ]);
 
-    $this->actingAs($user)
+    $html = $this->actingAs($user)
         ->get(route('home'))
         ->assertOk()
         ->assertSeeHtml('data-test="customer-home-category-chips"')
         ->assertSeeHtml('data-test="customer-home-category-chip"')
+        ->assertSeeHtml('data-test="customer-home-category-rail"')
         ->assertSeeHtml('data-test="customer-home-category-scroller"')
         ->assertSee(__('main.home_browse_hint'), false)
         ->assertSee(__('main.home_popular_packages'), false)
         ->assertSee(__('main.home_catalog_shelf_hint'), false)
         ->assertSee('Chip Category', false)
-        ->assertDontSeeHtml('data-test="homepage-categories-grid"');
+        ->assertDontSeeHtml('data-test="homepage-categories-grid"')
+        ->getContent();
+
+    preg_match(
+        '/data-test="customer-home-category-rail"[^>]*>(.*?)<\/section>/s',
+        $html,
+        $matches,
+    );
+
+    expect($matches[1] ?? '')
+        ->not->toContain('bg-gradient-to')
+        ->not->toContain('from-zinc-50')
+        ->not->toContain('pe-12');
 });
 
 test('browse empty state guides toward search and catalog', function () {
