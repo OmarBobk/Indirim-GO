@@ -37,16 +37,18 @@ beforeEach(function (): void {
     ]);
 });
 
-function signAutomationRequest(string $rawBody, ?int $timestamp = null): array
-{
-    $timestamp ??= time();
-    $secret = (string) config('fulfillment_automation.callback_secret');
-    $signature = 'sha256='.hash_hmac('sha256', $timestamp.'.'.$rawBody, $secret);
+if (! function_exists('signAutomationRequest')) {
+    function signAutomationRequest(string $rawBody, ?int $timestamp = null): array
+    {
+        $timestamp ??= time();
+        $secret = (string) config('fulfillment_automation.callback_secret');
+        $signature = 'sha256='.hash_hmac('sha256', $timestamp.'.'.$rawBody, $secret);
 
-    return [
-        'X-Automation-Timestamp' => (string) $timestamp,
-        'X-Automation-Signature' => $signature,
-    ];
+        return [
+            'X-Automation-Timestamp' => (string) $timestamp,
+            'X-Automation-Signature' => $signature,
+        ];
+    }
 }
 
 test('supplier price scan service finds only wasim products with product api', function () {
@@ -191,16 +193,18 @@ test('wasim scan prices command refuses duplicate running scan', function () {
         ->assertExitCode(1);
 });
 
-function priceReviewRecipient(): User
-{
-    app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
-    Permission::firstOrCreate(['name' => 'update_product_prices']);
-    $role = Role::firstOrCreate(['name' => 'price_editor']);
-    $role->syncPermissions(['update_product_prices']);
-    $user = User::factory()->create();
-    $user->assignRole('price_editor');
+if (! function_exists('priceReviewRecipient')) {
+    function priceReviewRecipient(): User
+    {
+        app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
+        Permission::firstOrCreate(['name' => 'update_product_prices']);
+        $role = Role::firstOrCreate(['name' => 'price_editor']);
+        $role->syncPermissions(['update_product_prices']);
+        $user = User::factory()->create();
+        $user->assignRole('price_editor');
 
-    return $user;
+        return $user;
+    }
 }
 
 test('completed scan with drift notifies price review recipients after commit', function () {

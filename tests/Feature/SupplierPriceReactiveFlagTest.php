@@ -35,14 +35,16 @@ beforeEach(function (): void {
     Permission::firstOrCreate(['name' => 'update_product_prices']);
 });
 
-function priceReviewRecipient(): User
-{
-    $role = Role::firstOrCreate(['name' => 'price_editor']);
-    $role->syncPermissions(['update_product_prices']);
-    $user = User::factory()->create();
-    $user->assignRole('price_editor');
+if (! function_exists('priceReviewRecipient')) {
+    function priceReviewRecipient(): User
+    {
+        $role = Role::firstOrCreate(['name' => 'price_editor']);
+        $role->syncPermissions(['update_product_prices']);
+        $user = User::factory()->create();
+        $user->assignRole('price_editor');
 
-    return $user;
+        return $user;
+    }
 }
 
 function makeWasimFulfillmentOrder(float $entryPrice = 2.5): Fulfillment

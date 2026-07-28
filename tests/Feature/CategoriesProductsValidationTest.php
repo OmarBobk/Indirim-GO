@@ -9,7 +9,7 @@ use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
 
-function adminUser(): User
+function categoryProductsAdminUser(): User
 {
     $role = Role::firstOrCreate(['name' => 'admin']);
     $role->syncPermissions([
@@ -23,7 +23,7 @@ function adminUser(): User
 }
 
 test('category validation uses arabic attribute names', function () {
-    $admin = adminUser();
+    $admin = categoryProductsAdminUser();
 
     app()->setLocale('ar');
 
@@ -37,7 +37,7 @@ test('category validation uses arabic attribute names', function () {
 });
 
 test('product validation uses arabic attribute names', function () {
-    $admin = adminUser();
+    $admin = categoryProductsAdminUser();
     $category = Category::factory()->create();
     $package = Package::factory()->for($category)->create();
 
