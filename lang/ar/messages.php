@@ -1533,4 +1533,14 @@ return [
     'activity_action_order_failed_description' => 'فشل تسليم للطلب :order_number. راجع الطلب للمتابعة.',
     'activity_action_order_payment_title' => 'الدفع يحتاج انتباهًا',
     'activity_action_order_payment_description' => 'تعذّر إكمال الطلب :order_number. عد إلى السلة للمحاولة مجددًا.',
+
+    'home_operational_title' => 'يحتاج انتباهك',
+    'home_operational_intro' => 'مسائل تعيق الشراء أو التسليم.',
+    'home_operational_view_all' => 'عرض كل النشاط',
+    'home_operational_region_aria' => 'يحتاج انتباهك',
+    'home_operational_item_unresolved_aria' => 'غير محلول: :title (:importance)',
+    'home_operational_cta_aria' => ':action لـ :title',
+    'home_operational_announce_new' => 'ظهرت مسألة جديدة تحتاج انتباهك.',
+    'home_operational_announce_updated' => 'تم تحديث المسائل التي تحتاج انتباهك.',
+    'home_operational_announce_cleared' => 'تم حل جميع المسائل الحالية.',
 ];

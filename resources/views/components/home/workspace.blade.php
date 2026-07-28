@@ -31,7 +31,7 @@
     >
         <x-home.command />
 
-        <x-home.operational-placeholder />
+        <livewire:home-operational-attention :key="'home-operational-'.auth()->id()" />
 
         <x-home.personal :frequently-ordered="$view['personal']['items']" />
     </div>
