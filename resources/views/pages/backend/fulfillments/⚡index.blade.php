@@ -309,15 +309,15 @@ new class extends Component
                     ]);
                 }
 
-                $actorId = auth()->id();
-                if ($actorId === null) {
+                $actor = auth()->user();
+                if ($actor === null) {
                     throw ValidationException::withMessages([
                         'refundAfterFail' => __('messages.refund_not_allowed'),
                     ]);
                 }
 
-                $transaction = app(RefundOrderItem::class)->handle($updated, (int) $actorId);
-                app(ApproveRefundRequest::class)->handle($transaction->id, (int) $actorId);
+                $transaction = app(RefundOrderItem::class)->handle($updated, (int) $actor->id);
+                app(ApproveRefundRequest::class)->handle($actor, $transaction->id);
             });
         } else {
             app(FailFulfillment::class)->handle(

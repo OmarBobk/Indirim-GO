@@ -14,6 +14,7 @@ use App\Models\WalletTransaction;
 use App\Notifications\TopupApprovedNotification;
 use App\Services\OperationalIntelligenceService;
 use App\Services\SystemEventService;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -22,9 +23,15 @@ class ApproveTopupRequest
     /**
      * Post the ledger entry and update balance only once.
      */
-    public function handle(TopupRequest $topupRequest, int $approvedById): TopupRequest
+    public function handle(User $actor, TopupRequest $topupRequest): TopupRequest
     {
-        return DB::transaction(function () use ($topupRequest, $approvedById): TopupRequest {
+        if (! $actor->can('manage_topups')) {
+            throw new AuthorizationException(__('messages.topup_approve_unauthorized'));
+        }
+
+        $approvedById = (int) $actor->id;
+
+        return DB::transaction(function () use ($topupRequest, $approvedById, $actor): TopupRequest {
             $request = TopupRequest::query()
                 ->whereKey($topupRequest->id)
                 ->lockForUpdate()
@@ -94,11 +101,10 @@ class ApproveTopupRequest
                 'approved_at' => now(),
             ])->save();
 
-            $admin = User::query()->find($approvedById);
             app(SystemEventService::class)->record(
                 'wallet.topup.posted',
                 $request,
-                $admin,
+                $actor,
                 [
                     'amount' => (float) $request->amount,
                     'wallet_id' => $wallet->id,
@@ -112,7 +118,7 @@ class ApproveTopupRequest
                     ->inLog('payments')
                     ->event('topup.approved')
                     ->performedOn($request)
-                    ->causedBy($admin)
+                    ->causedBy($actor)
                     ->withProperties([
                         'topup_request_id' => $request->id,
                         'wallet_id' => $request->wallet_id,
@@ -127,7 +133,7 @@ class ApproveTopupRequest
                     ->inLog('payments')
                     ->event('wallet.credited')
                     ->performedOn($wallet)
-                    ->causedBy($admin)
+                    ->causedBy($actor)
                     ->withProperties([
                         'wallet_id' => $wallet->id,
                         'user_id' => $wallet->user_id,

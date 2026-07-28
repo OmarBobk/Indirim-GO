@@ -23,18 +23,24 @@ use App\Notifications\RefundApprovedNotification;
 use App\Services\OperationalIntelligenceService;
 use App\Services\SystemEventService;
 use App\Support\AdminOpsBroadcaster;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class ApproveRefundRequest
 {
-    public function handle(int $transactionId, int $adminId): WalletTransaction
+    public function handle(User $actor, int $transactionId): WalletTransaction
     {
+        if (! $actor->can('process_refunds')) {
+            throw new AuthorizationException(__('messages.refund_approve_unauthorized'));
+        }
+
+        $adminId = (int) $actor->id;
         $idempotencyKey = null;
 
         try {
-            return DB::transaction(function () use ($transactionId, $adminId, &$idempotencyKey): WalletTransaction {
+            return DB::transaction(function () use ($transactionId, $adminId, $actor, &$idempotencyKey): WalletTransaction {
                 $transaction = WalletTransaction::query()
                     ->whereKey($transactionId)
                     ->lockForUpdate()
@@ -272,13 +278,11 @@ class ApproveRefundRequest
                     }
                 }
 
-                $admin = User::query()->find($adminId);
-
                 activity()
                     ->inLog('payments')
                     ->event('refund.approved')
                     ->performedOn($transaction)
-                    ->causedBy($admin)
+                    ->causedBy($actor)
                     ->withProperties(array_filter([
                         'transaction_id' => $transaction->id,
                         'idempotency_key' => $transaction->idempotency_key,
@@ -294,7 +298,7 @@ class ApproveRefundRequest
                     ->inLog('payments')
                     ->event('wallet.credited')
                     ->performedOn($wallet)
-                    ->causedBy($admin)
+                    ->causedBy($actor)
                     ->withProperties([
                         'wallet_id' => $wallet->id,
                         'user_id' => $wallet->user_id,
@@ -308,7 +312,7 @@ class ApproveRefundRequest
                 app(SystemEventService::class)->record(
                     'wallet.refund.credited',
                     $transaction,
-                    $admin,
+                    $actor,
                     [
                         'amount' => (float) $transaction->amount,
                         'order_id' => $order->id,
@@ -322,7 +326,7 @@ class ApproveRefundRequest
                         ->inLog('orders')
                         ->event('order.refunded')
                         ->performedOn($order)
-                        ->causedBy($admin)
+                        ->causedBy($actor)
                         ->withProperties(array_filter([
                             'order_id' => $order->id,
                             'order_number' => $order->order_number,

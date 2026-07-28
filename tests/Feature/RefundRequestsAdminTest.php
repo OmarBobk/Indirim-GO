@@ -116,8 +116,8 @@ test('admin can approve refund request and credit wallet once', function () {
     ]);
 
     $action = new ApproveRefundRequest;
-    $action->handle($refundTx->id, $admin->id);
-    $action->handle($refundTx->id, $admin->id);
+    $action->handle($admin, $refundTx->id);
+    $action->handle($admin, $refundTx->id);
 
     $wallet->refresh();
     $refundTx->refresh();
@@ -164,7 +164,7 @@ test('approved refunds stay listed on the refund requests page', function () {
     $payload = makeRefundableItem($user);
 
     $refundTx = (new RefundOrderItem)->handle($payload['fulfillment'], $user->id);
-    (new ApproveRefundRequest)->handle($refundTx->id, $admin->id);
+    (new ApproveRefundRequest)->handle($admin, $refundTx->id);
 
     $this->actingAs($admin)
         ->get('/refunds')
@@ -201,8 +201,8 @@ test('approving duplicate refund requests for same order only credits once', fun
     ]);
 
     $action = new ApproveRefundRequest;
-    $action->handle($firstRefund->id, $admin->id);
-    $action->handle($secondRefund->id, $admin->id);
+    $action->handle($admin, $firstRefund->id);
+    $action->handle($admin, $secondRefund->id);
 
     $wallet->refresh();
     $firstRefund->refresh();
@@ -291,6 +291,6 @@ test('refund approval validates transaction type and direction', function () {
 
     $action = new ApproveRefundRequest;
 
-    expect(fn () => $action->handle($tx->id, $admin->id))
+    expect(fn () => $action->handle($admin, $tx->id))
         ->toThrow(\Illuminate\Validation\ValidationException::class);
 });

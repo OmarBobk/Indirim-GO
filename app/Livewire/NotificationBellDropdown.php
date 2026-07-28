@@ -6,6 +6,7 @@ namespace App\Livewire;
 
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Collection;
+use Livewire\Attributes\On;
 use Livewire\Component;
 
 class NotificationBellDropdown extends Component
@@ -43,7 +44,7 @@ class NotificationBellDropdown extends Component
     }
 
     /**
-     * Mark all unread notifications as read when the user opens the dropdown (best practice: mark on view).
+     * Explicit mark-all only — never invoked merely by opening the bell.
      */
     public function markAsReadOnOpen(): void
     {
@@ -52,6 +53,12 @@ class NotificationBellDropdown extends Component
             return;
         }
         $user->unreadNotifications()->update(['read_at' => now()]);
+    }
+
+    #[On('customer-notifications-changed')]
+    public function refreshAfterExternalChange(): void
+    {
+        // Recompute unread count / latest rows after Activity page mutations.
     }
 
     public function render(): View

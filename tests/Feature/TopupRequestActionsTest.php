@@ -13,12 +13,15 @@ use App\Models\WalletTransaction;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
 use Spatie\Activitylog\Models\Activity;
+use Spatie\Permission\Models\Permission;
 
 uses(RefreshDatabase::class);
 
 test('approving a topup posts ledger and increments balance once', function () {
     $user = User::factory()->create();
     $approver = User::factory()->create();
+    Permission::firstOrCreate(['name' => 'manage_topups']);
+    $approver->givePermissionTo('manage_topups');
     $wallet = Wallet::create([
         'user_id' => $user->id,
         'balance' => 0,
@@ -36,8 +39,8 @@ test('approving a topup posts ledger and increments balance once', function () {
     ]);
 
     $action = new ApproveTopupRequest;
-    $action->handle($request, $approver->id);
-    $action->handle($request, $approver->id);
+    $action->handle($approver, $request);
+    $action->handle($approver, $request);
 
     $wallet->refresh();
     $request->refresh();
@@ -65,6 +68,8 @@ test('approving a topup dispatches change event', function () {
 
     $user = User::factory()->create();
     $approver = User::factory()->create();
+    Permission::firstOrCreate(['name' => 'manage_topups']);
+    $approver->givePermissionTo('manage_topups');
     $wallet = Wallet::create([
         'user_id' => $user->id,
         'balance' => 0,
@@ -80,7 +85,7 @@ test('approving a topup dispatches change event', function () {
         'status' => TopupRequestStatus::Pending,
     ]);
 
-    (new ApproveTopupRequest)->handle($request, $approver->id);
+    (new ApproveTopupRequest)->handle($approver, $request);
 
     Event::assertDispatched(TopupRequestsChanged::class, function (TopupRequestsChanged $event) use ($request): bool {
         return $event->reason === 'status-updated'

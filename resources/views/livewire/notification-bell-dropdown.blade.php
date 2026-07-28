@@ -33,8 +33,8 @@
                             <flux:button variant="ghost" size="sm" wire:click="markAsReadOnOpen">
                                 {{ __('messages.mark_all_read') }}
                             </flux:button>
-                            <flux:button variant="ghost" size="sm" :href="route('notifications.index')" wire:navigate>
-                                {{ __('messages.view') }}
+                            <flux:button variant="ghost" size="sm" :href="route('activity.index')" wire:navigate>
+                                {{ __('messages.activity_view_all') }}
                             </flux:button>
                         </div>
                     @endif
@@ -97,8 +97,8 @@
                 @endforelse
             </div>
             <div class="border-t border-zinc-100 p-2 dark:border-zinc-800">
-                <flux:button variant="ghost" size="sm" class="w-full" :href="route('notifications.index')" wire:navigate>
-                    {{ __('messages.notifications') }}
+                <flux:button variant="ghost" size="sm" class="w-full" :href="route('activity.index')" wire:navigate>
+                    {{ __('messages.activity_view_all') }}
                 </flux:button>
             </div>
         </flux:menu>

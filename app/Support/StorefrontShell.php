@@ -146,10 +146,12 @@ final class StorefrontShell
                 'badge_count' => 0,
             ],
             [
-                'key' => 'notifications',
+                'key' => 'activity',
                 'section' => 'account',
-                'label' => __('messages.notifications'),
-                'href' => route('notifications.index'),
+                'label' => __('messages.activity_page_title'),
+                'href' => Route::has('activity.index')
+                    ? route('activity.index')
+                    : route('notifications.index'),
                 'icon' => 'bell',
                 'badge_count' => self::unreadNotificationCount(),
             ],

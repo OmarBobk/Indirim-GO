@@ -59,7 +59,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('referral-link');
     Route::livewire('/orders', 'pages::frontend.orders')->name('orders.index');
     Route::livewire('/orders/{order:order_number}', 'pages::frontend.order-details')->name('orders.show');
-    Route::livewire('/notifications', 'pages::frontend.notifications')->name('notifications.index');
+    Route::livewire('/activity', 'pages::frontend.activity')->name('activity.index');
+    Route::livewire('/notifications', 'pages::frontend.activity')->name('notifications.index');
     Route::get('/topup-proofs/{proof}', [TopupProofController::class, 'show'])->name('topup-proofs.show');
     Route::get('/bug-attachments/{attachment}', [BugAttachmentController::class, 'show'])->name('bug-attachments.show');
     Route::post('/api/pricing/buy-now-custom-amount-quote', BuyNowCustomAmountQuoteController::class)

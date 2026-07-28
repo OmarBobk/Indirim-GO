@@ -26,7 +26,7 @@ test('account hub lists core destinations language theme and logout', function (
     $response->assertSee('data-test="account-hub-section-shopping"', false);
     $response->assertSee('data-test="account-hub-section-settings"', false);
     $response->assertSee('data-test="account-hub-link-profile"', false);
-    $response->assertSee('data-test="account-hub-link-notifications"', false);
+    $response->assertSee('data-test="account-hub-link-activity"', false);
     $response->assertSee('data-test="account-hub-link-wallet"', false);
     $response->assertSee('data-test="account-hub-link-orders"', false);
     $response->assertSee('data-test="account-hub-link-contact"', false);
@@ -46,7 +46,7 @@ test('account hub sections group links without changing destinations', function 
     $accountKeys = collect(StorefrontShell::accountHubSections())
         ->firstWhere('key', 'account')['links'];
 
-    expect(collect($accountKeys)->pluck('key')->all())->toContain('profile', 'notifications', 'contact');
+    expect(collect($accountKeys)->pluck('key')->all())->toContain('profile', 'activity', 'contact');
 });
 
 test('account hub shows notification badge when unread exist', function () {
@@ -64,7 +64,7 @@ test('account hub shows notification badge when unread exist', function () {
     $this->actingAs($user)
         ->get(route('account'))
         ->assertOk()
-        ->assertSee('data-test="account-hub-badge-notifications"', false);
+        ->assertSee('data-test="account-hub-badge-activity"', false);
 });
 
 test('account bottom nav points to account hub', function () {

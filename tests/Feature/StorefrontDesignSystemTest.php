@@ -58,14 +58,23 @@ it('uses browse width on cart without a root-tab back button', function () {
         ->assertDontSee('data-test="back-button"', false);
 });
 
-it('uses the shared empty state vocabulary on notifications', function () {
+it('uses the shared empty state vocabulary on activity', function () {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->get(route('activity.index'))
+        ->assertOk()
+        ->assertSee('data-storefront-page="work"', false)
+        ->assertSee('data-test="activity-empty"', false)
+        ->assertSee('data-test="storefront-page-header"', false)
+        ->assertSee('data-test="back-button"', false);
+});
+
+it('keeps notifications route compatible with the activity page', function () {
     $user = User::factory()->create();
 
     $this->actingAs($user)
         ->get(route('notifications.index'))
         ->assertOk()
-        ->assertSee('data-storefront-page="work"', false)
-        ->assertSee('data-test="notifications-empty"', false)
-        ->assertSee('data-test="storefront-page-header"', false)
-        ->assertSee('data-test="back-button"', false);
+        ->assertSee('data-test="activity-page"', false);
 });

@@ -42,7 +42,7 @@ final class CommissionsTable extends Component
     {
         abort_unless(auth()->user()?->can('manage_settlements'), 403);
         try {
-            app(CreatePayoutBatch::class)->handle([$commissionId], null, false);
+            app(CreatePayoutBatch::class)->handle(auth()->user(), [$commissionId], null, false);
         } catch (ValidationException $exception) {
             $this->error((string) collect($exception->errors())->flatten()->first());
 
@@ -154,6 +154,7 @@ final class CommissionsTable extends Component
 
         try {
             $batch = app(CreatePayoutBatch::class)->handle(
+                auth()->user(),
                 array_map(static fn ($id): int => (int) $id, $this->selectedCommissionIds),
                 $this->payoutNotes
             );

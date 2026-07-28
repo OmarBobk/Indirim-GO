@@ -23,4 +23,18 @@ final class CustomerStatusPresentation
             default => 'zinc',
         };
     }
+
+    /**
+     * Map Activity semantic status tokens to the shared Flux badge palette.
+     */
+    public static function activityBadgeColor(string $statusToken): string
+    {
+        return match (strtolower(trim($statusToken))) {
+            'success' => 'green',
+            'warning' => 'amber',
+            'danger' => 'red',
+            'progress' => 'sky',
+            default => 'zinc',
+        };
+    }
 }

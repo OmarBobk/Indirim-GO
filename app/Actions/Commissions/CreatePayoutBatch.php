@@ -17,6 +17,7 @@ use App\Models\WebsiteSetting;
 use App\Notifications\CommissionCreditedNotification;
 use App\Services\SystemEventService;
 use Carbon\CarbonImmutable;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -29,9 +30,14 @@ class CreatePayoutBatch
      * @param  array<int, int>  $commissionIds
      *
      * @throws ValidationException
+     * @throws AuthorizationException
      */
-    public function handle(array $commissionIds, ?string $notes = null, bool $enforceMinAmount = true): PayoutBatch
+    public function handle(User $actor, array $commissionIds, ?string $notes = null, bool $enforceMinAmount = true): PayoutBatch
     {
+        if (! $actor->can('manage_settlements')) {
+            throw new AuthorizationException(__('messages.payout_batch_unauthorized'));
+        }
+
         $uniqueIds = array_values(array_unique(array_filter($commissionIds, fn ($id): bool => (int) $id > 0)));
         if ($uniqueIds === []) {
             throw ValidationException::withMessages([
@@ -39,15 +45,9 @@ class CreatePayoutBatch
             ]);
         }
 
-        $resolvedCreatedBy = (int) auth()->id();
+        $resolvedCreatedBy = (int) $actor->id;
 
-        if ($resolvedCreatedBy <= 0) {
-            throw ValidationException::withMessages([
-                'commissions' => __('messages.payout_no_selection'),
-            ]);
-        }
-
-        return DB::transaction(function () use ($uniqueIds, $resolvedCreatedBy, $notes, $enforceMinAmount): PayoutBatch {
+        return DB::transaction(function () use ($uniqueIds, $resolvedCreatedBy, $actor, $notes, $enforceMinAmount): PayoutBatch {
             $payoutWaitDays = WebsiteSetting::getCommissionPayoutWaitDays();
             $payoutMinAmount = WebsiteSetting::getCommissionPayoutMinAmount();
             $cutoff = CarbonImmutable::now()->subDays($payoutWaitDays);
@@ -186,7 +186,7 @@ class CreatePayoutBatch
                 app(SystemEventService::class)->record(
                     'wallet.commission.credited',
                     $walletTransaction,
-                    auth()->user(),
+                    $actor,
                     [
                         'wallet_id' => $wallet->id,
                         'commission_id' => $commission->id,
@@ -207,42 +207,39 @@ class CreatePayoutBatch
                 ]);
 
                 if (Schema::hasTable('activity_log')) {
-                    $admin = User::query()->find($resolvedCreatedBy);
-                    if ($admin !== null) {
-                        activity()
-                            ->inLog('payments')
-                            ->event('commission.credited')
-                            ->performedOn($commission)
-                            ->causedBy($admin)
-                            ->withProperties([
-                                'commission_id' => $commission->id,
-                                'order_id' => $commission->order_id,
-                                'salesperson_id' => $salesperson->id,
-                                'amount' => $commission->commission_amount,
-                                'currency' => $wallet->currency,
-                                'payout_batch_id' => $batch->id,
-                                'wallet_id' => $wallet->id,
-                                'transaction_id' => $walletTransaction->id,
-                            ])
-                            ->log('Commission credited to wallet');
+                    activity()
+                        ->inLog('payments')
+                        ->event('commission.credited')
+                        ->performedOn($commission)
+                        ->causedBy($actor)
+                        ->withProperties([
+                            'commission_id' => $commission->id,
+                            'order_id' => $commission->order_id,
+                            'salesperson_id' => $salesperson->id,
+                            'amount' => $commission->commission_amount,
+                            'currency' => $wallet->currency,
+                            'payout_batch_id' => $batch->id,
+                            'wallet_id' => $wallet->id,
+                            'transaction_id' => $walletTransaction->id,
+                        ])
+                        ->log('Commission credited to wallet');
 
-                        activity()
-                            ->inLog('payments')
-                            ->event('wallet.credited')
-                            ->performedOn($wallet)
-                            ->causedBy($admin)
-                            ->withProperties([
-                                'wallet_id' => $wallet->id,
-                                'user_id' => $wallet->user_id,
-                                'amount' => $walletTransaction->amount,
-                                'currency' => $wallet->currency,
-                                'transaction_id' => $walletTransaction->id,
-                                'source' => 'commission',
-                                'commission_id' => $commission->id,
-                                'payout_batch_id' => $batch->id,
-                            ])
-                            ->log('Wallet credited');
-                    }
+                    activity()
+                        ->inLog('payments')
+                        ->event('wallet.credited')
+                        ->performedOn($wallet)
+                        ->causedBy($actor)
+                        ->withProperties([
+                            'wallet_id' => $wallet->id,
+                            'user_id' => $wallet->user_id,
+                            'amount' => $walletTransaction->amount,
+                            'currency' => $wallet->currency,
+                            'transaction_id' => $walletTransaction->id,
+                            'source' => 'commission',
+                            'commission_id' => $commission->id,
+                            'payout_batch_id' => $batch->id,
+                        ])
+                        ->log('Wallet credited');
                 }
 
                 $salespersonId = (int) $salesperson->id;

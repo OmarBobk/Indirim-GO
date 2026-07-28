@@ -470,7 +470,7 @@ test('admin can create payout batch for eligible commissions', function () {
     ]);
 
     $this->actingAs($admin);
-    app(CreatePayoutBatch::class)->handle([$commissionA->id, $commissionB->id], 'manual payout');
+    app(CreatePayoutBatch::class)->handle($admin, [$commissionA->id, $commissionB->id], 'manual payout');
 
     $batch = PayoutBatch::query()->first();
     expect($batch)->not->toBeNull();

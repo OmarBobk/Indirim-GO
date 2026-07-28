@@ -10,6 +10,7 @@ use App\Models\Wallet;
 use App\Notifications\TopupRequestedNotification;
 use App\Services\NotificationRecipientService;
 use Illuminate\Support\Facades\DB;
+use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 
 use function Pest\Laravel\actingAs;
@@ -19,8 +20,10 @@ uses(Illuminate\Foundation\Testing\RefreshDatabase::class);
 beforeEach(function () {
     Role::firstOrCreate(['name' => 'admin']);
     Role::firstOrCreate(['name' => 'customer']);
+    Permission::firstOrCreate(['name' => 'manage_topups']);
     $this->admin = User::factory()->create();
     $this->admin->assignRole('admin');
+    $this->admin->givePermissionTo('manage_topups');
     $this->customer = User::factory()->create();
     $this->customer->assignRole('customer');
 });
@@ -100,10 +103,10 @@ it('does not duplicate topup approved notification on idempotent re-call', funct
     expect($topupRequest->walletTransaction)->not->toBeNull();
 
     $approve = app(ApproveTopupRequest::class);
-    $approve->handle($topupRequest, $this->admin->id);
+    $approve->handle($this->admin, $topupRequest);
     $customerNotificationCountAfterFirst = $this->customer->notifications()->count();
 
-    $approve->handle($topupRequest->refresh(), $this->admin->id);
+    $approve->handle($this->admin, $topupRequest->refresh());
     $this->customer->refresh();
     expect($this->customer->notifications()->count())->toBe($customerNotificationCountAfterFirst);
 });

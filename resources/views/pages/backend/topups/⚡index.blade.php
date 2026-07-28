@@ -82,7 +82,7 @@ new class extends Component
             return;
         }
 
-        app(ApproveTopupRequest::class)->handle($topupRequest, auth()->id());
+        app(ApproveTopupRequest::class)->handle(auth()->user(), $topupRequest);
 
         $this->noticeVariant = 'success';
         $this->noticeMessage = __('messages.topup_approved');

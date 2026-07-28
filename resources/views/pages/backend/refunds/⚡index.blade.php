@@ -35,7 +35,7 @@ new class extends Component
         abort_unless(auth()->user()?->can('process_refunds'), 403);
         $this->reset('noticeMessage', 'noticeVariant');
 
-        app(ApproveRefundRequest::class)->handle($transactionId, auth()->id());
+        app(ApproveRefundRequest::class)->handle(auth()->user(), $transactionId);
 
         $this->noticeVariant = 'success';
         $this->noticeMessage = __('messages.refund_approved');

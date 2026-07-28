@@ -37,7 +37,7 @@
                 />
 
                 <a
-                    href="{{ route('notifications.index') }}"
+                    href="{{ route('activity.index') }}"
                     wire:navigate
                     class="storefront-shell-icon-btn relative inline-flex size-11 items-center justify-center rounded-full text-zinc-700 transition-[background-color,color,transform] duration-150 hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--color-accent)/40 focus-visible:ring-offset-2 focus-visible:ring-offset-white motion-reduce:transition-none dark:text-zinc-200 dark:hover:bg-zinc-800 dark:focus-visible:ring-offset-zinc-900"
                     aria-label="{{ $notificationsAria }}"

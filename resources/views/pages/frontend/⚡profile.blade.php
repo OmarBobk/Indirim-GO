@@ -237,7 +237,7 @@ new #[Layout('layouts::frontend')] class extends Component
             </a>
         @endif
         <a
-            href="{{ route('notifications.index') }}"
+            href="{{ route('activity.index') }}"
             wire:navigate
             class="storefront-card storefront-card--pad-sm storefront-card--interactive flex items-center gap-4 sm:col-span-2 lg:col-span-1"
         >
@@ -245,8 +245,8 @@ new #[Layout('layouts::frontend')] class extends Component
                 <flux:icon icon="bell" variant="outline" class="size-6" />
             </div>
             <div class="min-w-0">
-                <flux:heading size="sm" class="text-zinc-900 dark:text-zinc-100">{{ __('messages.notifications') }}</flux:heading>
-                <flux:text class="text-sm text-zinc-600 dark:text-zinc-400">{{ __('messages.notifications_intro') }}</flux:text>
+                <flux:heading size="sm" class="text-zinc-900 dark:text-zinc-100">{{ __('messages.activity_page_title') }}</flux:heading>
+                <flux:text class="text-sm text-zinc-600 dark:text-zinc-400">{{ __('messages.activity_page_intro') }}</flux:text>
             </div>
         </a>
     </div>
