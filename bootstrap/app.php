@@ -1,12 +1,20 @@
 <?php
 
+use App\Http\Middleware\EnsureMobileAccountCanAuthenticate;
+use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Http\Exceptions\ThrottleRequestsException;
+use Laravel\Sanctum\Exceptions\MissingAbilityException;
+use Laravel\Sanctum\Http\Middleware\CheckAbilities;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
         web: __DIR__.'/../routes/web.php',
+        api: __DIR__.'/../routes/api.php',
         commands: __DIR__.'/../routes/console.php',
         channels: __DIR__.'/../routes/channels.php',
         health: '/up',
@@ -35,8 +43,41 @@ return Application::configure(basePath: dirname(__DIR__))
             'role' => \Spatie\Permission\Middleware\RoleMiddleware::class,
             'permission' => \Spatie\Permission\Middleware\PermissionMiddleware::class,
             'role_or_permission' => \Spatie\Permission\Middleware\RoleOrPermissionMiddleware::class,
+            'abilities' => CheckAbilities::class,
+            'mobile.account' => EnsureMobileAccountCanAuthenticate::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
+        $exceptions->render(function (AuthenticationException $exception, Request $request): ?JsonResponse {
+            if (! $request->is('api/v1/*')) {
+                return null;
+            }
+
+            return response()->json([
+                'message' => __('messages.mobile_api.unauthenticated'),
+                'code' => 'unauthenticated',
+            ], 401);
+        });
+
+        $exceptions->render(function (MissingAbilityException $exception, Request $request): ?JsonResponse {
+            if (! $request->is('api/v1/*')) {
+                return null;
+            }
+
+            return response()->json([
+                'message' => __('messages.mobile_api.missing_mobile_ability'),
+                'code' => 'missing_mobile_ability',
+            ], 403);
+        });
+
+        $exceptions->render(function (ThrottleRequestsException $exception, Request $request): ?JsonResponse {
+            if (! $request->is('api/v1/*')) {
+                return null;
+            }
+
+            return response()->json([
+                'message' => __('messages.mobile_api.too_many_requests'),
+                'code' => 'too_many_requests',
+            ], 429, $exception->getHeaders());
+        });
     })->create();

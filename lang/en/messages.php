@@ -1172,6 +1172,23 @@ return [
     'blocked' => 'Your account has been blocked. Please contact support.',
     'session_ended_blocked' => 'Your session has ended because this account was blocked.',
     'session_ended_inactive' => 'Your session has ended because this account is inactive.',
+    'mobile_api' => [
+        'validation_failed' => 'The given data was invalid.',
+        'invalid_credentials' => 'These credentials do not match our records.',
+        'account_inactive' => 'Your account is inactive. Please contact support.',
+        'account_blocked' => 'Your account has been blocked. Please contact support.',
+        'token_account_inactive' => 'Access has ended because this account became inactive.',
+        'token_account_blocked' => 'Access has ended because this account became blocked.',
+        'customer_role_required' => 'This account cannot use the customer mobile application.',
+        'invalid_two_factor_challenge' => 'The two-factor authentication challenge is invalid or expired.',
+        'invalid_two_factor_code' => 'The two-factor authentication code is invalid.',
+        'invalid_recovery_code' => 'The recovery code is invalid.',
+        'two_factor_attempts_exceeded' => 'Too many invalid two-factor attempts. Please sign in again.',
+        'unauthenticated' => 'Unauthenticated.',
+        'missing_mobile_ability' => 'This token cannot access the mobile API.',
+        'too_many_requests' => 'Too many attempts. Please try again later.',
+        'logged_out' => 'Logged out successfully.',
+    ],
 
     // Errors
     'not_found' => 'Not Found',
