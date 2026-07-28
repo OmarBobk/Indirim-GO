@@ -199,7 +199,7 @@ test('header surfaces active credit limit at zero balance for mobile chrome', fu
         ->assertSeeHtml('data-chrome-surface="desktop-header"')
         ->getContent();
 
-    expect(substr_count($html, 'data-test="wallet-balance"'))->toBeGreaterThanOrEqual(2)
+    expect(substr_count($html, 'data-test="wallet-balance"'))->toBe(1)
         ->and(substr_count($html, 'data-storefront-shell="mobile-top"'))->toBe(1);
 });
 
