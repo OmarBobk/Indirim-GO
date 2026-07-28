@@ -133,6 +133,7 @@ routes/               Web/settings/channels/console/ai route entrypoints
 database/             Migrations, factories, seeders
 tests/                Pest feature/unit tests
 Docs/                 Deeper project docs
+Vault/                Obsidian knowledge base (feature briefs, AI pipeline)
 ```
 
 ## Testing & QA
@@ -151,6 +152,8 @@ Reference docs:
 
 - [`SYSTEM_CONTEXT_CORE_v1.md`](SYSTEM_CONTEXT_CORE_v1.md) — AI/feature delivery context (invariants, routes, automation)
 - [`Docs/PROJECT_STRUCTURE.md`](Docs/PROJECT_STRUCTURE.md) — Laravel 12 layout, routes, conventions, domain map
+- [`Docs/CHATGPT_PROJECT_PROMPT.md`](Docs/CHATGPT_PROJECT_PROMPT.md) — ChatGPT Project instructions for Ask → Plan → Agent
+- [`Vault/Karman Index.md`](Vault/Karman%20Index.md) — Obsidian vault entry (feature briefs, domain notes)
 - [`Docs/roles.md`](Docs/roles.md)
 - [`Docs/DB.md`](Docs/DB.md)
 - [`Docs/system_events_map.md`](Docs/system_events_map.md)

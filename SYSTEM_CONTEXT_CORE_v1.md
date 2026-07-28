@@ -2,6 +2,8 @@
 
 Use this as the primary prompt context for AI tools that will plan or implement new features.
 
+**Obsidian vault (`Vault/`):** feature briefs, domain notes, and the Ask → Plan → Agent pipeline. Start at `Vault/Karman Index.md`. ChatGPT Project setup: `Docs/CHATGPT_PROJECT_PROMPT.md`.
+
 ---
 
 ## 0. AI operator contract (read first)
@@ -280,3 +282,4 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - `resources/js/app.js`
 - **Agent rules:** `.cursor/rules/laravel-boost.mdc` (stack versions, financial guardrails, testing/Pint/Livewire conventions)
 - **Companion map:** `Docs/PROJECT_STRUCTURE.md` (full layout); backlog scratchpad: `Docs/doc.md` (verify code — do not trust outdated “not installed” notes without checking `composer.json`)
+- **Obsidian + ChatGPT pipeline:** `Vault/Karman Index.md`, `Vault/Workflow/Ask → Plan → Agent Pipeline.md`, `Docs/CHATGPT_PROJECT_PROMPT.md`, active feature notes under `Vault/Features/`

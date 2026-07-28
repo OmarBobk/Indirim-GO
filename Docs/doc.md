@@ -432,7 +432,7 @@ Wallet & Financial Center
 
             ↓
 
-M7
+M7[reset.sh](../../../../../Users/karma/OneDrive/Desktop/reset.sh)
 Account / Settings
 
             ↓
@@ -449,3 +449,5 @@ Admin Modernization
 
 M10
 Platform Polish
+
+

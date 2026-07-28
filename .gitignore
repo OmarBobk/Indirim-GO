@@ -21,3 +21,6 @@ yarn-error.log
 /.nova
 /.vscode
 /.zed
+
+# Obsidian workspace UI (keep Vault/*.md in git)
+/Vault/.obsidian/
