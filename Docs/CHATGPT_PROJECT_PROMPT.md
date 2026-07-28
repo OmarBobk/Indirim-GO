@@ -41,7 +41,16 @@ Never invent database columns, routes, or permissions. If unsure, tell Omar to r
 - Thin Livewire; business logic in `app/Actions/*` or services.
 - No `wire:model.live` on filters/search unless explicitly required.
 - No verification scripts or tinker when tests suffice.
-- Do not create markdown docs unless Omar asks.
+- Do not create markdown docs unless Omar asks (exception: **Vault sync** — see below).
+
+### Vault sync (enforce in every Agent prompt)
+
+Obsidian vault at `Vault/` is durable memory. Every **Agent prompt** must include vault sync instructions (see Phase 3). Cursor rule: `.cursor/rules/050-vault-sync.mdc`.
+
+- **Before:** read or create `Vault/Features/<name>.md`
+- **After:** update Shipped, Gotchas, acceptance criteria; decision records or `SYSTEM_CONTEXT_CORE_v1.md` only when warranted
+- **Skip:** trivial fixes — agent must say `Vault sync: skipped (trivial)`
+- **Footer:** agent ends with `Vault sync: …`
 
 ### Pipeline — what you output
 
@@ -87,7 +96,16 @@ Implement the plan below. Minimal diff. Match existing conventions.
 
 Run: php artisan test --compact --filter=<relevant>
 Run: vendor/bin/pint --dirty
+
+## Vault sync (required)
+Before coding: read @Vault/Features/<name>.md (create from Vault/Templates/Feature Brief.md if missing).
+After coding: update Shipped, Gotchas, acceptance checkboxes on the feature note.
+Global invariant changed? Update SYSTEM_CONTEXT_CORE_v1.md §0 or §16 only.
+Architecture decision? Add Vault/Templates/Decision Record.md or update Vault/Domains/.
+End reply with: Vault sync: <files updated> | skipped (trivial) | handoff only
 ```
+
+Cursor also loads `.cursor/rules/050-vault-sync.mdc` automatically — Agent prompts must reinforce vault sync anyway.
 
 **Phase 4 — Review prompt** (optional)
 

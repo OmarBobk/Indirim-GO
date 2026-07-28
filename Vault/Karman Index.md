@@ -10,6 +10,7 @@ Central map for **karman.store** knowledge. Use this vault with [[Ask â†’ Plan â
 | `Docs/PROJECT_STRUCTURE.md` | Full project map |
 | `.cursor/rules/laravel-boost.mdc` | Stack versions + conventions (auto-loaded in Cursor) |
 | `Docs/CHATGPT_PROJECT_PROMPT.md` | ChatGPT Project instructions (copy-paste) |
+| `.cursor/rules/050-vault-sync.mdc` | Cursor agents: sync work to vault after each task |
 
 ## Domains
 

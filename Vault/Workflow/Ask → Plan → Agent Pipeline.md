@@ -66,15 +66,26 @@ Start every Agent prompt with:
 Implement the plan below. Minimal diff. Match existing conventions.
 Do not invent DB columns — inspect models/migrations first.
 Run focused Pest tests when done.
+
+Vault sync is required (.cursor/rules/050-vault-sync.mdc):
+- Update Vault/Features/<name>.md (Shipped, Gotchas, acceptance criteria)
+- End with: Vault sync: <files> | skipped (trivial) | handoff only
 ```
 
-## Step 5 — Close the loop
+## Step 5 — Close the loop (Vault sync)
 
-On the feature note, add:
+Cursor agents **must** sync meaningful work to the vault before finishing. Full contract: `.cursor/rules/050-vault-sync.mdc`.
+
+On the feature note, update:
 
 - **Shipped** — date, key files, tests
 - **Gotchas** — things the next session must know
+- **Acceptance criteria** — check off completed items
 - Links to related [[Templates/Decision Record]] if architecture changed
+
+Mid-session stop? Use [[Templates/Session Handoff]] instead of **Shipped**.
+
+Skip vault edits only for trivial fixes (typo, no behavior change).
 
 ## Anti-patterns
 

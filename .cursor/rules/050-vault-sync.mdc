@@ -1,0 +1,46 @@
+---
+alwaysApply: true
+---
+
+# Vault sync (Obsidian)
+
+This project uses `Vault/` as durable context for AI tools (Obsidian). Cursor agents must keep the vault aligned with meaningful code changes.
+
+## Before coding
+
+- Read `Vault/Features/<Feature Name>.md` when it exists and the task is feature work.
+- If no feature note exists and the task is more than a trivial one-line fix, create one from `Vault/Templates/Feature Brief.md` in `Vault/Features/`.
+
+## After coding (before finishing)
+
+Update the vault when work is **meaningful** (feature slice, behavior change, decision, or gotcha):
+
+1. **Feature note** (`Vault/Features/<name>.md`):
+   - **Shipped** — date, summary, key files, tests run
+   - **Gotchas** — non-obvious behavior, auth/financial risks, things the next agent must know
+   - Check off completed **Acceptance criteria**
+   - Update **Open questions** if any remain
+2. **Decision** — if architecture/product choice was made, add or update a note from `Vault/Templates/Decision Record.md` or link from `Vault/Domains/`.
+3. **Global invariants** — if wallet, auth, routing, or stack rules changed, update `SYSTEM_CONTEXT_CORE_v1.md` §0 or §16 only (not the whole file).
+
+## Mid-session handoff
+
+If work stops before shipping, use `Vault/Templates/Session Handoff.md` instead of filling **Shipped**.
+
+## Vault writing rules
+
+- Bullets, plain language, no full code dumps.
+- Minimal edits — append/update sections; do not rewrite entire notes.
+- Do not create markdown outside `Vault/` unless Omar explicitly asks (except `SYSTEM_CONTEXT_CORE_v1.md` for global invariants).
+
+## When to skip
+
+Skip vault edits for trivial changes (typo, formatting, rename with no behavior change). Say so explicitly.
+
+## Required reply footer
+
+End every Agent response with:
+
+```text
+Vault sync: <files updated> | skipped (trivial) | handoff only
+```
