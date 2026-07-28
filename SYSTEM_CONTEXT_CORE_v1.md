@@ -2,7 +2,7 @@
 
 Use this as the primary prompt context for AI tools that will plan or implement new features.
 
-**Obsidian vault (`Vault/`):** feature briefs, domain notes, and the Ask → Plan → Agent pipeline. Start at `Vault/Karman Index.md`. ChatGPT Project setup: `Docs/CHATGPT_PROJECT_PROMPT.md`.
+**Obsidian vault (`Vault/`):** feature briefs, domain notes, and the Ask → Plan → Agent pipeline. Start at `Vault/İndirimGo Index.md` when present (legacy `Vault/Karman Index.md` otherwise). ChatGPT Project setup: `Docs/CHATGPT_PROJECT_PROMPT.md`.
 
 ---
 
@@ -182,10 +182,19 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 
 ---
 
-## 11. Realtime, notifications, and bugs
+## 11. Realtime, notifications, Activity, and bugs
 
-- **User private channel:** `private-App.Models.User.{id}`.
+- **User private channel:** `private-App.Models.User.{id}` (notifications + `CustomerActivityInvalidated`).
 - **Admin channels:** fulfillments, topups, activities, system-events, bugs, **`admin.automation`** (automation run inbox).
+- **Customer notifications = delivery + authoritative unread truth** (`notifications` table / `unreadNotifications()`).
+- **Customer Activity = projection only** (not financial/ops truth). Canonical route `/activity` (`activity.index`); `/notifications` is a compatibility alias to the same Livewire page.
+- **Read model:** `GetCustomerActivity` orchestrates `NotificationActivityReader` + `TopupActionRequiredReader` + `RefundActionRequiredReader` + `OrderActionRequiredReader` → `CustomerActivityMerger` → DTOs → `CustomerActivityPresenter` (typed destinations; never trust stored notification URLs).
+- **Activity filters:** `all` | `unread` | `action_required` (+ optional category). Action-required rows use domain unresolved state; unread never means unresolved.
+- **Home Operational:** nested Livewire island `home-operational-attention` via `GetCustomerActivity::forHomeOperational()` — max 3 urgent/attention items; hide when empty; CTAs navigation-only; invalidates on `customer-activity-invalidate` without reloading catalog (`GetCustomerHome`).
+- **Realtime invalidation:** domain/notification → after-commit broadcast → private user channel → JS coalescer (~600ms) → Livewire `customer-activity-invalidate`. Activity page 1 refreshes feed; page 2+ sets pending-refresh banner + `skipRender()` (zero feed reads until Refresh). Coordinator owns one unread COUNT and dispatches `customer-unread-count-updated`.
+- **Bell:** notifications only; latest-five lazy until dropdown open; unread badge from coordinator.
+- **Perf notes:** request-local Activity fetch memo; `WebsiteSetting::instance()` request-attribute memo; fulfillments `order_id` / `order_item_id` indexes (`2026_07_28_183808_add_fulfillments_order_indexes_if_missing`).
+- **Deploy:** `BROADCAST_CONNECTION=reverb`, Reverb app/Vite keys, restrict `allowed_origins`, `SESSION_SECURE_COOKIE` + HTTPS + `SESSION_DOMAIN`, run migration, `npm run build`, keep Reverb/queue workers healthy.
 - **Bug operations:** quick report flow + `/admin/bugs` inbox + attachment access route.
 - **Push hygiene:** dedup by notification id, invalid token cleanup, telemetry in `push_logs`.
 
@@ -237,13 +246,14 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - **2026-05-28 to 2026-06-02:** browser fulfillment automation — worker service, run model, dispatch/sweep commands, HMAC callbacks, admin automation page, package fulfillment toggles, `WebsiteSetting::automation_enabled` kill switch.
 - **2026-06:** Wasim **two-phase** automation (purchase `submitted` → reconcile on supplier orders page); Wasim admin credentials + worker session clear; checkout **`cart_hash`** idempotency limited to pending + short paid window (`CheckoutResult`); **Ops Assistant** admin chat (`/admin/assistant`, sidebar nav, read-only order/wallet/fulfillment lookups).
 - **2026-07:** **Supplier price scans** + `/price-drift` UI, reactive fulfillment price flags, stale-scan sweep; **admin exception counts** (`GetAdminExceptionCounts`) for dashboard/sidebar badges; **`CustomerDeliveredPayload`** for safe customer-facing delivered payload rendering (incl. image URLs); **registration security** — Cloudflare Turnstile + honeypot + registration rate limits (`app/Domain/Security/*`); **wallet credit facility / overdraft** — `credit_enabled` + `credit_limit` + `payment_terms_days` + `credit_status`, `WalletSpendPolicy`, `/credit-facility` (`manage_wallet_credit`), customer header/wallet display + humanized facility timeline events.
+- **2026-07 (M5):** **Customer Activity** — read-model spine + Activity page + action-required domain readers + realtime invalidation (M5.4) + query-budget hardening (M5.4.1) + Home **Needs attention** Operational island (M5.5). See `Vault/Features/Customer Activity.md`.
 
 ---
 
 ## 15. Routes quick reference
 
 - **Public:** `/`, `/categories/{category:slug}`, `/cart`, `/contact`, `/404`, `language/{locale}`.
-- **Auth+verified (storefront):** `/profile`, `/wallet`, `/loyalty`, `/referral-link`, `/orders`, `/orders/{order_number}`, `/notifications`, `/topup-proofs/{proof}`, `/bug-attachments/{attachment}`, `POST /api/pricing/buy-now-custom-amount-quote`.
+- **Auth+verified (storefront):** `/profile`, `/wallet`, `/loyalty`, `/referral-link`, `/orders`, `/orders/{order_number}`, **`/activity`** (`activity.index`; **`/notifications`** alias), `/topup-proofs/{proof}`, `/bug-attachments/{attachment}`, `POST /api/pricing/buy-now-custom-amount-quote`.
 - **Backend:** `/dashboard` (`can:view_dashboard`), `/salesperson-dashboard` (`can:view_referrals`), `/categories`, `/packages`, `/products`, `/product-entry-prices` (`can:update_product_prices`), **`/price-drift`** (`can:update_product_prices`), `/pricing-rules`, `/loyalty-tiers`, `/admin/orders/*`, `/admin/users/*`, `/admin/users/{user}/audit`, `/fulfillments`, `/refunds`, `/topups`, `/customer-funds`, **`/credit-facility`** (`can:manage_wallet_credit`), `/settlements`, `/admin/commissions` (`can:manage_settlements`), `/admin/notifications`, `/admin/bugs/*`, `/admin/website-settings` (admin only), **`/admin/automation`** (admin only), **`/admin/assistant`** (admin only, throttled).
 - **Automation (internal):** `POST /internal/automation/runs/{uuid}/result`, `POST /internal/automation/runs/{uuid}/artifacts`, **`POST /internal/automation/price-scans/{uuid}/result`** (HMAC-signed, CSRF exempt). Worker: `POST /v1/runs`, **`POST /v1/sessions/clear`**, **`POST /v1/price-scans`** (HMAC).
 - **AI/MCP:** `POST /mcp/ops-assistant` (admin MCP server for read-only ops tools).
@@ -267,6 +277,9 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - `app/Actions/SupplierPrices/*`, `app/Services/SupplierPriceScanService.php`
 - `app/Actions/Dashboard/GetAdminExceptionCounts.php`
 - `app/Actions/AiAssistant/FetchOrderData.php`, `FetchWalletData.php`, `FetchFulfillmentData.php`
+- `app/Actions/Activity/GetCustomerActivity.php`, `app/Support/Activity/*`, `app/Support/CustomerActivityPresenter.php`, `app/Support/CustomerActivityBroadcaster.php`
+- `app/Livewire/CustomerNotificationCoordinator.php`, `app/Livewire/NotificationBellDropdown.php`
+- `resources/js/customer-activity-invalidation.js`, `resources/js/echo.js`
 - `app/Domain/Security/*`, `app/Http/Controllers/Auth/RegisteredUserController.php`
 - `app/Support/CustomerDeliveredPayload.php`
 - `app/Services/FulfillmentAutomationService.php` (incl. **`clearWorkerBrowserSession()`**), `SystemEventService.php`, `OperationalIntelligenceService.php`

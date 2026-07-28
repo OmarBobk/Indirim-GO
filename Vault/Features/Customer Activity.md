@@ -1,70 +1,58 @@
 ---
-status: in-progress
+status: shipped
 created: 2026-07-28
 feature: customer-activity
+closed: 2026-07-29
 ---
 
 # Customer Activity
 
-Unified customer **activity feed** replacing the standalone notifications page. See [[Karman Index]].
+Unified customer **activity feed** replacing the standalone notifications page. See [[İndirimGo Index]].
 
 ## Goal
 
-Customers see one **Activity** page: timeline of orders, wallet, topups, refunds, and action-required items, with filters and deep links to the right storefront/backend destinations.
+Customers see one **Activity** page: timeline of orders, wallet, topups, refunds, and action-required items, with filters and deep links. Home shows a compact **Needs attention** strip for unresolved urgent/attention items.
 
 ## Constraints
 
-- Read-model pattern: `GetCustomerActivity` + DTOs + presenters — no fat Livewire
-- Merge notification-derived items with domain readers (orders, topups, refunds)
-- Flux FREE components; match existing storefront shell
-- Route replaces `/notifications` → activity route (verify `routes/web.php`)
-- i18n: `lang/en/messages.php`, `lang/ar/messages.php`
-- Tests required: `CustomerActivityPageTest`, `CustomerActivityReadModelTest`, etc.
+- Read-model: `GetCustomerActivity` + DTOs + presenters — no fat Livewire
+- Notifications = unread/delivery truth; domain records = ops/financial truth; Activity = projection
+- Canonical `/activity`; `/notifications` compatibility alias
+- Flux FREE; storefront shell conventions
+- i18n EN/AR
 
 ## Non-goals
 
 - Admin activity log redesign
-- Real-time push changes (reuse existing notification bell if separate)
-- New database tables for activity (derive from existing sources)
-
-## Affected areas
-
-- `app/Actions/Activity/GetCustomerActivity.php`
-- `app/DTOs/CustomerActivity*.php`
-- `app/Support/Activity/*` (merger, mappers, readers)
-- `app/Support/CustomerActivityPresenter.php`
-- `resources/views/pages/frontend/⚡activity.blade.php`
-- `resources/views/components/activity/*`
-- `routes/web.php`
-- `tests/Feature/CustomerActivity*.php`
+- Activity projection table / M6 preferences / Flutter API
 
 ## Acceptance criteria
 
-- [ ] Authenticated customer can open activity page
-- [ ] Action-required section surfaces pending topup/refund/order items
-- [ ] Filters work without excessive Livewire chatter
-- [ ] Old notifications route redirects or is removed cleanly
-- [ ] `php artisan test --compact --filter=CustomerActivity` passes
+- [x] Activity page + action-required readers
+- [x] Realtime invalidation (M5.4)
+- [x] Performance hardening (M5.4.1)
+- [x] Home Operational island (M5.5)
+- [x] M5 closure (separate commits + docs)
 
-## Open questions
+## Open / deferred
 
-- Should notification bell dropdown share the same read-model?
-
-## Ask mode findings
-
-<!-- Paste Cursor Ask output here -->
-
-## Plan summary
-
-<!-- Fill after ChatGPT Plan phase -->
+- Home CTA mark twin read → M6
+- Bell full read-model → defer (latest-five OK)
+- Queued broadcasts / cursor pagination → before Flutter scale
 
 ## Shipped
 
-<!-- Fill after done -->
+- **M5.4** `fbcf087` — realtime sync
+- **M5.4.1** `f6874f4` — query budgets, WebsiteSetting memo, bell lazy, fulfillments indexes
+- **M5.5** `b8b481b` — Home Needs attention island
+- **Docs** — `SYSTEM_CONTEXT_CORE_v1.md` §11
 
 ## Gotchas
 
-<!-- Fill after implementation -->
+- Banner / mark-all always in DOM (`x-show`)
+- Home wrapper always mounts; section only when items exist
+- Home CTAs navigation-only
+- Deploy: migrate indexes; Reverb origins; secure cookies; `npm run build`
 
 ## Related
 
