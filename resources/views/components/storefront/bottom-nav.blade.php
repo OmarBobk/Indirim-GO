@@ -42,13 +42,23 @@
                                 data-test="bottom-nav-cart-badge"
                                 aria-hidden="true"
                             ></span>
-                        @elseif ($item['badge'] === 'notifications' && $item['badge_count'] > 0)
+                        @elseif ($item['badge'] === 'notifications')
                             <span
-                                class="storefront-unread-badge absolute -top-1 -end-1"
-                                data-test="bottom-nav-account-badge"
-                                aria-hidden="true"
+                                x-data="storefrontNotificationBadge(
+                                    {{ $item['badge_count'] }},
+                                    @js(__('main.notifications_unread_aria', ['count' => ':count'])),
+                                    @js(__('messages.notifications'))
+                                )"
+                                class="contents"
                             >
-                                {{ $item['badge_count'] > 9 ? '9+' : $item['badge_count'] }}
+                                <span
+                                    x-cloak
+                                    x-show="count > 0"
+                                    class="storefront-unread-badge absolute -top-1 -end-1"
+                                    data-test="bottom-nav-account-badge"
+                                    aria-hidden="true"
+                                    x-text="displayCount()"
+                                ></span>
                             </span>
                         @endif
                     </span>

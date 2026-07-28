@@ -1,7 +1,21 @@
 <div
     class="relative"
-    x-data="{ newIds: [], markDelay: false }"
-    x-on:notification-received.window="const id = $event.detail?.id; if (id) newIds.push(id); $wire.$refresh(); setTimeout(() => { const i = newIds.indexOf(id); if (i !== -1) newIds.splice(i, 1); }, 8000)"
+    x-data="{
+        newIds: [],
+        markDelay: false,
+        highlightNotificationId(id) {
+            if (! id || this.newIds.includes(id)) return;
+            this.newIds.push(id);
+            setTimeout(() => {
+                const index = this.newIds.indexOf(id);
+                if (index !== -1) this.newIds.splice(index, 1);
+            }, 8000);
+        }
+    }"
+    x-on:customer-activity-invalidate.window="
+        const id = $event.detail?.notificationId;
+        if (id && ! ($event.detail?.isReconcile)) highlightNotificationId(id);
+    "
     x-on:scroll.window="const p = $el.querySelector('[popover]'); if (p) { try { p.hidePopover(); } catch (_) {} }"
 >
     <flux:dropdown position="bottom" align="end" class="min-w-[320px] max-w-[90vw]">

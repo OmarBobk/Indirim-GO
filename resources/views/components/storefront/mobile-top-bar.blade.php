@@ -2,17 +2,6 @@
     use App\Support\StorefrontShell;
 
     $unreadCount = auth()->check() ? StorefrontShell::unreadNotificationCount() : 0;
-    $notificationsAria = $unreadCount > 0
-        ? __('main.notifications_unread_aria', ['count' => $unreadCount > 9 ? '9+' : $unreadCount])
-        : __('messages.notifications');
-
-    $walletDisplay = null;
-    if (auth()->check()) {
-        $walletDisplay = \App\Support\CustomerWalletDisplay::for(
-            \App\Models\Wallet::forUser(auth()->user()),
-            auth()->user(),
-        );
-    }
 @endphp
 
 <header
@@ -29,31 +18,30 @@
             data-event="top-nav-logo"
         />
 
-        <div class="ms-auto flex min-w-0 shrink-0 items-center gap-0.5">
+        <div class="ms-auto flex shrink-0 items-center gap-0.5">
             @auth
-                <x-wallet.chrome-control
-                    :display="$walletDisplay"
-                    data-chrome-surface="mobile-top"
-                />
-
                 <a
                     href="{{ route('activity.index') }}"
                     wire:navigate
-                    class="storefront-shell-icon-btn relative inline-flex size-11 items-center justify-center rounded-full text-zinc-700 transition-[background-color,color,transform] duration-150 hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--color-accent)/40 focus-visible:ring-offset-2 focus-visible:ring-offset-white motion-reduce:transition-none dark:text-zinc-200 dark:hover:bg-zinc-800 dark:focus-visible:ring-offset-zinc-900"
-                    aria-label="{{ $notificationsAria }}"
+                    class="storefront-shell-icon-btn relative inline-flex size-11 items-center justify-center rounded-full text-zinc-700 transition hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--color-accent)/40 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:text-zinc-200 dark:hover:bg-zinc-800 dark:focus-visible:ring-offset-zinc-900"
+                    x-data="storefrontNotificationBadge(
+                        {{ $unreadCount }},
+                        @js(__('main.notifications_unread_aria', ['count' => ':count'])),
+                        @js(__('messages.notifications'))
+                    )"
+                    x-bind:aria-label="ariaLabel()"
                     data-test="mobile-notifications"
                     data-event="top-nav-notifications"
                 >
-                    <flux:icon icon="bell" class="size-5" aria-hidden="true" />
-                    @if ($unreadCount > 0)
-                        <span
-                            class="storefront-unread-badge absolute end-1.5 top-1.5"
-                            data-test="mobile-notifications-badge"
-                            aria-hidden="true"
-                        >
-                            {{ $unreadCount > 9 ? '9+' : $unreadCount }}
-                        </span>
-                    @endif
+                    <flux:icon icon="bell" class="size-5" />
+                    <span
+                        x-cloak
+                        x-show="count > 0"
+                        class="storefront-unread-badge absolute end-1.5 top-1.5"
+                        data-test="mobile-notifications-badge"
+                        aria-hidden="true"
+                        x-text="displayCount()"
+                    ></span>
                 </a>
             @endauth
 
@@ -61,7 +49,7 @@
             @unless (auth()->check() && request()->routeIs('home'))
                 <button
                     type="button"
-                    class="storefront-shell-icon-btn inline-flex size-11 items-center justify-center rounded-full text-zinc-700 transition-[background-color,color,transform] duration-150 hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--color-accent)/40 focus-visible:ring-offset-2 focus-visible:ring-offset-white motion-reduce:transition-none dark:text-zinc-200 dark:hover:bg-zinc-800 dark:focus-visible:ring-offset-zinc-900"
+                    class="storefront-shell-icon-btn inline-flex size-11 items-center justify-center rounded-full text-zinc-700 transition hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--color-accent)/40 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:text-zinc-200 dark:hover:bg-zinc-800 dark:focus-visible:ring-offset-zinc-900"
                     aria-label="{{ __('main.search_packages_placeholder') }}"
                     aria-expanded="false"
                     x-bind:aria-expanded="searchOpen.toString()"
@@ -74,8 +62,8 @@
                         }
                     "
                 >
-                    <flux:icon icon="magnifying-glass" class="size-5" x-show="! searchOpen" aria-hidden="true" />
-                    <flux:icon icon="x-mark" class="size-5" x-cloak x-show="searchOpen" aria-hidden="true" />
+                    <flux:icon icon="magnifying-glass" class="size-5" x-show="! searchOpen" />
+                    <flux:icon icon="x-mark" class="size-5" x-cloak x-show="searchOpen" />
                 </button>
             @endunless
         </div>
@@ -85,12 +73,7 @@
         <div
             x-cloak
             x-show="searchOpen"
-            x-transition:enter="transition ease-out duration-150 motion-reduce:duration-0"
-            x-transition:enter-start="opacity-0"
-            x-transition:enter-end="opacity-100"
-            x-transition:leave="transition ease-in duration-100 motion-reduce:duration-0"
-            x-transition:leave-start="opacity-100"
-            x-transition:leave-end="opacity-0"
+            x-transition.opacity.duration.150ms
             class="absolute inset-x-0 top-full border-b border-zinc-200 bg-white px-3 py-2 shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
             data-test="mobile-search-panel"
             x-on:click.outside="if (! $event.target.closest('[data-event=top-nav-search]')) searchOpen = false"

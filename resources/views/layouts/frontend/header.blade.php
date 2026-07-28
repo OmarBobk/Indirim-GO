@@ -29,6 +29,10 @@
     >
         <script>window.__addToCartMessageTemplate = @json(__('main.add_to_cart_for'));</script>
 
+        @auth
+            <livewire:customer-notification-coordinator />
+        @endauth
+
         <x-storefront.mobile-top-bar />
 
         <div class="hidden lg:block" data-storefront-shell="desktop-header">

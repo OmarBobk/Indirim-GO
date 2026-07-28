@@ -2,6 +2,10 @@
 
 use App\Actions\Activity\GetCustomerActivity;
 use App\DTOs\CustomerActivityResult;
+use App\Notifications\FulfillmentFailedNotification;
+use App\Notifications\PaymentFailedNotification;
+use App\Notifications\RefundRejectedNotification;
+use App\Notifications\TopupRejectedNotification;
 use App\Support\CustomerActivityPresenter;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\View\View;
@@ -25,28 +29,37 @@ new #[Layout('layouts::frontend')] class extends Component
     #[Url(as: 'category', except: '')]
     public string $category = '';
 
+    public bool $hasPendingRefresh = false;
+
+    public int $unreadCount = 0;
+
     public function mount(): void
     {
         abort_unless(auth()->check(), 403);
         $this->normalizeFilters();
+        $this->clampPageToLast();
+        $this->unreadCount = $this->resolveUnreadCount();
     }
 
     public function updatedFilter(): void
     {
         $this->normalizeFilters();
         $this->resetPage();
+        $this->hasPendingRefresh = false;
     }
 
     public function updatedCategory(): void
     {
         $this->normalizeFilters();
         $this->resetPage();
+        $this->hasPendingRefresh = false;
     }
 
     public function setFilter(string $filter): void
     {
         $this->filter = in_array($filter, ['all', 'unread', 'action_required'], true) ? $filter : 'all';
         $this->resetPage();
+        $this->hasPendingRefresh = false;
     }
 
     public function setCategory(string $category): void
@@ -54,6 +67,7 @@ new #[Layout('layouts::frontend')] class extends Component
         $allowed = ['', 'orders', 'money', 'rewards', 'account'];
         $this->category = in_array($category, $allowed, true) ? $category : '';
         $this->resetPage();
+        $this->hasPendingRefresh = false;
     }
 
     public function clearFilters(): void
@@ -61,6 +75,7 @@ new #[Layout('layouts::frontend')] class extends Component
         $this->filter = 'all';
         $this->category = '';
         $this->resetPage();
+        $this->hasPendingRefresh = false;
     }
 
     public function markAsRead(string $notificationId): void
@@ -86,14 +101,53 @@ new #[Layout('layouts::frontend')] class extends Component
         }
 
         $user->unreadNotifications()->update(['read_at' => now()]);
+        $this->unreadCount = 0;
         $this->dispatch('customer-notifications-changed');
         $this->success(__('messages.activity_marked_all_read'));
+    }
+
+    public function applyPendingRefresh(): void
+    {
+        $this->hasPendingRefresh = false;
+        $this->resetPage();
+        $this->clampPageToLast();
+        $this->unreadCount = $this->resolveUnreadCount();
     }
 
     #[On('customer-notifications-changed')]
     public function refreshAfterNotificationChange(): void
     {
-        // Re-render computed Activity result / unread count.
+        $this->unreadCount = $this->resolveUnreadCount();
+    }
+
+    #[On('customer-unread-count-updated')]
+    public function syncUnreadCountFromCoordinator(int $count): void
+    {
+        $this->unreadCount = $count;
+    }
+
+  /**
+     * @param  array<string, mixed>  $payload
+     */
+    #[On('customer-activity-invalidate')]
+    public function handleActivityInvalidate(array $payload = []): void
+    {
+        $isReconcile = (bool) ($payload['isReconcile'] ?? false);
+        $notificationId = is_string($payload['notificationId'] ?? null) ? $payload['notificationId'] : null;
+        $notificationType = is_string($payload['notificationType'] ?? null) ? $payload['notificationType'] : null;
+
+        if ($this->getPage() > 1) {
+            $this->hasPendingRefresh = true;
+
+            return;
+        }
+
+        $this->hasPendingRefresh = false;
+        $this->clampPageToLast();
+
+        if (! $isReconcile && $this->shouldShowUrgentToast($notificationId, $notificationType)) {
+            $this->warning(__('messages.activity_realtime_urgent_update'));
+        }
     }
 
     public function getActivityProperty(): CustomerActivityResult
@@ -163,6 +217,63 @@ new #[Layout('layouts::frontend')] class extends Component
             $this->category = '';
         }
     }
+
+    private function clampPageToLast(): void
+    {
+        $user = auth()->user();
+        if ($user === null) {
+            return;
+        }
+
+        $result = app(GetCustomerActivity::class)->handle(
+            user: $user,
+            filter: $this->filter,
+            category: $this->category !== '' ? $this->category : null,
+            perPage: $this->perPage,
+            page: $this->getPage(),
+        );
+
+        if ($result->lastPage > 0 && $this->getPage() > $result->lastPage) {
+            $this->setPage($result->lastPage);
+        }
+    }
+
+    private function resolveUnreadCount(): int
+    {
+        $user = auth()->user();
+        if ($user === null) {
+            return 0;
+        }
+
+        return $user->unreadNotifications()->count();
+    }
+
+    private function shouldShowUrgentToast(?string $notificationId, ?string $notificationType): bool
+    {
+        if ($notificationId === null || $notificationId === '' || $notificationType === null) {
+            return false;
+        }
+
+        $urgentTypes = [
+            PaymentFailedNotification::class,
+            FulfillmentFailedNotification::class,
+            TopupRejectedNotification::class,
+            RefundRejectedNotification::class,
+        ];
+
+        if (! in_array($notificationType, $urgentTypes, true)) {
+            return false;
+        }
+
+        $sessionKey = 'activity_toast_'.$notificationId;
+        if (session()->has($sessionKey)) {
+            return false;
+        }
+
+        session()->put($sessionKey, true);
+
+        return true;
+    }
 };
 ?>
 
@@ -170,8 +281,21 @@ new #[Layout('layouts::frontend')] class extends Component
     width="work"
     data-test="activity-page"
     data-section="activity-page"
-    x-data="{ newIds: [] }"
-    x-on:notification-received.window="const id = $event.detail?.id; if (id) newIds.push(id); $wire.$refresh(); setTimeout(() => { const i = newIds.indexOf(id); if (i !== -1) newIds.splice(i, 1); }, 8000)"
+    x-data="{
+        newIds: [],
+        highlightNotificationId(id) {
+            if (! id || this.newIds.includes(id)) return;
+            this.newIds.push(id);
+            setTimeout(() => {
+                const index = this.newIds.indexOf(id);
+                if (index !== -1) this.newIds.splice(index, 1);
+            }, 8000);
+        }
+    }"
+    x-on:customer-activity-invalidate.window="
+        const id = $event.detail?.notificationId;
+        if (id && ! ($event.detail?.isReconcile)) highlightNotificationId(id);
+    "
 >
     <section class="storefront-section-stack">
         <x-storefront.page-header
@@ -181,7 +305,7 @@ new #[Layout('layouts::frontend')] class extends Component
             :back-fallback="route('account')"
         >
             <x-slot:actions>
-                @if ($this->activity->unreadCount > 0)
+                @if ($this->unreadCount > 0)
                     <flux:button
                         variant="ghost"
                         size="sm"
@@ -211,17 +335,21 @@ new #[Layout('layouts::frontend')] class extends Component
             />
         @endif
 
+        <x-activity.pending-refresh-banner
+            :visible="$this->hasPendingRefresh"
+        />
+
         <div
             id="activity-feed"
             class="relative"
             data-test="activity-feed"
             aria-busy="false"
             wire:loading.attr="aria-busy"
-            wire:target="setFilter,setCategory,clearFilters,gotoPage,nextPage,previousPage,markAsRead,markAllAsRead"
+            wire:target="setFilter,setCategory,clearFilters,gotoPage,nextPage,previousPage,markAsRead,markAllAsRead,applyPendingRefresh"
         >
             <div
                 wire:loading.delay.flex
-                wire:target="setFilter,setCategory,clearFilters,gotoPage,nextPage,previousPage"
+                wire:target="setFilter,setCategory,clearFilters,gotoPage,nextPage,previousPage,applyPendingRefresh,customer-activity-invalidate"
                 class="absolute inset-0 z-10 hidden items-start bg-white/70 dark:bg-zinc-950/70"
                 data-test="activity-loading"
             >
@@ -231,7 +359,10 @@ new #[Layout('layouts::frontend')] class extends Component
             <div
                 class="flex flex-col gap-3"
                 wire:loading.class="opacity-60"
-                wire:target="setFilter,setCategory,clearFilters,gotoPage,nextPage,previousPage"
+                wire:target="setFilter,setCategory,clearFilters,gotoPage,nextPage,previousPage,applyPendingRefresh,customer-activity-invalidate"
+                aria-live="polite"
+                aria-atomic="true"
+                data-test="activity-feed-live"
             >
                 @forelse ($this->items as $item)
                     <x-activity.item

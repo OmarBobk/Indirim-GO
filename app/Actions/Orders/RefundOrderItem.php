@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Orders;
 
 use App\Actions\Fulfillments\AppendFulfillmentLog;
+use App\Enums\CustomerActivityInvalidationReason;
 use App\Enums\FulfillmentLogLevel;
 use App\Enums\FulfillmentStatus;
 use App\Enums\ProductAmountMode;
@@ -20,6 +21,7 @@ use App\Notifications\RefundRequestedNotification;
 use App\Services\NotificationRecipientService;
 use App\Services\SystemEventService;
 use App\Support\AdminOpsBroadcaster;
+use App\Support\CustomerActivityBroadcaster;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -177,7 +179,8 @@ class RefundOrderItem
             );
 
             $transactionId = $transaction->id;
-            DB::afterCommit(function () use ($transactionId, $actorId): void {
+            $orderOwnerId = (int) $order->user_id;
+            DB::afterCommit(function () use ($transactionId, $actorId, $orderOwnerId): void {
                 $tx = WalletTransaction::query()->find($transactionId);
                 if ($tx === null) {
                     return;
@@ -197,6 +200,13 @@ class RefundOrderItem
                 );
                 $notification = RefundRequestedNotification::fromRefundTransaction($tx);
                 app(NotificationRecipientService::class)->adminUsers()->each(fn ($admin) => $admin->notify($notification));
+
+                if ($orderOwnerId > 0) {
+                    CustomerActivityBroadcaster::dispatch(
+                        $orderOwnerId,
+                        CustomerActivityInvalidationReason::RefundStateChanged,
+                    );
+                }
             });
 
             AdminOpsBroadcaster::dispatch('refund-requested');

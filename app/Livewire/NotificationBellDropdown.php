@@ -11,6 +11,13 @@ use Livewire\Component;
 
 class NotificationBellDropdown extends Component
 {
+    public int $unreadCount = 0;
+
+    public function mount(): void
+    {
+        $this->syncUnreadCountFromDatabase();
+    }
+
     public function getLatestNotificationsProperty(): Collection
     {
         $user = auth()->user();
@@ -19,16 +26,6 @@ class NotificationBellDropdown extends Component
         }
 
         return $user->notifications()->latest()->limit(5)->get();
-    }
-
-    public function getUnreadCountProperty(): int
-    {
-        $user = auth()->user();
-        if ($user === null) {
-            return 0;
-        }
-
-        return $user->unreadNotifications()->count();
     }
 
     public function markAsRead(string $id): void
@@ -41,6 +38,9 @@ class NotificationBellDropdown extends Component
         if ($notification !== null) {
             $notification->markAsRead();
         }
+
+        $this->syncUnreadCountFromDatabase();
+        $this->dispatch('customer-notifications-changed');
     }
 
     /**
@@ -53,16 +53,42 @@ class NotificationBellDropdown extends Component
             return;
         }
         $user->unreadNotifications()->update(['read_at' => now()]);
+        $this->unreadCount = 0;
+        $this->dispatch('customer-notifications-changed');
     }
 
     #[On('customer-notifications-changed')]
     public function refreshAfterExternalChange(): void
     {
-        // Recompute unread count / latest rows after Activity page mutations.
+        $this->syncUnreadCountFromDatabase();
+    }
+
+    #[On('customer-activity-invalidate')]
+    public function refreshAfterInvalidation(): void
+    {
+        // Recompute latest notification rows; unread count comes from coordinator.
+    }
+
+    #[On('customer-unread-count-updated')]
+    public function syncUnreadCountFromCoordinator(int $count): void
+    {
+        $this->unreadCount = $count;
     }
 
     public function render(): View
     {
         return view('livewire.notification-bell-dropdown');
+    }
+
+    private function syncUnreadCountFromDatabase(): void
+    {
+        $user = auth()->user();
+        if ($user === null) {
+            $this->unreadCount = 0;
+
+            return;
+        }
+
+        $this->unreadCount = $user->unreadNotifications()->count();
     }
 }

@@ -6,6 +6,7 @@ namespace App\Actions\Orders;
 
 use App\Actions\Fulfillments\CreateFulfillmentsForOrder;
 use App\Enums\CommissionStatus;
+use App\Enums\CustomerActivityInvalidationReason;
 use App\Enums\OrderStatus;
 use App\Enums\WalletTransactionDirection;
 use App\Enums\WalletTransactionType;
@@ -19,6 +20,7 @@ use App\Models\WebsiteSetting;
 use App\Services\OperationalIntelligenceService;
 use App\Services\SystemEventService;
 use App\Services\WalletSpendPolicy;
+use App\Support\CustomerActivityBroadcaster;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -83,6 +85,7 @@ class PayOrderWithWallet
 
                 $this->logOrderPaid($lockedOrder, $lockedWallet, $existingTransaction);
                 $this->queueReferralCommissionAfterCommit($lockedOrder);
+                $this->invalidateCustomerActivityOnPaid($lockedOrder);
 
                 return $lockedOrder;
             }
@@ -126,6 +129,7 @@ class PayOrderWithWallet
 
             $this->logOrderPaid($lockedOrder, $lockedWallet, $existingTransaction);
             $this->queueReferralCommissionAfterCommit($lockedOrder);
+            $this->invalidateCustomerActivityOnPaid($lockedOrder);
 
             $orderUser = User::query()->find($lockedOrder->user_id);
             app(SystemEventService::class)->record(
@@ -306,5 +310,15 @@ class PayOrderWithWallet
                 'direction' => WalletTransactionDirection::Debit->value,
             ])
             ->log('Wallet debited');
+    }
+
+    private function invalidateCustomerActivityOnPaid(Order $order): void
+    {
+        $userId = (int) $order->user_id;
+        if ($userId <= 0) {
+            return;
+        }
+
+        CustomerActivityBroadcaster::dispatch($userId, CustomerActivityInvalidationReason::OrderPaid);
     }
 }

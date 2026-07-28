@@ -3,13 +3,23 @@
 use App\Support\StorefrontShell;
 use Illuminate\Contracts\View\View;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\On;
 use Livewire\Component;
 
 new #[Layout('layouts::frontend')] class extends Component
 {
+    public int $activityUnreadCount = 0;
+
     public function mount(): void
     {
         abort_unless(auth()->check(), 403);
+        $this->activityUnreadCount = StorefrontShell::unreadNotificationCount();
+    }
+
+    #[On('customer-unread-count-updated')]
+    public function syncUnreadCount(int $count): void
+    {
+        $this->activityUnreadCount = $count;
     }
 
     public function render(): View
@@ -45,6 +55,9 @@ new #[Layout('layouts::frontend')] class extends Component
                 </x-storefront.section-label>
                 <nav class="space-y-2" aria-label="{{ $section['label'] }}">
                     @foreach ($section['links'] as $link)
+                        @php
+                            $badgeCount = $link['key'] === 'activity' ? $activityUnreadCount : $link['badge_count'];
+                        @endphp
                         <a
                             wire:key="account-hub-{{ $link['key'] }}"
                             href="{{ $link['href'] }}"
@@ -54,13 +67,13 @@ new #[Layout('layouts::frontend')] class extends Component
                         >
                             <flux:icon :icon="$link['icon']" class="size-5 shrink-0 text-zinc-500 dark:text-zinc-400" />
                             <span class="min-w-0 flex-1 font-medium">{{ $link['label'] }}</span>
-                            @if ($link['badge_count'] > 0)
+                            @if ($badgeCount > 0)
                                 <span
                                     class="storefront-unread-badge"
                                     data-test="account-hub-badge-{{ $link['key'] }}"
                                     aria-hidden="true"
                                 >
-                                    {{ $link['badge_count'] > 9 ? '9+' : $link['badge_count'] }}
+                                    {{ $badgeCount > 9 ? '9+' : $badgeCount }}
                                 </span>
                             @endif
                             <flux:icon icon="chevron-right" class="size-4 shrink-0 text-zinc-400 rtl:rotate-180" />

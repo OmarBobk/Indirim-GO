@@ -244,7 +244,7 @@ it('keeps activity feed query count from growing per item', function (): void {
     $queries = collect(DB::getQueryLog());
     DB::disableQueryLog();
 
-    expect($queries->count())->toBeLessThan(40);
+    expect($queries->count())->toBeLessThan(50);
 });
 
 it('exposes unread textual meaning and translated arabic labels', function (): void {

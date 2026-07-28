@@ -1,6 +1,13 @@
 import Echo from 'laravel-echo';
 
 import Pusher from 'pusher-js';
+import {
+    bindEchoReconnect,
+    handleDomainInvalidated,
+    handleNotificationReceived,
+    initCustomerActivityInvalidation,
+} from './customer-activity-invalidation';
+
 window.Pusher = Pusher;
 
 window.Echo = new Echo({
@@ -13,13 +20,18 @@ window.Echo = new Echo({
     enabledTransports: ['ws', 'wss'],
 });
 
+initCustomerActivityInvalidation();
+
 if (import.meta.env.VITE_REVERB_APP_KEY && window.Laravel?.userId) {
-    window.Echo.private('App.Models.User.' + window.Laravel.userId).notification((payload) => {
-        if (window.Livewire?.dispatch) {
-            window.Livewire.dispatch('notification-received', payload ?? {});
-        }
-        window.dispatchEvent(new CustomEvent('notification-received', { detail: payload || {} }));
-    });
+    bindEchoReconnect(window.Echo);
+
+    window.Echo.private('App.Models.User.' + window.Laravel.userId)
+        .notification((payload) => {
+            handleNotificationReceived(payload ?? {});
+        })
+        .listen('.CustomerActivityInvalidated', (payload) => {
+            handleDomainInvalidated(payload ?? {});
+        });
 }
 
 if (import.meta.env.VITE_REVERB_APP_KEY && window.Laravel?.canViewDashboard) {

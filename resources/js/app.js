@@ -10,6 +10,30 @@ document.addEventListener('alpine:init', () => {
         return;
     }
 
+    Alpine.data('storefrontNotificationBadge', (initialCount, unreadAriaTemplate, defaultAria) => ({
+        count: Number(initialCount) || 0,
+        unreadAriaTemplate,
+        defaultAria,
+        init() {
+            window.addEventListener('customer-unread-count-updated', (event) => {
+                const next = event.detail?.count;
+                if (typeof next === 'number') {
+                    this.count = next;
+                }
+            });
+        },
+        displayCount() {
+            return this.count > 9 ? '9+' : String(this.count);
+        },
+        ariaLabel() {
+            if (this.count <= 0) {
+                return this.defaultAria;
+            }
+
+            return this.unreadAriaTemplate.replace(':count', this.displayCount());
+        },
+    }));
+
     Alpine.data('dashboardHeroChart', ({ chartSeries, activeRange, chartPresets, initialChartFilter }) => ({
         selectedSeries: 'earnings',
         activeRange,
