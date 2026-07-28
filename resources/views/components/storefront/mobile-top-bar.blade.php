@@ -2,6 +2,14 @@
     use App\Support\StorefrontShell;
 
     $unreadCount = auth()->check() ? StorefrontShell::unreadNotificationCount() : 0;
+
+    $walletDisplay = null;
+    if (auth()->check()) {
+        $walletDisplay = \App\Support\CustomerWalletDisplay::for(
+            \App\Models\Wallet::forUser(auth()->user()),
+            auth()->user(),
+        );
+    }
 @endphp
 
 <header
@@ -18,8 +26,13 @@
             data-event="top-nav-logo"
         />
 
-        <div class="ms-auto flex shrink-0 items-center gap-0.5">
+        <div class="ms-auto flex min-w-0 shrink-0 items-center gap-0.5">
             @auth
+                <x-wallet.chrome-control
+                    :display="$walletDisplay"
+                    data-chrome-surface="mobile-top"
+                />
+
                 <a
                     href="{{ route('activity.index') }}"
                     wire:navigate

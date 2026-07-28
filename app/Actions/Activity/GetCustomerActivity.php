@@ -7,7 +7,6 @@ namespace App\Actions\Activity;
 use App\DTOs\CustomerActivityDTO;
 use App\DTOs\CustomerActivityResult;
 use App\Enums\CustomerActivityCategory;
-use App\Enums\CustomerActivityImportance;
 use App\Models\User;
 use App\Support\Activity\CustomerActivityMerger;
 use App\Support\Activity\NotificationActivityReader;
@@ -34,47 +33,6 @@ final class GetCustomerActivity
         private readonly RefundActionRequiredReader $refundReader,
         private readonly CustomerActivityMerger $merger,
     ) {}
-
-    /**
-     * Home Operational strip: unresolved urgent/attention action items only.
-     *
-     * Skips notification feed pagination, unread COUNT, and twin attachment —
-     * Home CTAs are navigation-only (M5.5).
-     */
-    public function forHomeOperational(User $user): CustomerActivityResult
-    {
-        $actionItems = $this->loadActionItems($user, null);
-
-        $actionable = array_values(array_filter(
-            $actionItems,
-            static function (CustomerActivityDTO $item): bool {
-                if (! $item->requiresAction) {
-                    return false;
-                }
-
-                return $item->importance === CustomerActivityImportance::Urgent
-                    || $item->importance === CustomerActivityImportance::Attention;
-            }
-        ));
-
-        $sorted = $this->merger->sortActionRequired($actionable);
-        $total = count($sorted);
-        $visible = array_slice($sorted, 0, CustomerActivityMerger::SUMMARY_LIMIT);
-
-        return new CustomerActivityResult(
-            items: $visible,
-            currentPage: 1,
-            perPage: CustomerActivityMerger::SUMMARY_LIMIT,
-            total: $total,
-            lastPage: 1,
-            unreadCount: 0,
-            filter: 'action_required',
-            category: null,
-            actionRequiredSummary: $visible,
-            actionRequiredTotal: $total,
-            hasMoreActionRequired: $total > CustomerActivityMerger::SUMMARY_LIMIT,
-        );
-    }
 
     public function handle(
         User $user,

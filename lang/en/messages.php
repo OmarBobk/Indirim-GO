@@ -1530,14 +1530,4 @@ return [
     'activity_action_order_failed_description' => 'A delivery for order :order_number failed. Review the order to continue.',
     'activity_action_order_payment_title' => 'Payment needs attention',
     'activity_action_order_payment_description' => 'Order :order_number could not be completed. Return to your cart to try again.',
-
-    'home_operational_title' => 'Needs attention',
-    'home_operational_intro' => 'Issues that block a purchase or delivery.',
-    'home_operational_view_all' => 'View all Activity',
-    'home_operational_region_aria' => 'Needs attention',
-    'home_operational_item_unresolved_aria' => 'Unresolved: :title (:importance)',
-    'home_operational_cta_aria' => ':action for :title',
-    'home_operational_announce_new' => 'A new issue needs your attention.',
-    'home_operational_announce_updated' => 'Issues needing attention were updated.',
-    'home_operational_announce_cleared' => 'All current issues are resolved.',
 ];

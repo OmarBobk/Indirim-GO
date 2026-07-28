@@ -39,8 +39,7 @@ test('authenticated home renders M4.9.2 zones without marketing chrome', functio
     $response->assertSee('data-test="customer-home"', false);
     $response->assertSee('data-test="customer-home-workspace"', false);
     $response->assertSee('data-test="customer-home-command"', false);
-    $response->assertSee('data-test="home-operational-livewire"', false);
-    $response->assertDontSee('data-test="customer-home-operational"', false);
+    $response->assertSee('data-test="customer-home-operational-placeholder"', false);
     $response->assertSee('data-test="customer-home-personal"', false);
     $response->assertSee('data-test="customer-home-browse"', false);
     $response->assertSee('data-test="customer-home-catalog"', false);
