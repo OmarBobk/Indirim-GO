@@ -52,12 +52,24 @@ function makeRejectedTopup(User $user, float $amount = 25, ?string $note = 'Inco
     return $request->fresh();
 }
 
+function makeActivityPackage(): Package
+{
+    static $sequence = 50_000;
+    $sequence++;
+
+    return Package::factory()->create([
+        'is_active' => true,
+        'order' => $sequence,
+        'category_id' => \App\Models\Category::factory()->create(['order' => $sequence])->id,
+    ]);
+}
+
 /**
  * @return array{order: Order, fulfillment: Fulfillment, item: OrderItem}
  */
 function makeFailedOrderForActivity(User $user): array
 {
-    $package = Package::factory()->create(['is_active' => true]);
+    $package = makeActivityPackage();
     $product = Product::factory()->create([
         'package_id' => $package->id,
         'entry_price' => 10,
@@ -188,7 +200,7 @@ it('includes needs-attention orders and excludes queued processing', function ()
     $user = User::factory()->create();
 
     $failed = makeFailedOrderForActivity($user);
-    $package = Package::factory()->create(['is_active' => true]);
+    $package = makeActivityPackage();
     $product = Product::factory()->create(['package_id' => $package->id, 'entry_price' => 5, 'is_active' => true]);
     $processing = Order::create([
         'user_id' => $user->id,
@@ -228,7 +240,7 @@ it('includes needs-attention orders and excludes queued processing', function ()
 it('collapses multiple actionable fulfillments into one order-level activity item', function (): void {
     $user = User::factory()->create();
     $base = makeFailedOrderForActivity($user);
-    $package = Package::factory()->create(['is_active' => true]);
+    $package = makeActivityPackage();
     $product = Product::factory()->create(['package_id' => $package->id, 'entry_price' => 8, 'is_active' => true]);
     $item2 = OrderItem::create([
         'order_id' => $base['order']->id,

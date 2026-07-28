@@ -195,12 +195,12 @@ test('header surfaces active credit limit at zero balance for mobile chrome', fu
         ->assertSeeHtml('data-test="wallet-chrome-summary"')
         ->assertSee(__('messages.wallet_credit_limit_label'))
         ->assertSeeHtml('data-wallet-cta-badge="'.e($balance.' · '.$limitHint).'"')
-        ->assertSeeHtml('data-chrome-surface="mobile-top"')
+        ->assertSeeHtml('data-storefront-shell="mobile-top"')
         ->assertSeeHtml('data-chrome-surface="desktop-header"')
         ->getContent();
 
     expect(substr_count($html, 'data-test="wallet-balance"'))->toBeGreaterThanOrEqual(2)
-        ->and(substr_count($html, 'data-chrome-surface="mobile-top"'))->toBe(1);
+        ->and(substr_count($html, 'data-storefront-shell="mobile-top"'))->toBe(1);
 });
 
 test('mobile top bar shows wallet amount chrome for authenticated customers', function () {
@@ -214,7 +214,7 @@ test('mobile top bar shows wallet amount chrome for authenticated customers', fu
         ->get(route('home'))
         ->assertOk()
         ->assertSeeHtml('data-test="storefront-mobile-top"')
-        ->assertSeeHtml('data-chrome-surface="mobile-top"')
+        ->assertSeeHtml('data-storefront-shell="mobile-top"')
         ->assertSeeHtml('data-event="top-nav-wallet"')
         ->assertSeeHtml('data-test="wallet-nav-amount"')
         ->assertSee($balance);

@@ -3,8 +3,13 @@
 use App\Actions\Fortify\CreateNewUser;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    Role::firstOrCreate(['name' => 'customer', 'guard_name' => 'web']);
+});
 
 test('login applies accept language when account locale is not manually locked', function () {
     $user = User::factory()->create([
