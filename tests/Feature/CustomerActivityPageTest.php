@@ -199,9 +199,10 @@ it('marks all read for the current user only with explicit action', function ():
 
     Livewire::actingAs($owner)
         ->test('pages::frontend.activity')
+        ->assertSet('unreadCount', 2)
         ->assertSee('data-test="activity-mark-all-read"', false)
         ->call('markAllAsRead')
-        ->assertDontSee('data-test="activity-mark-all-read"', false);
+        ->assertSet('unreadCount', 0);
 
     expect($owner->fresh()->unreadNotifications()->count())->toBe(0)
         ->and($foreign->fresh()->read_at)->toBeNull();

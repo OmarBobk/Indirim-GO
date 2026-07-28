@@ -83,26 +83,53 @@ class WebsiteSetting extends Model
 
     /**
      * Get the singleton instance (first row). Creates one with defaults if none exists.
+     *
+     * Memoized for the current HTTP request so presenters can call this repeatedly
+     * without re-querying. Request attributes reset each request (Octane-safe).
      */
     public static function instance(): self
     {
-        $row = self::query()->first();
-        if ($row !== null) {
-            return $row;
+        $request = app()->bound('request') ? request() : null;
+        $cacheKey = 'website_setting.instance';
+
+        if ($request !== null && $request->attributes->has($cacheKey)) {
+            /** @var self $cached */
+            $cached = $request->attributes->get($cacheKey);
+
+            return $cached;
         }
 
-        return self::query()->create([
-            'contact_email' => null,
-            'primary_phone' => null,
-            'secondary_phone' => null,
-            'prices_visible' => true,
-            'usd_try_rate' => null,
-            'usd_try_rate_updated_at' => null,
-            'commission_payout_wait_days' => 3,
-            'commission_payout_min_amount' => 200,
-            'default_commission_rate_percent' => 20,
-            'automation_enabled' => true,
-        ]);
+        $row = self::query()->first();
+        if ($row === null) {
+            $row = self::query()->create([
+                'contact_email' => null,
+                'primary_phone' => null,
+                'secondary_phone' => null,
+                'prices_visible' => true,
+                'usd_try_rate' => null,
+                'usd_try_rate_updated_at' => null,
+                'commission_payout_wait_days' => 3,
+                'commission_payout_min_amount' => 200,
+                'default_commission_rate_percent' => 20,
+                'automation_enabled' => true,
+            ]);
+        }
+
+        $request?->attributes->set($cacheKey, $row);
+
+        return $row;
+    }
+
+    /**
+     * Drop the request-local memo (tests / same-request admin updates).
+     */
+    public static function forgetRequestInstance(): void
+    {
+        if (! app()->bound('request')) {
+            return;
+        }
+
+        request()->attributes->remove('website_setting.instance');
     }
 
     public static function getAutomationEnabled(): bool

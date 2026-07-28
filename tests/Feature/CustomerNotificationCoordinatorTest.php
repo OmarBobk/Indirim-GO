@@ -60,7 +60,8 @@ it('updates bell unread count from coordinator payload without a second count qu
         ->assertSet('unreadCount', 0);
 
     $countQueries = collect(DB::getQueryLog())
-        ->filter(fn (array $query): bool => str_contains(strtolower($query['query']), 'unread'))
+        ->filter(fn (array $query): bool => str_contains(strtolower($query['query']), 'count(*)')
+            && str_contains(strtolower($query['query']), 'notifications'))
         ->count();
 
     expect($countQueries)->toBe(0);

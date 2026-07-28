@@ -33,11 +33,13 @@ new #[Layout('layouts::frontend')] class extends Component
 
     public int $unreadCount = 0;
 
+    private ?CustomerActivityResult $activityResult = null;
+
     public function mount(): void
     {
         abort_unless(auth()->check(), 403);
         $this->normalizeFilters();
-        $this->clampPageToLast();
+        $this->loadActivity();
         $this->unreadCount = $this->resolveUnreadCount();
     }
 
@@ -46,6 +48,7 @@ new #[Layout('layouts::frontend')] class extends Component
         $this->normalizeFilters();
         $this->resetPage();
         $this->hasPendingRefresh = false;
+        $this->forgetActivityResult();
     }
 
     public function updatedCategory(): void
@@ -53,6 +56,16 @@ new #[Layout('layouts::frontend')] class extends Component
         $this->normalizeFilters();
         $this->resetPage();
         $this->hasPendingRefresh = false;
+        $this->forgetActivityResult();
+    }
+
+    public function updatedPage(mixed $page): void
+    {
+        if ((int) $page <= 1) {
+            $this->hasPendingRefresh = false;
+        }
+
+        $this->forgetActivityResult();
     }
 
     public function setFilter(string $filter): void
@@ -60,6 +73,7 @@ new #[Layout('layouts::frontend')] class extends Component
         $this->filter = in_array($filter, ['all', 'unread', 'action_required'], true) ? $filter : 'all';
         $this->resetPage();
         $this->hasPendingRefresh = false;
+        $this->forgetActivityResult();
     }
 
     public function setCategory(string $category): void
@@ -68,6 +82,7 @@ new #[Layout('layouts::frontend')] class extends Component
         $this->category = in_array($category, $allowed, true) ? $category : '';
         $this->resetPage();
         $this->hasPendingRefresh = false;
+        $this->forgetActivityResult();
     }
 
     public function clearFilters(): void
@@ -76,6 +91,7 @@ new #[Layout('layouts::frontend')] class extends Component
         $this->category = '';
         $this->resetPage();
         $this->hasPendingRefresh = false;
+        $this->forgetActivityResult();
     }
 
     public function markAsRead(string $notificationId): void
@@ -90,6 +106,7 @@ new #[Layout('layouts::frontend')] class extends Component
             $notification->markAsRead();
         }
 
+        $this->forgetActivityResult();
         $this->dispatch('customer-notifications-changed');
     }
 
@@ -102,6 +119,7 @@ new #[Layout('layouts::frontend')] class extends Component
 
         $user->unreadNotifications()->update(['read_at' => now()]);
         $this->unreadCount = 0;
+        $this->forgetActivityResult();
         $this->dispatch('customer-notifications-changed');
         $this->success(__('messages.activity_marked_all_read'));
     }
@@ -110,23 +128,26 @@ new #[Layout('layouts::frontend')] class extends Component
     {
         $this->hasPendingRefresh = false;
         $this->resetPage();
-        $this->clampPageToLast();
-        $this->unreadCount = $this->resolveUnreadCount();
+        $this->forgetActivityResult();
+        $this->loadActivity();
     }
 
     #[On('customer-notifications-changed')]
     public function refreshAfterNotificationChange(): void
     {
-        $this->unreadCount = $this->resolveUnreadCount();
+        $this->forgetActivityResult();
     }
 
     #[On('customer-unread-count-updated')]
     public function syncUnreadCountFromCoordinator(int $count): void
     {
         $this->unreadCount = $count;
+
+        // Count-only sync: Alpine drives the mark-all control; do not re-fetch the feed.
+        $this->skipRender();
     }
 
-  /**
+    /**
      * @param  array<string, mixed>  $payload
      */
     #[On('customer-activity-invalidate')]
@@ -138,12 +159,13 @@ new #[Layout('layouts::frontend')] class extends Component
 
         if ($this->getPage() > 1) {
             $this->hasPendingRefresh = true;
+            $this->skipRender();
 
             return;
         }
 
         $this->hasPendingRefresh = false;
-        $this->clampPageToLast();
+        $this->forgetActivityResult();
 
         if (! $isReconcile && $this->shouldShowUrgentToast($notificationId, $notificationType)) {
             $this->warning(__('messages.activity_realtime_urgent_update'));
@@ -152,16 +174,7 @@ new #[Layout('layouts::frontend')] class extends Component
 
     public function getActivityProperty(): CustomerActivityResult
     {
-        $user = auth()->user();
-        abort_unless($user !== null, 403);
-
-        return app(GetCustomerActivity::class)->handle(
-            user: $user,
-            filter: $this->filter,
-            category: $this->category !== '' ? $this->category : null,
-            perPage: $this->perPage,
-            page: $this->getPage(),
-        );
+        return $this->loadActivity();
     }
 
     /**
@@ -218,12 +231,14 @@ new #[Layout('layouts::frontend')] class extends Component
         }
     }
 
-    private function clampPageToLast(): void
+    private function loadActivity(): CustomerActivityResult
     {
-        $user = auth()->user();
-        if ($user === null) {
-            return;
+        if ($this->activityResult !== null) {
+            return $this->activityResult;
         }
+
+        $user = auth()->user();
+        abort_unless($user !== null, 403);
 
         $result = app(GetCustomerActivity::class)->handle(
             user: $user,
@@ -235,7 +250,22 @@ new #[Layout('layouts::frontend')] class extends Component
 
         if ($result->lastPage > 0 && $this->getPage() > $result->lastPage) {
             $this->setPage($result->lastPage);
+
+            $result = app(GetCustomerActivity::class)->handle(
+                user: $user,
+                filter: $this->filter,
+                category: $this->category !== '' ? $this->category : null,
+                perPage: $this->perPage,
+                page: $this->getPage(),
+            );
         }
+
+        return $this->activityResult = $result;
+    }
+
+    private function forgetActivityResult(): void
+    {
+        $this->activityResult = null;
     }
 
     private function resolveUnreadCount(): int
@@ -305,7 +335,7 @@ new #[Layout('layouts::frontend')] class extends Component
             :back-fallback="route('account')"
         >
             <x-slot:actions>
-                @if ($this->unreadCount > 0)
+                <div x-data x-cloak x-show="$wire.unreadCount > 0">
                     <flux:button
                         variant="ghost"
                         size="sm"
@@ -318,7 +348,7 @@ new #[Layout('layouts::frontend')] class extends Component
                         <span wire:loading.remove wire:target="markAllAsRead">{{ __('messages.mark_all_read') }}</span>
                         <span wire:loading wire:target="markAllAsRead" aria-live="polite">{{ __('messages.please_wait') }}</span>
                     </flux:button>
-                @endif
+                </div>
             </x-slot:actions>
         </x-storefront.page-header>
 
@@ -335,9 +365,7 @@ new #[Layout('layouts::frontend')] class extends Component
             />
         @endif
 
-        <x-activity.pending-refresh-banner
-            :visible="$this->hasPendingRefresh"
-        />
+        <x-activity.pending-refresh-banner />
 
         <div
             id="activity-feed"

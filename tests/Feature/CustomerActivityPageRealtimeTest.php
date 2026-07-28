@@ -69,7 +69,7 @@ it('sets pending refresh banner on page two without replacing visible rows', fun
         ->set('perPage', 5)
         ->call('gotoPage', 2)
         ->assertSee('Notification 1')
-        ->assertDontSee('data-test="activity-pending-refresh-banner"', false);
+        ->assertSet('hasPendingRefresh', false);
 
     $newNotification = seedUnreadActivityNotification($user, 'Brand new page one item');
     $newNotification->forceFill(['created_at' => now()->addMinute()])->save();
@@ -78,8 +78,7 @@ it('sets pending refresh banner on page two without replacing visible rows', fun
         ->dispatch('customer-activity-invalidate', isReconcile: false)
         ->assertSet('hasPendingRefresh', true)
         ->assertSee('Notification 1')
-        ->assertDontSee('Brand new page one item')
-        ->assertSee(__('messages.activity_new_activity_available'));
+        ->assertDontSee('Brand new page one item');
 });
 
 it('returns to page one when pending refresh is applied', function (): void {

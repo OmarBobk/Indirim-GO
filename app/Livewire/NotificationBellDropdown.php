@@ -13,13 +13,27 @@ class NotificationBellDropdown extends Component
 {
     public int $unreadCount = 0;
 
+    /**
+     * When false, latest-five is not queried (closed dropdown).
+     */
+    public bool $listLoaded = false;
+
     public function mount(): void
     {
         $this->syncUnreadCountFromDatabase();
     }
 
+    public function ensureListLoaded(): void
+    {
+        $this->listLoaded = true;
+    }
+
     public function getLatestNotificationsProperty(): Collection
     {
+        if (! $this->listLoaded) {
+            return collect();
+        }
+
         $user = auth()->user();
         if ($user === null) {
             return collect();
@@ -36,10 +50,14 @@ class NotificationBellDropdown extends Component
         }
         $notification = $user->notifications()->whereKey($id)->first();
         if ($notification !== null) {
+            $wasUnread = $notification->read_at === null;
             $notification->markAsRead();
+            if ($wasUnread) {
+                $this->unreadCount = max(0, $this->unreadCount - 1);
+            }
         }
 
-        $this->syncUnreadCountFromDatabase();
+        $this->listLoaded = true;
         $this->dispatch('customer-notifications-changed');
     }
 
@@ -54,25 +72,45 @@ class NotificationBellDropdown extends Component
         }
         $user->unreadNotifications()->update(['read_at' => now()]);
         $this->unreadCount = 0;
+        $this->listLoaded = true;
         $this->dispatch('customer-notifications-changed');
     }
 
     #[On('customer-notifications-changed')]
     public function refreshAfterExternalChange(): void
     {
-        $this->syncUnreadCountFromDatabase();
+        // Unread count comes from the coordinator. Refresh list only if already open.
     }
 
+    /**
+     * @param  array<string, mixed>  $payload
+     */
     #[On('customer-activity-invalidate')]
-    public function refreshAfterInvalidation(): void
+    public function refreshAfterInvalidation(array $payload = []): void
     {
-        // Recompute latest notification rows; unread count comes from coordinator.
+        $source = is_string($payload['source'] ?? null) ? $payload['source'] : null;
+        $isReconcile = (bool) ($payload['isReconcile'] ?? false);
+
+        if (! $this->listLoaded) {
+            $this->skipRender();
+
+            return;
+        }
+
+        if ($source !== 'notification' || $isReconcile) {
+            $this->skipRender();
+        }
     }
 
     #[On('customer-unread-count-updated')]
     public function syncUnreadCountFromCoordinator(int $count): void
     {
         $this->unreadCount = $count;
+
+        if (! $this->listLoaded) {
+            // Badge is Alpine-driven; avoid fetching latest-five while closed.
+            $this->skipRender();
+        }
     }
 
     public function render(): View

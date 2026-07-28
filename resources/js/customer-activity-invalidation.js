@@ -1,7 +1,6 @@
 const COALESCE_MS = 600;
 const RECONCILE_HIDDEN_MS = 30_000;
 const RECONCILE_THROTTLE_MS = 5_000;
-const TOAST_DEDUP_PREFIX = 'customer-activity-toast:';
 
 /** @type {Record<string, unknown>|null} */
 let pendingInvalidation = null;
@@ -57,6 +56,9 @@ function dispatchInvalidation(detail) {
  * @param {Record<string, unknown>|null|undefined} payload
  */
 export function handleNotificationReceived(payload) {
+    // Observability only — does not trigger Activity invalidation by itself.
+    window.dispatchEvent(new CustomEvent('notification-received', { detail: payload ?? {} }));
+
     dispatchInvalidation({
         source: 'notification',
         notificationId: payload?.id ?? null,
@@ -132,47 +134,6 @@ export function bindEchoReconnect(echo) {
     connection.bind('connected', () => {
         scheduleReconciliation('reconnect');
     });
-}
-
-const URGENT_NOTIFICATION_TYPES = new Set([
-    'App\\Notifications\\PaymentFailedNotification',
-    'App\\Notifications\\FulfillmentFailedNotification',
-    'App\\Notifications\\TopupRejectedNotification',
-    'App\\Notifications\\RefundRejectedNotification',
-]);
-
-/**
- * @param {Record<string, unknown>} detail
- * @returns {boolean}
- */
-export function shouldShowUrgentToast(detail) {
-    if (detail.isReconcile || detail.source === 'domain') {
-        return false;
-    }
-
-    const notificationId = detail.notificationId;
-    const notificationType = detail.notificationType;
-
-    if (typeof notificationId !== 'string' || notificationId === '') {
-        return false;
-    }
-
-    if (typeof notificationType !== 'string' || !URGENT_NOTIFICATION_TYPES.has(notificationType)) {
-        return false;
-    }
-
-    try {
-        const key = TOAST_DEDUP_PREFIX + notificationId;
-        if (sessionStorage.getItem(key)) {
-            return false;
-        }
-
-        sessionStorage.setItem(key, String(Date.now()));
-    } catch {
-        return true;
-    }
-
-    return true;
 }
 
 export function resetCoalescerForTests() {

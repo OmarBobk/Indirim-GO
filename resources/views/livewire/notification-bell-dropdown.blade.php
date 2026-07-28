@@ -25,33 +25,42 @@
                 icon="bell"
                 class="storefront-shell-icon-btn !h-10 !w-10 !p-0 [&>div>svg]:size-5 !text-zinc-700 dark:!text-zinc-300 hover:!bg-zinc-200 dark:hover:!bg-zinc-800 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--color-accent)/40 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-zinc-900"
                 aria-label="{{ $this->unreadCount > 0 ? __('main.notifications_unread_aria', ['count' => $this->unreadCount > 9 ? '9+' : $this->unreadCount]) : __('messages.notifications') }}"
+                x-bind:aria-label="$wire.unreadCount > 0
+                    ? @js(__('main.notifications_unread_aria', ['count' => ':count'])).replace(':count', $wire.unreadCount > 9 ? '9+' : String($wire.unreadCount))
+                    : @js(__('messages.notifications'))"
                 x-on:click="
+                    $wire.ensureListLoaded();
                     if (! markDelay) {
                         markDelay = true;
                         setTimeout(() => markDelay = false, 300);
                     }
                 "
             />
-            @if ($this->unreadCount > 0)
-                <span class="storefront-unread-badge absolute -end-0.5 -top-0.5" aria-hidden="true">
-                    {{ $this->unreadCount > 9 ? '9+' : $this->unreadCount }}
-                </span>
-            @endif
+            <span
+                x-cloak
+                x-show="$wire.unreadCount > 0"
+                class="storefront-unread-badge absolute -end-0.5 -top-0.5"
+                aria-hidden="true"
+                x-text="$wire.unreadCount > 9 ? '9+' : String($wire.unreadCount)"
+                data-test="bell-unread-badge"
+            ></span>
         </div>
         <flux:menu keep-open x-on:click.stop class="!p-0 rounded-xl border border-zinc-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
             <div class="max-h-[70vh] overflow-auto p-2">
                 <div class="mb-2 flex items-center justify-between gap-2 px-2">
                     <flux:heading size="sm">{{ __('messages.notifications') }}</flux:heading>
-                    @if ($this->unreadCount > 0)
-                        <div class="flex items-center gap-1">
-                            <flux:button variant="ghost" size="sm" wire:click="markAsReadOnOpen">
-                                {{ __('messages.mark_all_read') }}
-                            </flux:button>
-                            <flux:button variant="ghost" size="sm" :href="route('activity.index')" wire:navigate>
-                                {{ __('messages.activity_view_all') }}
-                            </flux:button>
-                        </div>
-                    @endif
+                    <div
+                        x-cloak
+                        x-show="$wire.unreadCount > 0"
+                        class="flex items-center gap-1"
+                    >
+                        <flux:button variant="ghost" size="sm" wire:click="markAsReadOnOpen">
+                            {{ __('messages.mark_all_read') }}
+                        </flux:button>
+                        <flux:button variant="ghost" size="sm" :href="route('activity.index')" wire:navigate>
+                            {{ __('messages.activity_view_all') }}
+                        </flux:button>
+                    </div>
                 </div>
                 @forelse ($this->latestNotifications as $notification)
                     @php
