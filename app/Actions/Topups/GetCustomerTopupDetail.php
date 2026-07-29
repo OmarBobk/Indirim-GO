@@ -167,8 +167,8 @@ final class GetCustomerTopupDetail
             ),
             ledgerDestination: $postedRef !== null
                 ? new FinancialDestinationDTO(
-                    FinancialDestinationType::WalletTransactionsSearch,
-                    ['search' => $postedRef]
+                    FinancialDestinationType::WalletTransactionDetail,
+                    ['public_ref' => $postedRef]
                 )
                 : null,
             retryDestination: $canRetry

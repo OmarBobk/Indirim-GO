@@ -173,8 +173,8 @@ final class GetCustomerRefundDetail
                 : new FinancialDestinationDTO(FinancialDestinationType::Orders),
             ledgerDestination: $moneyMoved
                 ? new FinancialDestinationDTO(
-                    FinancialDestinationType::WalletTransactionsSearch,
-                    ['search' => $publicRef]
+                    FinancialDestinationType::WalletTransactionDetail,
+                    ['public_ref' => $publicRef]
                 )
                 : null,
             recoveryDestination: $canRecover && $orderNumber !== null

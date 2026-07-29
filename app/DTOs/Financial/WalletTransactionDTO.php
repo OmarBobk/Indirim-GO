@@ -29,6 +29,7 @@ final readonly class WalletTransactionDTO
         public ?string $relatedOrderNumber,
         public ?string $customerSafeDescription,
         public ?FinancialDestinationDTO $destination,
+        public ?FinancialDestinationDTO $sourceDestination,
         public bool $isCredit,
         public bool $isDebit,
     ) {}

@@ -29,6 +29,10 @@ final class FinancialDestinationResolver
                 ['refund' => (string) ($destination->params['public_ref'] ?? '')]
             ),
             FinancialDestinationType::WalletTransactions => route('wallet.transactions.index'),
+            FinancialDestinationType::WalletTransactionDetail => route(
+                'wallet.transactions.show',
+                ['transaction' => (string) ($destination->params['public_ref'] ?? '')]
+            ),
             FinancialDestinationType::WalletTransactionsSearch => route(
                 'wallet.transactions.index',
                 ['search' => (string) ($destination->params['search'] ?? '')]

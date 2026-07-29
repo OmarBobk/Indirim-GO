@@ -22,6 +22,8 @@ final readonly class RecentWalletTransactionDTO
         public string $status,
         public CarbonInterface $occurredAt,
         public ?string $referenceLabel,
+        public ?string $publicReference,
         public ?FinancialDestinationDTO $destination,
+        public ?FinancialDestinationDTO $sourceDestination,
     ) {}
 }

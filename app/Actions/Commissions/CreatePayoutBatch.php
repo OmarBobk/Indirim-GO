@@ -11,6 +11,7 @@ use App\Enums\FulfillmentStatus;
 use App\Enums\WalletTransactionDirection;
 use App\Enums\WalletTransactionType;
 use App\Models\Commission;
+use App\Models\Order;
 use App\Models\PayoutBatch;
 use App\Models\User;
 use App\Models\Wallet;
@@ -19,6 +20,7 @@ use App\Notifications\CommissionCreditedNotification;
 use App\Services\SystemEventService;
 use App\Services\WalletLedger;
 use App\Support\CustomerFinancialBroadcaster;
+use App\Support\Financial\ReceiptSnapshot;
 use App\Support\LedgerMoney;
 use Carbon\CarbonImmutable;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -150,17 +152,28 @@ class CreatePayoutBatch
 
                 $idempotencyKey = 'commission_credit:'.$commission->id;
 
+                $orderNumber = null;
+                if ($commission->order_id !== null) {
+                    $orderNumber = Order::query()
+                        ->whereKey((int) $commission->order_id)
+                        ->value('order_number');
+                    $orderNumber = is_string($orderNumber) ? $orderNumber : null;
+                }
+
                 $result = $this->ledger->post(new WalletPosting(
                     wallet: $wallet,
                     type: WalletTransactionType::CommissionCredit,
                     direction: WalletTransactionDirection::Credit,
                     amount: $creditAmount,
                     idempotencyKey: $idempotencyKey,
-                    meta: [
+                    meta: array_merge([
                         'commission_id' => $commission->id,
                         'order_id' => $commission->order_id,
                         'payout_batch_id' => $batch->id,
-                    ],
+                    ], ReceiptSnapshot::wrap([
+                        'order_number' => $orderNumber,
+                        'currency' => 'USD',
+                    ])),
                     referenceType: Commission::class,
                     referenceId: (int) $commission->id,
                 ));

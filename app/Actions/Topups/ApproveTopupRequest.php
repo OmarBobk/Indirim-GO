@@ -21,6 +21,7 @@ use App\Services\SystemEventService;
 use App\Services\WalletLedger;
 use App\Support\CustomerActivityBroadcaster;
 use App\Support\CustomerFinancialBroadcaster;
+use App\Support\Financial\ReceiptSnapshot;
 use App\Support\LedgerMoney;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
@@ -111,16 +112,25 @@ class ApproveTopupRequest
             $amount = LedgerMoney::normalizePositive((string) $transaction->amount);
             $idempotencyKey = 'topup:'.$request->id;
 
+            $request->loadMissing('paymentMethod:id,name');
+
             $result = $this->ledger->post(new WalletPosting(
                 wallet: $wallet,
                 type: WalletTransactionType::Topup,
                 direction: WalletTransactionDirection::Credit,
                 amount: $amount,
                 idempotencyKey: $idempotencyKey,
-                meta: [
+                meta: array_merge([
                     'approved_by' => $approvedById,
                     'approved_at' => now()->toIso8601String(),
-                ],
+                ], ReceiptSnapshot::wrap([
+                    'topup_public_ref' => is_string($request->public_ref) ? $request->public_ref : null,
+                    'payment_method' => $request->paymentMethod?->name
+                        ?? (is_string(data_get($transaction->meta, 'payment_method'))
+                            ? (string) data_get($transaction->meta, 'payment_method')
+                            : null),
+                    'currency' => strtoupper((string) ($request->currency ?: 'USD')),
+                ])),
                 referenceType: TopupRequest::class,
                 referenceId: (int) $request->id,
                 pendingTransaction: $transaction,

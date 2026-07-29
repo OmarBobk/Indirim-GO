@@ -30,6 +30,7 @@ use App\Services\WalletLedger;
 use App\Support\AdminOpsBroadcaster;
 use App\Support\CustomerActivityBroadcaster;
 use App\Support\CustomerFinancialBroadcaster;
+use App\Support\Financial\ReceiptSnapshot;
 use App\Support\LedgerMoney;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\QueryException;
@@ -246,14 +247,20 @@ class ApproveRefundRequest
                     direction: WalletTransactionDirection::Credit,
                     amount: $amount,
                     idempotencyKey: $idempotencyKey,
-                    meta: array_filter([
+                    meta: array_merge(array_filter([
                         'state' => 'refund_posted',
                         'admin_id' => $adminId,
                         'approved_by' => $adminId,
                         'approved_at' => now()->toIso8601String(),
                         'reason' => $approvedReason,
                         'order_id' => $order->id,
-                    ], fn ($value) => $value !== null && $value !== ''),
+                        'order_number' => $order->order_number,
+                    ], fn ($value) => $value !== null && $value !== ''), ReceiptSnapshot::wrap([
+                        'order_number' => (string) $order->order_number,
+                        'product_label' => is_string($orderItem?->name) ? $orderItem->name : null,
+                        'refund_public_ref' => is_string($transaction->public_ref) ? $transaction->public_ref : null,
+                        'currency' => 'USD',
+                    ])),
                     referenceType: $transaction->reference_type,
                     referenceId: (int) $transaction->reference_id,
                     pendingTransaction: $transaction,

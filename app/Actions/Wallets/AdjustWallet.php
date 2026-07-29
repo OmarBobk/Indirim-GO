@@ -16,6 +16,7 @@ use App\Models\Wallet;
 use App\Services\SystemEventService;
 use App\Services\WalletLedger;
 use App\Support\CustomerFinancialBroadcaster;
+use App\Support\Financial\ReceiptSnapshot;
 use App\Support\LedgerMoney;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
@@ -85,7 +86,7 @@ final class AdjustWallet
                 ]);
             }
 
-            $meta = array_filter([
+            $meta = array_merge(array_filter([
                 'adjustment_kind' => $kind->value,
                 'actor_id' => $actor->id,
                 'actor_name' => $actor->name,
@@ -94,7 +95,10 @@ final class AdjustWallet
                 'currency' => $wallet->currency,
                 'reason' => $reason,
                 'ip_address' => $ipAddress,
-            ], fn (mixed $value): bool => $value !== null && $value !== '');
+            ], fn (mixed $value): bool => $value !== null && $value !== ''), ReceiptSnapshot::wrap([
+                'customer_safe_reason' => $reason,
+                'currency' => is_string($wallet->currency) ? strtoupper($wallet->currency) : 'USD',
+            ]));
 
             $result = $this->ledger->post(new WalletPosting(
                 wallet: $wallet,

@@ -159,6 +159,7 @@ final class CustomerFinancialPresenter
             'occurred_at' => $item->occurredAt->toIso8601String(),
             'occurred_at_display' => $item->occurredAt->timezone(config('app.timezone'))->format('M d, Y H:i'),
             'reference_label' => $item->referenceLabel,
+            'public_reference' => $item->publicReference,
             'href' => $item->destination !== null ? $this->resolveHref($item->destination) : null,
         ];
     }

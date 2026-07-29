@@ -92,8 +92,10 @@ final class CustomerWalletTransactionPresenter
             'occurred_at_display' => $item->occurredAt->timezone(config('app.timezone'))->format('M d, Y H:i'),
             'related_order_number' => $item->relatedOrderNumber,
             'description' => $item->customerSafeDescription,
-            'destination_label' => $this->destinationLabel($item),
+            'destination_label' => __('messages.transaction_view_details'),
             'href' => $item->destination !== null ? $this->resolveHref($item->destination) : null,
+            'source_destination_label' => $this->sourceDestinationLabel($item),
+            'source_href' => $item->sourceDestination !== null ? $this->resolveHref($item->sourceDestination) : null,
             'icon' => $this->iconKey($item->transactionType, $item->direction),
         ];
     }
@@ -110,13 +112,13 @@ final class CustomerWalletTransactionPresenter
         };
     }
 
-    private function destinationLabel(WalletTransactionDTO $item): ?string
+    private function sourceDestinationLabel(WalletTransactionDTO $item): ?string
     {
-        if ($item->destination === null) {
+        if ($item->sourceDestination === null) {
             return null;
         }
 
-        return match ($item->destination->type) {
+        return match ($item->sourceDestination->type) {
             FinancialDestinationType::OrderDetail => $item->relatedOrderNumber !== null
                 ? __('messages.order_number').': '.$item->relatedOrderNumber
                 : __('messages.details'),

@@ -15,6 +15,7 @@ Authoritative financial model for karman.store.
 - **Reconcile:** audit-only by default; `--repair` = audited snapshot (not compensating TX)
 - **Customer ledger (M6.2):** posted rows only; order by `posted_at` then `id`; public ref `WTX-*`
 - **Top-up workflow (M6.3):** `TopupRequest` + `TUP-*` public_ref; pending TX ≠ posted money; TRY→USD locked at submission; one pending per user
+- **Transaction detail / receipt (M6.5):** owned posted `WTX-*` detail; snapshot-first `meta.receipt`; printable HTML only (no server PDF)
 
 ## Key files
 
@@ -31,18 +32,20 @@ Authoritative financial model for karman.store.
 - `app/Console/Commands/WalletReconcile.php`, `ProfitSettleCommand.php`
 - **M6.1 overview:** `GetCustomerFinancialOverview`, `app/Support/Financial/*`, `CustomerFinancialPresenter`
 - **M6.2 ledger:** `GetCustomerWalletTransactions`, `CustomerWalletTransactionPresenter`, `app/DTOs/Financial/WalletTransaction*`
+- **M6.5 detail:** `GetCustomerTransactionDetail`, `CustomerTransactionDetailDTO`, `CustomerTransactionDetailPresenter`, `ReceiptSnapshot`, `x-wallet.transaction-*`
 - `resources/js/customer-financial-invalidation.js`
 - `config/billing.php`
 
 ## Features
 
-- [[Customer Financial Centre]] — M6.0.1 kernel + M6.1 Overview + M6.2 Ledger + M6.3 Top-ups + **M6.4 Refunds** shipped
+- [[Customer Financial Centre]] — through **M6.5** transaction detail + printable receipt shipped
 - [[Customer Activity]] — projection only
 
 ## Customer surfaces
 
 - `/wallet` = Financial Overview
 - `/wallet/transactions` = posted ledger
+- `/wallet/transactions/{WTX-*}` = transaction detail + printable receipt
 - `/wallet/topups` = top-up workflow list
 - `/wallet/topups/{TUP-*}` = top-up detail
 - `/wallet/topup` = create / corrected retry

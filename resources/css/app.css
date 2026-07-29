@@ -1663,3 +1663,63 @@ html:has([popover]:popover-open) {
         }
     }
 }
+
+/* M6.5 — printable wallet transaction receipt (same page, browser print) */
+@media print {
+    @page {
+        size: A4;
+        margin: 12mm;
+    }
+
+    body {
+        background: #fff !important;
+        color: #000 !important;
+        print-color-adjust: exact;
+        -webkit-print-color-adjust: exact;
+    }
+
+    .storefront-shell [data-storefront-shell='desktop-header'],
+    .storefront-shell [data-storefront-shell='browse-nav'],
+    .storefront-mobile-top,
+    .storefront-bottom-nav,
+    .storefront-shell-utilities,
+    .transaction-detail-no-print,
+    .transaction-detail-no-print-nav,
+    .transaction-detail-screen .storefront-page-header,
+    .transaction-detail-screen [data-test='financial-centre-nav'],
+    flux-toast,
+    [data-flux-toast],
+    .storefront-fab {
+        display: none !important;
+    }
+
+    .storefront-shell-main {
+        padding: 0 !important;
+    }
+
+    .storefront-page {
+        padding: 0 !important;
+        max-width: none !important;
+    }
+
+    .storefront-card {
+        box-shadow: none !important;
+        border: 1px solid #111 !important;
+        border-radius: 0 !important;
+        background: #fff !important;
+        break-inside: avoid;
+        page-break-inside: avoid;
+    }
+
+    .transaction-receipt {
+        border: 2px solid #111 !important;
+    }
+
+    .transaction-receipt__disclaimer {
+        color: #222 !important;
+    }
+
+    a[href]::after {
+        content: none !important;
+    }
+}

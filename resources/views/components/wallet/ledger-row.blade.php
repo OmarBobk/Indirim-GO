@@ -9,6 +9,7 @@
         ? 'text-emerald-700 dark:text-emerald-400'
         : 'text-red-700 dark:text-red-400';
     $href = $item['href'] ?? null;
+    $sourceHref = $item['source_href'] ?? null;
 @endphp
 
 <li
@@ -23,7 +24,18 @@
 
     <div class="min-w-0 flex-1">
         <p class="text-sm font-medium text-zinc-900 dark:text-zinc-100">
-            {{ $item['type_label'] ?? '' }}
+            @if (is_string($href) && $href !== '')
+                <a
+                    href="{{ $href }}"
+                    wire:navigate
+                    class="hover:underline"
+                    data-test="financial-ledger-detail-link"
+                >
+                    {{ $item['type_label'] ?? '' }}
+                </a>
+            @else
+                {{ $item['type_label'] ?? '' }}
+            @endif
             <span class="font-normal text-zinc-500 dark:text-zinc-400">· {{ $item['direction_label'] ?? '' }}</span>
         </p>
         <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
@@ -34,8 +46,8 @@
         @if (! empty($item['description']))
             <p class="mt-1 text-xs text-zinc-600 dark:text-zinc-400">{{ $item['description'] }}</p>
         @endif
-        @if (is_string($href) && $href !== '' && ! empty($item['destination_label']))
-            <p class="mt-1 text-xs">
+        <div class="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs">
+            @if (is_string($href) && $href !== '' && ! empty($item['destination_label']))
                 <a
                     href="{{ $href }}"
                     wire:navigate
@@ -44,8 +56,18 @@
                 >
                     {{ $item['destination_label'] }}
                 </a>
-            </p>
-        @endif
+            @endif
+            @if (is_string($sourceHref) && $sourceHref !== '' && ! empty($item['source_destination_label']))
+                <a
+                    href="{{ $sourceHref }}"
+                    wire:navigate
+                    class="font-medium text-zinc-600 hover:underline dark:text-zinc-300"
+                    data-test="financial-ledger-source-destination"
+                >
+                    {{ $item['source_destination_label'] }}
+                </a>
+            @endif
+        </div>
     </div>
 
     <div class="shrink-0 text-end">

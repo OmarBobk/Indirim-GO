@@ -26,6 +26,7 @@ use App\Services\WalletLedger;
 use App\Services\WalletSpendPolicy;
 use App\Support\CustomerActivityBroadcaster;
 use App\Support\CustomerFinancialBroadcaster;
+use App\Support\Financial\ReceiptSnapshot;
 use App\Support\LedgerMoney;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -114,15 +115,27 @@ class PayOrderWithWallet
                 : null;
 
             try {
+                $productLabel = $lockedOrder->items()
+                    ->orderBy('id')
+                    ->limit(3)
+                    ->pluck('name')
+                    ->filter(fn (mixed $name): bool => is_string($name) && trim($name) !== '')
+                    ->map(fn (string $name): string => mb_substr(trim($name), 0, 80))
+                    ->implode(', ');
+
                 $result = $this->ledger->post(new WalletPosting(
                     wallet: $lockedWallet,
                     type: WalletTransactionType::Purchase,
                     direction: WalletTransactionDirection::Debit,
                     amount: $amount,
                     idempotencyKey: $idempotencyKey,
-                    meta: [
+                    meta: array_merge([
                         'order_number' => $lockedOrder->order_number,
-                    ],
+                    ], ReceiptSnapshot::wrap([
+                        'order_number' => (string) $lockedOrder->order_number,
+                        'product_label' => $productLabel !== '' ? $productLabel : null,
+                        'currency' => 'USD',
+                    ])),
                     referenceType: Order::class,
                     referenceId: (int) $lockedOrder->id,
                     pendingTransaction: $pending,

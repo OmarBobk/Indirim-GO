@@ -48,6 +48,7 @@ final class CustomerRecentWalletTransactionsReader
                 'amount',
                 'status',
                 'meta',
+                'public_ref',
                 'posted_at',
                 'created_at',
                 'reference_type',
@@ -71,7 +72,17 @@ final class CustomerRecentWalletTransactionsReader
 
         return $transactions
             ->map(function (WalletTransaction $tx) use ($orderNumbersById): RecentWalletTransactionDTO {
-                [$label, $destination] = $this->resolveReference($tx, $orderNumbersById);
+                [$label, $sourceDestination] = $this->resolveReference($tx, $orderNumbersById);
+                $publicRef = is_string($tx->public_ref) && \App\Support\WalletTransactionPublicRef::isValidFormat($tx->public_ref)
+                    ? \App\Support\WalletTransactionPublicRef::normalize($tx->public_ref)
+                    : null;
+
+                $detailDestination = $publicRef !== null
+                    ? new FinancialDestinationDTO(
+                        FinancialDestinationType::WalletTransactionDetail,
+                        ['public_ref' => $publicRef]
+                    )
+                    : $sourceDestination;
 
                 return new RecentWalletTransactionDTO(
                     id: (string) $tx->id,
@@ -86,7 +97,9 @@ final class CustomerRecentWalletTransactionsReader
                             ? $tx->created_at
                             : Carbon::parse((string) ($tx->posted_at ?? $tx->created_at))),
                     referenceLabel: $label,
-                    destination: $destination,
+                    publicReference: $publicRef,
+                    destination: $detailDestination,
+                    sourceDestination: $sourceDestination,
                 );
             })
             ->all();

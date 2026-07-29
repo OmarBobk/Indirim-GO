@@ -13,6 +13,7 @@ enum FinancialDestinationType: string
     case WalletRefunds = 'wallet_refunds';
     case WalletRefundDetail = 'wallet_refund_detail';
     case WalletTransactions = 'wallet_transactions';
+    case WalletTransactionDetail = 'wallet_transaction_detail';
     case WalletTransactionsSearch = 'wallet_transactions_search';
     case TopupProof = 'topup_proof';
     case OrderDetail = 'order_detail';

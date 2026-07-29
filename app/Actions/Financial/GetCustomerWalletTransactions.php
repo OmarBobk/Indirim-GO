@@ -202,7 +202,7 @@ final class GetCustomerWalletTransactions
         $meta = is_array($tx->meta) ? $tx->meta : [];
 
         $orderNumber = $this->resolveOrderNumber($tx, $orderNumbersById, $meta);
-        $destination = $this->resolveDestination($tx, $orderNumber, $meta);
+        $sourceDestination = $this->resolveDestination($tx, $orderNumber, $meta);
         $description = $this->safeDescription($tx, $meta);
         $balanceBefore = $this->metaMoney($meta, ['balance_before', 'previous_balance']);
         $balanceAfter = $this->metaMoney($meta, ['balance_after', 'new_balance']);
@@ -210,6 +210,13 @@ final class GetCustomerWalletTransactions
         $publicRef = is_string($tx->public_ref) && $tx->public_ref !== ''
             ? $tx->public_ref
             : __('messages.financial_ledger_reference_unavailable');
+
+        $detailDestination = WalletTransactionPublicRef::isValidFormat($publicRef)
+            ? new FinancialDestinationDTO(
+                FinancialDestinationType::WalletTransactionDetail,
+                ['public_ref' => WalletTransactionPublicRef::normalize($publicRef)]
+            )
+            : null;
 
         $occurredAt = $tx->posted_at instanceof Carbon
             ? $tx->posted_at
@@ -232,7 +239,8 @@ final class GetCustomerWalletTransactions
             sourceReference: $orderNumber,
             relatedOrderNumber: $orderNumber,
             customerSafeDescription: $description,
-            destination: $destination,
+            destination: $detailDestination,
+            sourceDestination: $sourceDestination,
             isCredit: $isCredit,
             isDebit: ! $isCredit,
         );
