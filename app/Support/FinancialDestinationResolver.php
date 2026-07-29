@@ -23,6 +23,11 @@ final class FinancialDestinationResolver
                 'wallet.topups.show',
                 ['topup' => (string) ($destination->params['public_ref'] ?? '')]
             ),
+            FinancialDestinationType::WalletRefunds => route('wallet.refunds.index'),
+            FinancialDestinationType::WalletRefundDetail => route(
+                'wallet.refunds.show',
+                ['refund' => (string) ($destination->params['public_ref'] ?? '')]
+            ),
             FinancialDestinationType::WalletTransactions => route('wallet.transactions.index'),
             FinancialDestinationType::WalletTransactionsSearch => route(
                 'wallet.transactions.index',

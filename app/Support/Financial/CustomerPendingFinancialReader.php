@@ -187,15 +187,21 @@ final class CustomerPendingFinancialReader
             ->orderByDesc('created_at')
             ->orderByDesc('id')
             ->limit(self::FETCH_LIMIT)
-            ->get(['id', 'amount', 'meta', 'created_at'])
+            ->get(['id', 'amount', 'meta', 'created_at', 'public_ref'])
             ->map(function (WalletTransaction $tx): PendingFinancialItemDTO {
                 $orderNumber = $this->safeOrderNumber($tx);
-                $destination = $orderNumber !== null
+                $publicRef = filled($tx->public_ref) ? (string) $tx->public_ref : null;
+                $destination = $publicRef !== null
                     ? new FinancialDestinationDTO(
-                        FinancialDestinationType::OrderDetail,
-                        ['order_number' => $orderNumber]
+                        FinancialDestinationType::WalletRefundDetail,
+                        ['public_ref' => $publicRef]
                     )
-                    : new FinancialDestinationDTO(FinancialDestinationType::Orders);
+                    : ($orderNumber !== null
+                        ? new FinancialDestinationDTO(
+                            FinancialDestinationType::OrderDetail,
+                            ['order_number' => $orderNumber]
+                        )
+                        : new FinancialDestinationDTO(FinancialDestinationType::WalletRefunds));
 
                 return new PendingFinancialItemDTO(
                     id: 'refund-pending:'.$tx->id,
@@ -208,7 +214,7 @@ final class CustomerPendingFinancialReader
                         ? $tx->created_at
                         : Carbon::parse((string) $tx->created_at),
                     destination: $destination,
-                    referenceLabel: $orderNumber,
+                    referenceLabel: $orderNumber ?? $publicRef,
                 );
             })
             ->all();
@@ -226,7 +232,7 @@ final class CustomerPendingFinancialReader
             ->orderByDesc('created_at')
             ->orderByDesc('id')
             ->limit(self::FETCH_LIMIT)
-            ->get(['id', 'amount', 'meta', 'created_at']);
+            ->get(['id', 'amount', 'meta', 'created_at', 'public_ref']);
 
         $fulfillmentIds = $transactions
             ->map(fn (WalletTransaction $tx): mixed => data_get($tx->meta, 'fulfillment_id'))
@@ -260,12 +266,18 @@ final class CustomerPendingFinancialReader
             })
             ->map(function (WalletTransaction $tx): PendingFinancialItemDTO {
                 $orderNumber = $this->safeOrderNumber($tx);
-                $destination = $orderNumber !== null
+                $publicRef = filled($tx->public_ref) ? (string) $tx->public_ref : null;
+                $destination = $publicRef !== null
                     ? new FinancialDestinationDTO(
-                        FinancialDestinationType::OrderDetail,
-                        ['order_number' => $orderNumber]
+                        FinancialDestinationType::WalletRefundDetail,
+                        ['public_ref' => $publicRef]
                     )
-                    : new FinancialDestinationDTO(FinancialDestinationType::Orders);
+                    : ($orderNumber !== null
+                        ? new FinancialDestinationDTO(
+                            FinancialDestinationType::OrderDetail,
+                            ['order_number' => $orderNumber]
+                        )
+                        : new FinancialDestinationDTO(FinancialDestinationType::WalletRefunds));
 
                 return new PendingFinancialItemDTO(
                     id: 'refund-rejected:'.$tx->id,
@@ -278,7 +290,7 @@ final class CustomerPendingFinancialReader
                         ? $tx->created_at
                         : Carbon::parse((string) $tx->created_at),
                     destination: $destination,
-                    referenceLabel: $orderNumber,
+                    referenceLabel: $orderNumber ?? $publicRef,
                 );
             })
             ->values()

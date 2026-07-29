@@ -169,6 +169,13 @@ final class CustomerOrderDetailPresenter
                 ? CustomerDeliveredPayload::entries(data_get($fulfillment->meta, 'delivered_payload'))
                 : [];
 
+            $refundPublicRef = data_get($fulfillment->meta, 'refund.public_ref');
+            $refundHref = is_string($refundPublicRef) && \App\Support\WalletTransactionPublicRef::isValidFormat($refundPublicRef)
+                ? route('wallet.refunds.show', [
+                    'refund' => \App\Support\WalletTransactionPublicRef::normalize($refundPublicRef),
+                ])
+                : null;
+
             $out[] = [
                 'id' => (int) $fulfillment->id,
                 'index' => $index + 1,
@@ -187,6 +194,7 @@ final class CustomerOrderDetailPresenter
                 'isRefundRejected' => $isRefundRejected,
                 'showRetryRequestedBadge' => $retryRequested && $fulfillment->status === FulfillmentStatus::Queued,
                 'showRefundAction' => $showRefundAction,
+                'refundHref' => $refundHref,
                 'timeline' => $this->presentTimeline($order, $fulfillment),
             ];
         }

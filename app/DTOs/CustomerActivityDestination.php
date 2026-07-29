@@ -53,6 +53,7 @@ final readonly class CustomerActivityDestination
             CustomerActivityDestinationType::Orders,
             CustomerActivityDestinationType::Wallet,
             CustomerActivityDestinationType::WalletTopup,
+            CustomerActivityDestinationType::WalletRefund,
             CustomerActivityDestinationType::Cart,
             CustomerActivityDestinationType::Loyalty,
             CustomerActivityDestinationType::Referral,

@@ -10,6 +10,8 @@ enum FinancialDestinationType: string
     case WalletTopup = 'wallet_topup';
     case WalletTopups = 'wallet_topups';
     case WalletTopupDetail = 'wallet_topup_detail';
+    case WalletRefunds = 'wallet_refunds';
+    case WalletRefundDetail = 'wallet_refund_detail';
     case WalletTransactions = 'wallet_transactions';
     case WalletTransactionsSearch = 'wallet_transactions_search';
     case TopupProof = 'topup_proof';

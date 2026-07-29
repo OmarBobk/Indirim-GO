@@ -5,10 +5,15 @@ declare(strict_types=1);
 namespace App\Actions\Refunds;
 
 use App\Actions\Fulfillments\AppendFulfillmentLog;
+use App\Enums\CustomerActivityInvalidationReason;
+use App\Enums\CustomerFinancialInvalidationReason;
 use App\Enums\FulfillmentLogLevel;
 use App\Enums\WalletTransactionType;
 use App\Models\Fulfillment;
+use App\Models\Wallet;
 use App\Models\WalletTransaction;
+use App\Support\CustomerActivityBroadcaster;
+use App\Support\CustomerFinancialBroadcaster;
 use Illuminate\Support\Facades\DB;
 
 class DismissPendingRefundForFulfillment
@@ -72,6 +77,18 @@ class DismissPendingRefundForFulfillment
                     'transaction_id' => $transaction->id,
                 ], fn ($value) => $value !== null)
             );
+
+            $walletUserId = (int) (Wallet::query()->whereKey($transaction->wallet_id)->value('user_id') ?? 0);
+            if ($walletUserId > 0) {
+                CustomerFinancialBroadcaster::dispatch(
+                    $walletUserId,
+                    CustomerFinancialInvalidationReason::RefundStateChanged,
+                );
+                CustomerActivityBroadcaster::dispatch(
+                    $walletUserId,
+                    CustomerActivityInvalidationReason::RefundStateChanged,
+                );
+            }
 
             return $transaction;
         });

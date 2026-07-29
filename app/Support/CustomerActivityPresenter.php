@@ -73,6 +73,7 @@ final class CustomerActivityPresenter
             CustomerActivityDestinationType::Orders => route('orders.index'),
             CustomerActivityDestinationType::Wallet => route('wallet'),
             CustomerActivityDestinationType::WalletTopup => $this->walletTopupHref($destination->params),
+            CustomerActivityDestinationType::WalletRefund => $this->walletRefundHref($destination->params),
             CustomerActivityDestinationType::Cart => route('cart'),
             CustomerActivityDestinationType::Loyalty => route('loyalty'),
             CustomerActivityDestinationType::Referral => route('referral-link'),
@@ -97,6 +98,21 @@ final class CustomerActivityPresenter
         }
 
         return route('wallet.topups.index');
+    }
+
+    /**
+     * @param  array<string, scalar|null>  $params
+     */
+    private function walletRefundHref(array $params): string
+    {
+        $publicRef = $params['public_ref'] ?? null;
+        if (is_string($publicRef) && WalletTransactionPublicRef::isValidFormat($publicRef)) {
+            return route('wallet.refunds.show', [
+                'refund' => WalletTransactionPublicRef::normalize($publicRef),
+            ]);
+        }
+
+        return route('wallet.refunds.index');
     }
 
     private function notificationId(string $activityId, array $secondaryMeta = []): ?string

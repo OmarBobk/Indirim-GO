@@ -270,11 +270,12 @@ class ApproveRefundRequest
 
                 if ($fulfillment !== null) {
                     $fulfillmentMeta = $fulfillment->meta ?? [];
-                    $fulfillmentMeta['refund'] = array_merge($fulfillmentMeta['refund'] ?? [], [
+                    $fulfillmentMeta['refund'] = array_merge($fulfillmentMeta['refund'] ?? [], array_filter([
                         'status' => WalletTransaction::STATUS_POSTED,
                         'approved_by' => $adminId,
                         'approved_at' => now()->toIso8601String(),
-                    ]);
+                        'public_ref' => $transaction->public_ref ?? ($fulfillmentMeta['refund']['public_ref'] ?? null),
+                    ], fn ($value) => $value !== null && $value !== ''));
                     $fulfillment->update(['meta' => $fulfillmentMeta]);
 
                     if (! $result->wasReplayed) {

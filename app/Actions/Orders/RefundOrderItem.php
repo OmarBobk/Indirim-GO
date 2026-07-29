@@ -6,6 +6,7 @@ namespace App\Actions\Orders;
 
 use App\Actions\Fulfillments\AppendFulfillmentLog;
 use App\Enums\CustomerActivityInvalidationReason;
+use App\Enums\CustomerFinancialInvalidationReason;
 use App\Enums\FulfillmentLogLevel;
 use App\Enums\FulfillmentStatus;
 use App\Enums\ProductAmountMode;
@@ -22,7 +23,9 @@ use App\Services\NotificationRecipientService;
 use App\Services\SystemEventService;
 use App\Support\AdminOpsBroadcaster;
 use App\Support\CustomerActivityBroadcaster;
+use App\Support\CustomerFinancialBroadcaster;
 use App\Support\LedgerMoney;
+use App\Support\WalletTransactionPublicRef;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -113,27 +116,38 @@ class RefundOrderItem
                 ]);
             }
 
-            $transaction = WalletTransaction::create([
-                'wallet_id' => $wallet->id,
-                'type' => WalletTransactionType::Refund,
-                'direction' => WalletTransactionDirection::Credit,
-                'amount' => $refundAmount,
-                'status' => WalletTransaction::STATUS_PENDING,
-                'reference_type' => Fulfillment::class,
-                'reference_id' => $lockedFulfillment->id,
-                'meta' => array_filter([
-                    'state' => 'refund_requested',
-                    'requested_at' => now()->toIso8601String(),
-                    'requester_id' => $actorId,
-                    'order_id' => $order->id,
-                    'order_number' => $order->order_number,
-                    'order_item_id' => $lockedItem->id,
-                    'fulfillment_id' => $lockedFulfillment->id,
-                    'user_id' => $order->user_id,
-                    'currency' => 'USD',
-                    'note' => $note,
-                ], fn ($value) => $value !== null && $value !== ''),
-            ]);
+            $transaction = WalletTransactionPublicRef::withUniqueRetry(function (string $publicRef) use (
+                $wallet,
+                $refundAmount,
+                $lockedFulfillment,
+                $order,
+                $lockedItem,
+                $actorId,
+                $note,
+            ): WalletTransaction {
+                return WalletTransaction::create([
+                    'wallet_id' => $wallet->id,
+                    'type' => WalletTransactionType::Refund,
+                    'direction' => WalletTransactionDirection::Credit,
+                    'amount' => $refundAmount,
+                    'status' => WalletTransaction::STATUS_PENDING,
+                    'public_ref' => $publicRef,
+                    'reference_type' => Fulfillment::class,
+                    'reference_id' => $lockedFulfillment->id,
+                    'meta' => array_filter([
+                        'state' => 'refund_requested',
+                        'requested_at' => now()->toIso8601String(),
+                        'requester_id' => $actorId,
+                        'order_id' => $order->id,
+                        'order_number' => $order->order_number,
+                        'order_item_id' => $lockedItem->id,
+                        'fulfillment_id' => $lockedFulfillment->id,
+                        'user_id' => $order->user_id,
+                        'currency' => 'USD',
+                        'note' => $note,
+                    ], fn ($value) => $value !== null && $value !== ''),
+                ]);
+            });
 
             activity()
                 ->inLog('payments')
@@ -156,6 +170,7 @@ class RefundOrderItem
             $fulfillmentMeta['refund'] = array_filter([
                 'status' => WalletTransaction::STATUS_PENDING,
                 'wallet_transaction_id' => $transaction->id,
+                'public_ref' => $transaction->public_ref,
                 'requested_by' => $actorId,
                 'requested_at' => now()->toIso8601String(),
                 'note' => $note,
@@ -206,6 +221,10 @@ class RefundOrderItem
                     CustomerActivityBroadcaster::dispatch(
                         $orderOwnerId,
                         CustomerActivityInvalidationReason::RefundStateChanged,
+                    );
+                    CustomerFinancialBroadcaster::dispatch(
+                        $orderOwnerId,
+                        CustomerFinancialInvalidationReason::RefundStateChanged,
                     );
                 }
             });

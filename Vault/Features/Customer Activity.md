@@ -54,10 +54,11 @@ Customers see one **Activity** page: timeline of orders, wallet, topups, refunds
 - Mobile top bar: wallet chrome + realtime bell badge
 - Home Operational placeholder remains hidden (`customer-home-operational-placeholder`)
 - Deploy: migrate indexes; Reverb origins; secure cookies; `npm run build`
+- **M6.4:** rejected refund action-required destination prefers `WalletRefund` + `public_ref` → `/wallet/refunds/{WTX-*}` (falls back to order)
 
 ## Related
 
-- [[Customer Financial Centre]] — M6 financial truth stays out of Activity
+- [[Customer Financial Centre]] — M6 financial truth stays out of Activity; M6.4 refund detail destinations
 - [[Wallet & Ledger]]
 - [[Refunds & Settlements]]
 - [[Orders & Checkout]]

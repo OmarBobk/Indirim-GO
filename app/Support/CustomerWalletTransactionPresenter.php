@@ -124,6 +124,8 @@ final class CustomerWalletTransactionPresenter
             FinancialDestinationType::WalletTopup => __('messages.financial_track_topups'),
             FinancialDestinationType::WalletTopups => __('messages.financial_nav_topups'),
             FinancialDestinationType::WalletTopupDetail => __('messages.topup_view_request'),
+            FinancialDestinationType::WalletRefunds => __('messages.financial_nav_refunds'),
+            FinancialDestinationType::WalletRefundDetail => __('messages.refund_view_request'),
             FinancialDestinationType::SalespersonDashboard => __('messages.financial_salesperson_earnings_link'),
             default => __('messages.details'),
         };

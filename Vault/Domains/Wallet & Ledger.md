@@ -36,7 +36,7 @@ Authoritative financial model for karman.store.
 
 ## Features
 
-- [[Customer Financial Centre]] — M6.0.1 kernel + M6.1 Overview + M6.2 Ledger + **M6.3 Top-ups** shipped
+- [[Customer Financial Centre]] — M6.0.1 kernel + M6.1 Overview + M6.2 Ledger + M6.3 Top-ups + **M6.4 Refunds** shipped
 - [[Customer Activity]] — projection only
 
 ## Customer surfaces
@@ -46,6 +46,8 @@ Authoritative financial model for karman.store.
 - `/wallet/topups` = top-up workflow list
 - `/wallet/topups/{TUP-*}` = top-up detail
 - `/wallet/topup` = create / corrected retry
+- `/wallet/refunds` = refund workflow list
+- `/wallet/refunds/{WTX-*}` = refund detail
 - Realtime: invalidation only on existing user private channel
 
 ## Related

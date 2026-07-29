@@ -34,9 +34,7 @@ final class CustomerFinancialPresenter
                 'add_funds_href' => route('wallet.topup'),
                 'purchase_resume_url' => $overview->purchaseResumeUrl,
                 'track_topups_href' => route('wallet.topups.index'),
-                'track_refunds_href' => Route::has('activity.index')
-                    ? route('activity.index', ['filter' => 'action_required', 'category' => 'orders'])
-                    : route('orders.index'),
+                'track_refunds_href' => route('wallet.refunds.index'),
                 'view_transactions_href' => route('wallet.transactions.index'),
                 'loyalty_href' => route('loyalty'),
                 'salesperson_href' => $overview->showSalespersonLink && Route::has('salesperson.dashboard')
@@ -192,10 +190,14 @@ final class CustomerFinancialPresenter
             return route('wallet.topups.index');
         }
 
+        if (($overview->pendingCounts['pending_refunds'] ?? 0) > 0) {
+            return route('wallet.refunds.index');
+        }
+
         if (($overview->pendingCounts['needs_customer_action'] ?? 0) > 0) {
             return Route::has('activity.index')
                 ? route('activity.index', ['filter' => 'action_required'])
-                : route('wallet.topups.index');
+                : route('wallet.refunds.index');
         }
 
         return Route::has('activity.index')

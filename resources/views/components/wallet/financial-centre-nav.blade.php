@@ -19,6 +19,11 @@
             'label' => __('messages.financial_nav_topups'),
             'test' => 'financial-nav-topups',
         ],
+        'refunds' => [
+            'href' => route('wallet.refunds.index'),
+            'label' => __('messages.financial_nav_refunds'),
+            'test' => 'financial-nav-refunds',
+        ],
     ];
 @endphp
 

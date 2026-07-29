@@ -32,7 +32,7 @@ it('requires authentication and shows financial centre navigation', function ():
         ->assertSeeHtml('aria-current="page"');
 });
 
-it('renders empty ledger with top-ups nav and hides refunds tab', function (): void {
+it('renders empty ledger with top-ups and refunds nav', function (): void {
     $user = User::factory()->create();
     Wallet::forUser($user);
 
@@ -40,7 +40,7 @@ it('renders empty ledger with top-ups nav and hides refunds tab', function (): v
         ->test('pages::frontend.wallet-transactions')
         ->assertSeeHtml('data-test="financial-ledger-empty"')
         ->assertSeeHtml('data-test="financial-nav-topups"')
-        ->assertDontSeeHtml('data-test="financial-nav-refunds"');
+        ->assertSeeHtml('data-test="financial-nav-refunds"');
 });
 
 it('synchronises filters in the url and resets page', function (): void {

@@ -50,7 +50,7 @@ final class RefundActionRequiredReader
             ->orderByDesc('created_at')
             ->orderByDesc('id')
             ->limit(self::MAX_ITEMS)
-            ->get(['id', 'amount', 'status', 'meta', 'created_at', 'wallet_id']);
+            ->get(['id', 'amount', 'status', 'meta', 'created_at', 'wallet_id', 'public_ref']);
 
         $fulfillmentIds = $transactions
             ->map(fn (WalletTransaction $tx): mixed => data_get($tx->meta, 'fulfillment_id'))
@@ -93,13 +93,19 @@ final class RefundActionRequiredReader
         $orderNumber = data_get($transaction->meta, 'order_number');
         $orderNumber = is_string($orderNumber) && trim($orderNumber) !== '' ? trim($orderNumber) : null;
         $currency = strtoupper((string) (data_get($transaction->meta, 'currency') ?: 'USD'));
+        $publicRef = filled($transaction->public_ref) ? (string) $transaction->public_ref : null;
 
-        $destination = $orderNumber !== null
+        $destination = $publicRef !== null
             ? new CustomerActivityDestination(
-                CustomerActivityDestinationType::OrderDetail,
-                ['order_number' => $orderNumber]
+                CustomerActivityDestinationType::WalletRefund,
+                ['public_ref' => $publicRef]
             )
-            : new CustomerActivityDestination(CustomerActivityDestinationType::Orders);
+            : ($orderNumber !== null
+                ? new CustomerActivityDestination(
+                    CustomerActivityDestinationType::OrderDetail,
+                    ['order_number' => $orderNumber]
+                )
+                : new CustomerActivityDestination(CustomerActivityDestinationType::Orders));
 
         return new CustomerActivityDTO(
             id: $stableKey,
@@ -121,7 +127,7 @@ final class RefundActionRequiredReader
             readAt: null,
             isUnread: false,
             requiresAction: true,
-            actionLabel: __('messages.activity_action_view_order'),
+            actionLabel: __('messages.activity_action_view_refund'),
             destination: $destination,
             secondaryMeta: array_filter([
                 'order_number' => $orderNumber,
