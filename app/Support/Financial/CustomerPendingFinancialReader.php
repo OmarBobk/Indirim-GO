@@ -110,8 +110,10 @@ final class CustomerPendingFinancialReader
             ->orderByDesc('updated_at')
             ->orderByDesc('id')
             ->limit(self::FETCH_LIMIT)
-            ->get(['id', 'amount', 'currency', 'status', 'created_at', 'updated_at'])
+            ->get(['id', 'public_ref', 'amount', 'currency', 'status', 'created_at', 'updated_at'])
             ->map(function (TopupRequest $request): PendingFinancialItemDTO {
+                $publicRef = filled($request->public_ref) ? (string) $request->public_ref : null;
+
                 return new PendingFinancialItemDTO(
                     id: 'topup-pending:'.$request->id,
                     kind: 'topup_pending',
@@ -122,7 +124,12 @@ final class CustomerPendingFinancialReader
                     occurredAt: $request->updated_at instanceof Carbon
                         ? $request->updated_at
                         : Carbon::parse((string) ($request->updated_at ?? $request->created_at)),
-                    destination: new FinancialDestinationDTO(FinancialDestinationType::WalletTopup),
+                    destination: $publicRef !== null
+                        ? new FinancialDestinationDTO(
+                            FinancialDestinationType::WalletTopupDetail,
+                            ['public_ref' => $publicRef]
+                        )
+                        : new FinancialDestinationDTO(FinancialDestinationType::WalletTopups),
                 );
             })
             ->all();
@@ -139,11 +146,12 @@ final class CustomerPendingFinancialReader
             ->orderByDesc('updated_at')
             ->orderByDesc('id')
             ->limit(self::FETCH_LIMIT)
-            ->get(['id', 'amount', 'currency', 'note', 'created_at', 'updated_at'])
+            ->get(['id', 'public_ref', 'amount', 'currency', 'note', 'created_at', 'updated_at'])
             ->map(function (TopupRequest $request): PendingFinancialItemDTO {
                 $reason = is_string($request->note) && trim($request->note) !== ''
                     ? trim($request->note)
                     : null;
+                $publicRef = filled($request->public_ref) ? (string) $request->public_ref : null;
 
                 return new PendingFinancialItemDTO(
                     id: 'topup-rejected:'.$request->id,
@@ -155,7 +163,12 @@ final class CustomerPendingFinancialReader
                     occurredAt: $request->updated_at instanceof Carbon
                         ? $request->updated_at
                         : Carbon::parse((string) ($request->updated_at ?? $request->created_at)),
-                    destination: new FinancialDestinationDTO(FinancialDestinationType::WalletTopup),
+                    destination: $publicRef !== null
+                        ? new FinancialDestinationDTO(
+                            FinancialDestinationType::WalletTopupDetail,
+                            ['public_ref' => $publicRef]
+                        )
+                        : new FinancialDestinationDTO(FinancialDestinationType::WalletTopup),
                     customerSafeReason: $reason,
                 );
             })

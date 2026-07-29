@@ -26,7 +26,9 @@ class TopupRejectedNotification extends BaseNotification
                 'amount_display' => $amountDisplay,
                 'reason' => $reason ?? 'notifications.no_reason_given',
             ],
-            url: Route::has('wallet') ? route('wallet') : null
+            url: filled($topupRequest->public_ref) && Route::has('wallet.topups.show')
+                ? route('wallet.topups.show', ['topup' => $topupRequest->public_ref])
+                : (Route::has('wallet.topups.index') ? route('wallet.topups.index') : (Route::has('wallet') ? route('wallet') : null))
         );
     }
 }

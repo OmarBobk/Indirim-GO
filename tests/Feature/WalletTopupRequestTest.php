@@ -36,19 +36,21 @@ test('user can create a topup request with proof from wallet page', function () 
     Storage::fake('local');
     $user = User::factory()->create();
 
-    Livewire::actingAs($user)
+    $component = Livewire::actingAs($user)
         ->test('pages::frontend.wallet-topup')
         ->set('topupAmount', '25')
         ->set('paymentMethodId', shamCashPaymentMethodId())
         ->set('attachProof', true)
         ->set('proofFile', UploadedFile::fake()->image('proof.jpg'))
-        ->call('submitTopup')
-        ->assertRedirect(route('wallet'));
+        ->call('submitTopup');
 
     $topupRequest = TopupRequest::query()->first();
 
     expect($topupRequest)->not->toBeNull();
     expect($topupRequest->status)->toBe(TopupRequestStatus::Pending);
+    expect($topupRequest->public_ref)->not->toBeNull();
+
+    $component->assertRedirect(route('wallet.topups.show', ['topup' => $topupRequest->public_ref]));
 
     $proof = TopupProof::query()->where('topup_request_id', $topupRequest->id)->first();
     expect($proof)->not->toBeNull();
@@ -67,18 +69,19 @@ test('user can create a topup request without proof when attach proof is off', f
     Storage::fake('local');
     $user = User::factory()->create();
 
-    Livewire::actingAs($user)
+    $component = Livewire::actingAs($user)
         ->test('pages::frontend.wallet-topup')
         ->set('topupAmount', '25')
         ->set('paymentMethodId', shamCashPaymentMethodId())
         ->set('attachProof', false)
         ->call('submitTopup')
-        ->assertRedirect(route('wallet'))
         ->assertHasNoErrors();
 
     $topupRequest = TopupRequest::query()->first();
     expect($topupRequest)->not->toBeNull();
     expect(TopupProof::query()->where('topup_request_id', $topupRequest->id)->count())->toBe(0);
+
+    $component->assertRedirect(route('wallet.topups.show', ['topup' => $topupRequest->public_ref]));
 });
 
 test('creating a topup request broadcasts change event', function () {
@@ -124,7 +127,10 @@ test('user cannot create a second pending topup request', function () {
         ->set('paymentMethodId', shamCashPaymentMethodId())
         ->set('attachProof', true)
         ->set('proofFile', UploadedFile::fake()->image('proof.jpg'))
-        ->call('submitTopup');
+        ->call('submitTopup')
+        ->assertRedirect(route('wallet.topups.show', [
+            'topup' => TopupRequest::query()->where('user_id', $user->id)->value('public_ref'),
+        ]));
 
     expect(TopupRequest::query()->where('user_id', $user->id)->count())->toBe(1);
 });
@@ -179,18 +185,18 @@ test('valid proof creates request and single proof record', function () {
     Storage::fake('local');
     $user = User::factory()->create();
 
-    Livewire::actingAs($user)
+    $component = Livewire::actingAs($user)
         ->test('pages::frontend.wallet-topup')
         ->set('topupAmount', '10')
         ->set('paymentMethodId', shamCashPaymentMethodId())
         ->set('attachProof', true)
         ->set('proofFile', UploadedFile::fake()->image('proof.jpg'))
-        ->call('submitTopup')
-        ->assertRedirect(route('wallet'));
+        ->call('submitTopup');
 
     $topupRequest = TopupRequest::query()->first();
     expect($topupRequest)->not->toBeNull();
     expect($topupRequest->proofs()->count())->toBe(1);
+    $component->assertRedirect(route('wallet.topups.show', ['topup' => $topupRequest->public_ref]));
 });
 
 test('try-preferred customer topup input is converted to usd wallet amount', function () {
@@ -206,18 +212,18 @@ test('try-preferred customer topup input is converted to usd wallet amount', fun
     expect($user->preferred_currency)->toBe('TRY');
     expect(WebsiteSetting::getUsdTryRate())->toBe(40.0);
 
-    Livewire::actingAs($user)
+    $component = Livewire::actingAs($user)
         ->test('pages::frontend.wallet-topup')
         ->set('topupAmount', '1000')
         ->set('paymentMethodId', shamCashPaymentMethodId())
         ->set('attachProof', false)
-        ->call('submitTopup')
-        ->assertRedirect(route('wallet'));
+        ->call('submitTopup');
 
     $topupRequest = TopupRequest::query()->first();
     expect($topupRequest)->not->toBeNull();
     expect((float) $topupRequest->amount)->toBe(25.0);
     expect($topupRequest->currency)->toBe('USD');
+    $component->assertRedirect(route('wallet.topups.show', ['topup' => $topupRequest->public_ref]));
 });
 
 test('try-preferred topup conversion rounds up to avoid under-crediting', function () {
@@ -231,16 +237,16 @@ test('try-preferred topup conversion rounds up to avoid under-crediting', functi
         'preferred_currency' => 'TRY',
     ]);
 
-    Livewire::actingAs($user)
+    $component = Livewire::actingAs($user)
         ->test('pages::frontend.wallet-topup')
         ->set('topupAmount', '10000')
         ->set('paymentMethodId', shamCashPaymentMethodId())
         ->set('attachProof', false)
-        ->call('submitTopup')
-        ->assertRedirect(route('wallet'));
+        ->call('submitTopup');
 
     $topupRequest = TopupRequest::query()->first();
     expect($topupRequest)->not->toBeNull();
     expect((float) $topupRequest->amount)->toBe(250.01);
     expect($topupRequest->currency)->toBe('USD');
+    $component->assertRedirect(route('wallet.topups.show', ['topup' => $topupRequest->public_ref]));
 });

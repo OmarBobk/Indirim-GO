@@ -11,6 +11,7 @@ use App\Models\TopupRequest;
 use App\Models\User;
 use App\Models\Wallet;
 use App\Models\WalletTransaction;
+use App\Support\TopupRequestPublicRef;
 use Illuminate\Support\Facades\DB;
 
 class CreateTopupRequestAction
@@ -35,8 +36,12 @@ class CreateTopupRequestAction
                 $attributes['status'] = TopupRequestStatus::Pending;
             }
 
-            $topupRequest = TopupRequest::withoutEvents(function () use ($attributes): TopupRequest {
-                return TopupRequest::query()->create($attributes);
+            $topupRequest = TopupRequestPublicRef::withUniqueRetry(function (string $publicRef) use ($attributes): TopupRequest {
+                $attributes['public_ref'] = $publicRef;
+
+                return TopupRequest::withoutEvents(function () use ($attributes): TopupRequest {
+                    return TopupRequest::query()->create($attributes);
+                });
             });
 
             $topupRequest->loadMissing('paymentMethod');
@@ -53,6 +58,7 @@ class CreateTopupRequestAction
                     'payment_method_id' => $topupRequest->payment_method_id,
                     'payment_method' => $topupRequest->paymentMethod?->name,
                     'note' => $topupRequest->note ?? null,
+                    'topup_public_ref' => $topupRequest->public_ref,
                 ], fn ($v) => $v !== null && $v !== ''),
             ]);
 

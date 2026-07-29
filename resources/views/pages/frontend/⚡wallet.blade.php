@@ -91,6 +91,8 @@ new #[Layout('layouts::frontend')] class extends Component
             :description="__('messages.financial_overview_subtitle')"
         />
 
+        <x-wallet.financial-centre-nav active="overview" />
+
         <div
             class="sr-only"
             aria-live="polite"

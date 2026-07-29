@@ -36,10 +36,9 @@ final class CustomerRecentWalletTransactionsReader
                 WalletTransactionType::Topup,
                 WalletTransactionType::Refund,
                 WalletTransactionType::Adjustment,
-                WalletTransactionType::Settlement,
                 WalletTransactionType::CommissionCredit,
             ])
-            ->orderByDesc('created_at')
+            ->orderByDesc('posted_at')
             ->orderByDesc('id')
             ->limit(self::LIMIT)
             ->get([
@@ -49,6 +48,7 @@ final class CustomerRecentWalletTransactionsReader
                 'amount',
                 'status',
                 'meta',
+                'posted_at',
                 'created_at',
                 'reference_type',
                 'reference_id',
@@ -80,9 +80,11 @@ final class CustomerRecentWalletTransactionsReader
                     amount: bcadd((string) $tx->amount, '0', 2),
                     currency: 'USD',
                     status: WalletTransaction::STATUS_POSTED,
-                    occurredAt: $tx->created_at instanceof Carbon
-                        ? $tx->created_at
-                        : Carbon::parse((string) $tx->created_at),
+                    occurredAt: $tx->posted_at instanceof Carbon
+                        ? $tx->posted_at
+                        : ($tx->created_at instanceof Carbon
+                            ? $tx->created_at
+                            : Carbon::parse((string) ($tx->posted_at ?? $tx->created_at))),
                     referenceLabel: $label,
                     destination: $destination,
                 );
@@ -124,7 +126,19 @@ final class CustomerRecentWalletTransactionsReader
         }
 
         if ($tx->type === WalletTransactionType::Topup) {
-            return [null, new FinancialDestinationDTO(FinancialDestinationType::WalletTopup)];
+            $meta = is_array($tx->meta) ? $tx->meta : [];
+            $topupRef = $meta['topup_public_ref'] ?? null;
+            if (is_string($topupRef) && \App\Support\TopupRequestPublicRef::isValidFormat($topupRef)) {
+                return [
+                    null,
+                    new FinancialDestinationDTO(
+                        FinancialDestinationType::WalletTopupDetail,
+                        ['public_ref' => \App\Support\TopupRequestPublicRef::normalize($topupRef)]
+                    ),
+                ];
+            }
+
+            return [null, new FinancialDestinationDTO(FinancialDestinationType::WalletTopups)];
         }
 
         if ($tx->type === WalletTransactionType::CommissionCredit) {

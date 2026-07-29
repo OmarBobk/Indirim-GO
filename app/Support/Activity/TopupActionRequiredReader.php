@@ -38,7 +38,7 @@ final class TopupActionRequiredReader
             ->orderByDesc('updated_at')
             ->orderByDesc('id')
             ->limit(self::MAX_ITEMS)
-            ->get(['id', 'amount', 'currency', 'status', 'note', 'created_at', 'updated_at']);
+            ->get(['id', 'public_ref', 'amount', 'currency', 'status', 'note', 'created_at', 'updated_at']);
 
         return $requests
             ->map(fn (TopupRequest $request): CustomerActivityDTO => $this->map($request))
@@ -52,6 +52,14 @@ final class TopupActionRequiredReader
         $reason = is_string($request->note) && trim($request->note) !== ''
             ? trim($request->note)
             : null;
+
+        $publicRef = filled($request->public_ref) ? (string) $request->public_ref : null;
+        $destination = $publicRef !== null
+            ? new CustomerActivityDestination(
+                CustomerActivityDestinationType::WalletTopup,
+                ['public_ref' => $publicRef]
+            )
+            : new CustomerActivityDestination(CustomerActivityDestinationType::WalletTopup);
 
         return new CustomerActivityDTO(
             id: $stableKey,
@@ -73,8 +81,8 @@ final class TopupActionRequiredReader
             readAt: null,
             isUnread: false,
             requiresAction: true,
-            actionLabel: __('messages.activity_action_add_funds'),
-            destination: new CustomerActivityDestination(CustomerActivityDestinationType::WalletTopup),
+            actionLabel: __('messages.activity_action_view_topup'),
+            destination: $destination,
             secondaryMeta: [],
             money: new CustomerActivityMoney(
                 amount: (string) $request->amount,

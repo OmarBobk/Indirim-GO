@@ -108,9 +108,10 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 
 - **Wallet ledger:** posted tx sum mirrors stored balance; reconcile command validates and fixes drift.
 - **Transaction types:** topup, purchase, refund, adjustment, settlement, **commission_credit**.
-- **Topup creation:** `CreateTopupRequestAction` atomically creates topup request + pending wallet tx.
-- **Topup conversion behavior:** TRY-entered topups are converted to USD ledger values using configured rate.
-- **Topup proof UI behavior:** wallet page gates file requirement with `attachProof`; proof optional when disabled.
+- **Topup creation:** `CreateTopupRequestAction` atomically creates topup request + pending wallet tx + immutable `public_ref` (`TUP-*`).
+- **Topup conversion behavior:** TRY-entered topups convert to USD **at submission** (server-authoritative; rate locked into request amount). Posted wallet currency always USD.
+- **Topup proof UI behavior:** create form gates file requirement with `attachProof`; proof optional when disabled; private storage + ownership on download.
+- **Customer top-up workspace (M6.3):** `/wallet/topups` list + `/wallet/topups/{public_ref}` detail; create remains `/wallet/topup`. Workflow truth = `TopupRequest`; posted money = `WalletTransaction` only after approval via `WalletLedger`.
 - **Refund posting:** `ApproveRefundRequest` enforces duplicate-refund protection before posting credit.
 - **Settlement:** `profit:settle` posts platform settlement transactions idempotently.
 
@@ -130,7 +131,7 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - **Customer UX:** `CustomerWalletDisplay` — stacked header balance (green positive / red debt), Limit/Available secondary when facility Active; mobile header chip surfaces limit/available without opening wallet. Wallet timeline humanized via `CustomerSystemEventPresenter` when timeline `audience="customer"`.
 - **Config:** `billing.wallet_credit_limit_max`, `billing.wallet_payment_terms_days` (`config/billing.php`).
 - **Out of scope (still true):** debt forgiveness / write-off. **M6.0.1 shipped:** all product posted wallet mutations use `WalletLedger` (incl. purchase/topup/refund/commission/settlement). Debit floor uses `Wallet::minimumAllowedBalance()`. `wallet:reconcile` is audit-only by default; `--repair` is audited snapshot set (compensating TX cannot close drift). See `Vault/Features/Customer Financial Centre.md`.
-- **M6 target:** Wallet becomes customer Financial Control Centre (overview / ledger / top-ups / refunds); salesperson unpaid earnings stay on `/salesperson-dashboard`; receipts start as printable HTML; overview realtime via `CustomerFinancialStateChanged` (invalidation only; client coalescer shipped in M6.1).
+- **M6 target:** Wallet becomes customer Financial Control Centre (overview / ledger / top-ups / refunds); salesperson unpaid earnings stay on `/salesperson-dashboard`; receipts start as printable HTML; financial realtime via `CustomerFinancialStateChanged` (invalidation only; client coalescer shipped in M6.1). **M6.2 shipped:** `/wallet/transactions` posted ledger with `public_ref` + `posted_at`. **M6.3 shipped:** `/wallet/topups` workspace + `TUP-*` refs; Financial Centre nav Overview|Transactions|Top-ups (Refunds deferred M6.4).
 
 ---
 
@@ -251,13 +252,15 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - **2026-07 (M6.0):** **Customer Financial Centre architecture** — full mutation/idempotency/precision audit; approved kernel-first roadmap. See `Vault/Features/Customer Financial Centre.md`.
 - **2026-07 (M6.0.1):** **Wallet mutation kernel** — `WalletLedger` + `LedgerMoney`; migrate purchase/topup/refund/commission/settlement; posted TX immutability; `CustomerFinancialStateChanged`; reconcile audit-only + snapshot `--repair`; pending top-up lock uniqueness.
 - **2026-07 (M6.1):** **Customer Financial Overview** — `/wallet` read-model (`GetCustomerFinancialOverview` → DTOs → `CustomerFinancialPresenter`); available-to-spend hero; pending ≤3; recent posted ≤5; Echo `.CustomerFinancialStateChanged` → `customer-financial-invalidate` (same private user channel; separate coalescer).
+- **2026-07 (M6.2):** **Unified customer transaction ledger** — `/wallet/transactions`; `GetCustomerWalletTransactions`; `public_ref` + `posted_at`; filters/search; SQL pagination 20; Financial Centre nav Overview|Transactions.
+- **2026-07 (M6.3):** **Customer top-up workspace** — `/wallet/topups` + detail by `TUP-*`; create `/wallet/topup`; retry from rejected; Financial Centre nav adds Top-ups; cancellation deferred.
 
 ---
 
 ## 15. Routes quick reference
 
 - **Public:** `/`, `/categories/{category:slug}`, `/cart`, `/contact`, `/404`, `language/{locale}`.
-- **Auth+verified (storefront):** `/profile`, `/wallet`, `/loyalty`, `/referral-link`, `/orders`, `/orders/{order_number}`, **`/activity`** (`activity.index`; **`/notifications`** alias), `/topup-proofs/{proof}`, `/bug-attachments/{attachment}`, `POST /api/pricing/buy-now-custom-amount-quote`.
+- **Auth+verified (storefront):** `/profile`, `/wallet`, `/wallet/transactions`, `/wallet/topups`, `/wallet/topups/{public_ref}`, `/wallet/topup`, `/loyalty`, `/referral-link`, `/orders`, `/orders/{order_number}`, **`/activity`** (`activity.index`; **`/notifications`** alias), `/topup-proofs/{proof}`, `/bug-attachments/{attachment}`, `POST /api/pricing/buy-now-custom-amount-quote`.
 - **Backend:** `/dashboard` (`can:view_dashboard`), `/salesperson-dashboard` (`can:view_referrals`), `/categories`, `/packages`, `/products`, `/product-entry-prices` (`can:update_product_prices`), **`/price-drift`** (`can:update_product_prices`), `/pricing-rules`, `/loyalty-tiers`, `/admin/orders/*`, `/admin/users/*`, `/admin/users/{user}/audit`, `/fulfillments`, `/refunds`, `/topups`, `/customer-funds`, **`/credit-facility`** (`can:manage_wallet_credit`), `/settlements`, `/admin/commissions` (`can:manage_settlements`), `/admin/notifications`, `/admin/bugs/*`, `/admin/website-settings` (admin only), **`/admin/automation`** (admin only), **`/admin/assistant`** (admin only, throttled).
 - **Automation (internal):** `POST /internal/automation/runs/{uuid}/result`, `POST /internal/automation/runs/{uuid}/artifacts`, **`POST /internal/automation/price-scans/{uuid}/result`** (HMAC-signed, CSRF exempt). Worker: `POST /v1/runs`, **`POST /v1/sessions/clear`**, **`POST /v1/price-scans`** (HMAC).
 - **AI/MCP:** `POST /mcp/ops-assistant` (admin MCP server for read-only ops tools).

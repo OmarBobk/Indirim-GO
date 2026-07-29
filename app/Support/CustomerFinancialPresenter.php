@@ -9,7 +9,6 @@ use App\DTOs\Financial\FinancialDestinationDTO;
 use App\DTOs\Financial\FinancialOverviewDTO;
 use App\DTOs\Financial\PendingFinancialItemDTO;
 use App\DTOs\Financial\RecentWalletTransactionDTO;
-use App\Enums\FinancialDestinationType;
 use App\Enums\WalletTransactionDirection;
 use App\Enums\WalletTransactionType;
 use App\Models\User;
@@ -34,10 +33,11 @@ final class CustomerFinancialPresenter
                 'can_add_funds' => $overview->canAddFunds,
                 'add_funds_href' => route('wallet.topup'),
                 'purchase_resume_url' => $overview->purchaseResumeUrl,
-                'track_topups_href' => route('wallet.topup'),
+                'track_topups_href' => route('wallet.topups.index'),
                 'track_refunds_href' => Route::has('activity.index')
                     ? route('activity.index', ['filter' => 'action_required', 'category' => 'orders'])
                     : route('orders.index'),
+                'view_transactions_href' => route('wallet.transactions.index'),
                 'loyalty_href' => route('loyalty'),
                 'salesperson_href' => $overview->showSalespersonLink && Route::has('salesperson.dashboard')
                     ? route('salesperson.dashboard')
@@ -179,23 +179,7 @@ final class CustomerFinancialPresenter
 
     private function resolveHref(FinancialDestinationDTO $destination): string
     {
-        return match ($destination->type) {
-            FinancialDestinationType::Wallet => route('wallet'),
-            FinancialDestinationType::WalletTopup => route('wallet.topup'),
-            FinancialDestinationType::OrderDetail => route(
-                'orders.show',
-                ['order' => (string) ($destination->params['order_number'] ?? '')]
-            ),
-            FinancialDestinationType::Orders => route('orders.index'),
-            FinancialDestinationType::Activity => Route::has('activity.index')
-                ? route('activity.index')
-                : route('notifications.index'),
-            FinancialDestinationType::Loyalty => route('loyalty'),
-            FinancialDestinationType::SalespersonDashboard => Route::has('salesperson.dashboard')
-                ? route('salesperson.dashboard')
-                : route('wallet'),
-            FinancialDestinationType::PurchaseResume => (string) ($destination->params['url'] ?? route('wallet')),
-        };
+        return FinancialDestinationResolver::href($destination);
     }
 
     private function pendingViewAllHref(FinancialOverviewDTO $overview): ?string
@@ -204,14 +188,14 @@ final class CustomerFinancialPresenter
             return null;
         }
 
+        if (($overview->pendingCounts['pending_topups'] ?? 0) > 0) {
+            return route('wallet.topups.index');
+        }
+
         if (($overview->pendingCounts['needs_customer_action'] ?? 0) > 0) {
             return Route::has('activity.index')
                 ? route('activity.index', ['filter' => 'action_required'])
-                : route('wallet.topup');
-        }
-
-        if (($overview->pendingCounts['pending_topups'] ?? 0) > 0) {
-            return route('wallet.topup');
+                : route('wallet.topups.index');
         }
 
         return Route::has('activity.index')

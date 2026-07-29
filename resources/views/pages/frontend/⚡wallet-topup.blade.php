@@ -6,6 +6,7 @@ use App\Models\PaymentMethod;
 use App\Models\TopupRequest;
 use App\Models\WebsiteSetting;
 use App\Support\PurchaseResumeIntent;
+use App\Support\TopupRequestPublicRef;
 use Illuminate\Support\Collection;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -25,6 +26,9 @@ new #[Layout('layouts::frontend')] class extends Component
     #[Url(as: 'amount')]
     public ?string $topupAmount = null;
 
+    #[Url(as: 'retry', except: '')]
+    public string $retry = '';
+
     public ?int $paymentMethodId = null;
 
     /** @var \Illuminate\Http\UploadedFile|null */
@@ -42,6 +46,42 @@ new #[Layout('layouts::frontend')] class extends Component
             ->value('id');
 
         $this->paymentMethodId = $firstMethodId !== null ? (int) $firstMethodId : null;
+
+        $this->applyRetryPrefill();
+    }
+
+    private function applyRetryPrefill(): void
+    {
+        if ($this->retry === '' || ! TopupRequestPublicRef::isValidFormat($this->retry)) {
+            return;
+        }
+
+        $prior = TopupRequest::query()
+            ->where('user_id', auth()->id())
+            ->where('public_ref', TopupRequestPublicRef::normalize($this->retry))
+            ->where('status', TopupRequestStatus::Rejected)
+            ->first();
+
+        if ($prior === null) {
+            $this->retry = '';
+
+            return;
+        }
+
+        if ($this->topupAmount === null || $this->topupAmount === '') {
+            $this->topupAmount = (string) $prior->amount;
+        }
+
+        if ($prior->payment_method_id) {
+            $active = PaymentMethod::query()
+                ->active()
+                ->whereKey($prior->payment_method_id)
+                ->exists();
+
+            if ($active) {
+                $this->paymentMethodId = (int) $prior->payment_method_id;
+            }
+        }
     }
 
     /**
@@ -76,12 +116,19 @@ new #[Layout('layouts::frontend')] class extends Component
     }
 
     #[Computed]
-    public function hasPendingTopup(): bool
+    public function pendingTopup(): ?TopupRequest
     {
         return TopupRequest::query()
             ->where('user_id', auth()->id())
             ->where('status', TopupRequestStatus::Pending)
-            ->exists();
+            ->latest('id')
+            ->first(['id', 'public_ref', 'amount', 'currency', 'status']);
+    }
+
+    #[Computed]
+    public function hasPendingTopup(): bool
+    {
+        return $this->pendingTopup !== null;
     }
 
     /**
@@ -96,6 +143,13 @@ new #[Layout('layouts::frontend')] class extends Component
     public function submitTopup(): void
     {
         if ($this->hasPendingTopup) {
+            $pending = $this->pendingTopup;
+            if ($pending !== null && filled($pending->public_ref)) {
+                $this->redirect(route('wallet.topups.show', ['topup' => $pending->public_ref]), navigate: true);
+
+                return;
+            }
+
             $this->warning(__('messages.topup_request_pending'));
 
             return;
@@ -104,7 +158,7 @@ new #[Layout('layouts::frontend')] class extends Component
         $validated = $this->validate();
 
         try {
-            app(SubmitCustomerTopupRequest::class)->handle(
+            $created = app(SubmitCustomerTopupRequest::class)->handle(
                 auth()->user(),
                 (float) $validated['topupAmount'],
                 (int) $validated['paymentMethodId'],
@@ -126,7 +180,13 @@ new #[Layout('layouts::frontend')] class extends Component
             return;
         }
 
-        $this->redirect(route('wallet'), navigate: true);
+        if (filled($created->public_ref)) {
+            $this->redirect(route('wallet.topups.show', ['topup' => $created->public_ref]), navigate: true);
+
+            return;
+        }
+
+        $this->redirect(route('wallet.topups.index'), navigate: true);
     }
 
     public function render(): View
@@ -143,6 +203,7 @@ new #[Layout('layouts::frontend')] class extends Component
         $topupDisplayCurrency = 'TRY';
     }
     $topupCurrencySign = $topupDisplayCurrency === 'TRY' ? '₺' : '$';
+    $pending = $this->pendingTopup;
 @endphp
 
 <x-storefront.page
@@ -155,14 +216,43 @@ new #[Layout('layouts::frontend')] class extends Component
         :title="__('messages.wallet_add_funds')"
         :description="__('messages.wallet_topup_intro')"
         :show-back="true"
-        :back-fallback="route('wallet')"
+        :back-fallback="route('wallet.topups.index')"
     />
 
-    @if ($this->hasPendingTopup)
-        <flux:callout class="mb-6" variant="warning" icon="clock">
-            {{ __('messages.wallet_topup_pending_banner') }}
+    <x-wallet.financial-centre-nav active="topups" />
+
+    @if ($this->hasPendingTopup && $pending)
+        <flux:callout class="mb-6" variant="warning" icon="clock" data-test="wallet-topup-pending-banner">
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                    <flux:text class="font-medium">{{ __('messages.wallet_topup_pending_banner') }}</flux:text>
+                    @if (filled($pending->public_ref))
+                        <flux:text class="mt-1 text-sm text-zinc-600 dark:text-zinc-400" dir="ltr">
+                            {{ $pending->public_ref }}
+                        </flux:text>
+                    @endif
+                </div>
+                @if (filled($pending->public_ref))
+                    <flux:button
+                        as="a"
+                        href="{{ route('wallet.topups.show', ['topup' => $pending->public_ref]) }}"
+                        wire:navigate
+                        size="sm"
+                        variant="ghost"
+                        data-test="wallet-topup-view-pending"
+                    >
+                        {{ __('messages.topup_view_request') }}
+                    </flux:button>
+                @endif
+            </div>
         </flux:callout>
     @else
+        @if ($retry !== '')
+            <flux:callout class="mb-6" variant="subtle" icon="arrow-path" data-test="topup-retry-banner">
+                {{ __('messages.topup_retry_prefill_hint') }}
+            </flux:callout>
+        @endif
+
         <section class="storefront-card storefront-card--pad-md">
             <form class="space-y-5" wire:submit.prevent="submitTopup">
                 <flux:input
@@ -172,6 +262,12 @@ new #[Layout('layouts::frontend')] class extends Component
                     wire:model.defer="topupAmount"
                     placeholder="0.00"
                 />
+
+                @if ($topupDisplayCurrency === 'TRY')
+                    <flux:text class="text-xs text-zinc-500 dark:text-zinc-400">
+                        {{ __('messages.topup_conversion_hint') }}
+                    </flux:text>
+                @endif
 
                 <div class="flex flex-wrap gap-2">
                     @foreach ([10, 25, 50, 100] as $preset)

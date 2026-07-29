@@ -11,33 +11,41 @@ Authoritative financial model for karman.store.
 - **Idempotency:** non-empty key + unique DB constraint; conflict → `IdempotencyConflictException`
 - **Side effects:** notifications/realtime via `DB::afterCommit` / `CustomerFinancialBroadcaster`
 - **Spend checks:** `WalletSpendPolicy` / `availableToSpend()` before debit; kernel re-checks floor under lock
-- **Posted immutability:** mechanical fields guarded on `WalletTransaction` model
+- **Posted immutability:** mechanical fields guarded on `WalletTransaction` model (includes `public_ref`, `posted_at`)
 - **Reconcile:** audit-only by default; `--repair` = audited snapshot (not compensating TX)
+- **Customer ledger (M6.2):** posted rows only; order by `posted_at` then `id`; public ref `WTX-*`
+- **Top-up workflow (M6.3):** `TopupRequest` + `TUP-*` public_ref; pending TX ≠ posted money; TRY→USD locked at submission; one pending per user
 
 ## Key files
 
 - `app/Services/WalletLedger.php`, `WalletSpendPolicy.php`
-- `app/Support/LedgerMoney.php`, `CustomerFinancialBroadcaster.php`
+- `app/Support/LedgerMoney.php`, `CustomerFinancialBroadcaster.php`, `WalletTransactionPublicRef.php`, `TopupRequestPublicRef.php`
 - `app/DTOs/WalletPosting.php`, `WalletAdjustmentResult.php`
 - `app/Actions/Wallets/AdjustWallet.php`, `UpdateCreditFacility.php`
 - `app/Actions/Orders/PayOrderWithWallet.php`
-- `app/Actions/Topups/ApproveTopupRequest.php`
+- `app/Actions/Topups/ApproveTopupRequest.php`, `CreateTopupRequestAction.php`, `SubmitCustomerTopupRequest.php`
+- `app/Actions/Topups/GetCustomerTopupRequests.php`, `GetCustomerTopupDetail.php`
+- `app/Support/CustomerTopupPresenter.php`, `FinancialDestinationResolver.php`
 - `app/Actions/Refunds/ApproveRefundRequest.php`
 - `app/Actions/Commissions/CreatePayoutBatch.php`
 - `app/Console/Commands/WalletReconcile.php`, `ProfitSettleCommand.php`
-- **M6.1 read model:** `app/Actions/Financial/GetCustomerFinancialOverview.php`, `app/Support/Financial/*`, `app/Support/CustomerFinancialPresenter.php`, `app/DTOs/Financial/*`
-- `resources/js/customer-financial-invalidation.js` (Echo → Livewire invalidate)
+- **M6.1 overview:** `GetCustomerFinancialOverview`, `app/Support/Financial/*`, `CustomerFinancialPresenter`
+- **M6.2 ledger:** `GetCustomerWalletTransactions`, `CustomerWalletTransactionPresenter`, `app/DTOs/Financial/WalletTransaction*`
+- `resources/js/customer-financial-invalidation.js`
 - `config/billing.php`
 
 ## Features
 
-- [[Customer Financial Centre]] — M6 canonical (M6.0.1 kernel + **M6.1 Overview** shipped)
-- [[Customer Activity]] — wallet events in timeline (projection only)
+- [[Customer Financial Centre]] — M6.0.1 kernel + M6.1 Overview + M6.2 Ledger + **M6.3 Top-ups** shipped
+- [[Customer Activity]] — projection only
 
-## Customer overview (M6.1)
+## Customer surfaces
 
-- `/wallet` = Financial Overview (available-to-spend hero, pending ≤3, recent posted ≤5)
-- Full ledger / filters / detail deferred to M6.2
+- `/wallet` = Financial Overview
+- `/wallet/transactions` = posted ledger
+- `/wallet/topups` = top-up workflow list
+- `/wallet/topups/{TUP-*}` = top-up detail
+- `/wallet/topup` = create / corrected retry
 - Realtime: invalidation only on existing user private channel
 
 ## Related

@@ -15,6 +15,7 @@ use App\Exceptions\InvalidWalletPostingAmountException;
 use App\Models\Wallet;
 use App\Models\WalletTransaction;
 use App\Support\LedgerMoney;
+use App\Support\WalletTransactionPublicRef;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -193,19 +194,31 @@ final class WalletLedger
         );
 
         $ledgerMeta = $this->buildPostedMeta($posting->meta, $previousBalance, $newBalance);
+        $postedAt = now();
 
         try {
-            $transaction = WalletTransaction::query()->create([
-                'wallet_id' => $lockedWallet->id,
-                'type' => $posting->type,
-                'direction' => $posting->direction,
-                'amount' => $normalizedAmount,
-                'status' => WalletTransaction::STATUS_POSTED,
-                'reference_type' => $posting->referenceType,
-                'reference_id' => $posting->referenceId,
-                'idempotency_key' => $idempotencyKey,
-                'meta' => $ledgerMeta,
-            ]);
+            $transaction = WalletTransactionPublicRef::withUniqueRetry(function (string $publicRef) use (
+                $lockedWallet,
+                $posting,
+                $normalizedAmount,
+                $idempotencyKey,
+                $ledgerMeta,
+                $postedAt,
+            ): WalletTransaction {
+                return WalletTransaction::query()->create([
+                    'wallet_id' => $lockedWallet->id,
+                    'type' => $posting->type,
+                    'direction' => $posting->direction,
+                    'amount' => $normalizedAmount,
+                    'status' => WalletTransaction::STATUS_POSTED,
+                    'reference_type' => $posting->referenceType,
+                    'reference_id' => $posting->referenceId,
+                    'idempotency_key' => $idempotencyKey,
+                    'public_ref' => $publicRef,
+                    'posted_at' => $postedAt,
+                    'meta' => $ledgerMeta,
+                ]);
+            });
         } catch (QueryException $exception) {
             if (! $this->isUniqueIdempotencyConstraint($exception, $idempotencyKey)) {
                 throw $exception;
@@ -321,33 +334,43 @@ final class WalletLedger
             $pending->forceFill([
                 'status' => WalletTransaction::STATUS_POSTED,
                 'idempotency_key' => $idempotencyKey,
+                'public_ref' => $pending->public_ref ?: WalletTransactionPublicRef::allocateUnique(),
+                'posted_at' => now(),
                 'meta' => $ledgerMeta,
             ])->save();
         } catch (QueryException $exception) {
-            if (! $this->isUniqueIdempotencyConstraint($exception, $idempotencyKey)) {
+            if (WalletTransactionPublicRef::isUniquePublicRefConstraint($exception)) {
+                $pending->forceFill([
+                    'status' => WalletTransaction::STATUS_POSTED,
+                    'idempotency_key' => $idempotencyKey,
+                    'public_ref' => WalletTransactionPublicRef::allocateUnique(),
+                    'posted_at' => now(),
+                    'meta' => $ledgerMeta,
+                ])->save();
+            } elseif ($this->isUniqueIdempotencyConstraint($exception, $idempotencyKey)) {
+                $existing = WalletTransaction::query()
+                    ->where('idempotency_key', $idempotencyKey)
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($existing === null) {
+                    throw $exception;
+                }
+
+                $this->assertSameOperation(
+                    $existing,
+                    $lockedWallet,
+                    $posting->type,
+                    $posting->direction,
+                    $normalizedAmount,
+                    $posting->referenceType,
+                    $posting->referenceId,
+                );
+
+                return $this->resultFromExisting($existing, $lockedWallet, wasReplayed: true, wasPromoted: true);
+            } else {
                 throw $exception;
             }
-
-            $existing = WalletTransaction::query()
-                ->where('idempotency_key', $idempotencyKey)
-                ->lockForUpdate()
-                ->first();
-
-            if ($existing === null) {
-                throw $exception;
-            }
-
-            $this->assertSameOperation(
-                $existing,
-                $lockedWallet,
-                $posting->type,
-                $posting->direction,
-                $normalizedAmount,
-                $posting->referenceType,
-                $posting->referenceId,
-            );
-
-            return $this->resultFromExisting($existing, $lockedWallet, wasReplayed: true);
         }
 
         $lockedWallet->update(['balance' => $newBalance]);

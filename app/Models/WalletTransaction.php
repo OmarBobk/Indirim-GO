@@ -43,6 +43,8 @@ class WalletTransaction extends Model
         'reference_type',
         'reference_id',
         'idempotency_key',
+        'public_ref',
+        'posted_at',
     ];
 
     public const UPDATED_AT = null;
@@ -61,6 +63,8 @@ class WalletTransaction extends Model
         'reference_type',
         'reference_id',
         'idempotency_key',
+        'public_ref',
+        'posted_at',
         'meta',
     ];
 
@@ -103,6 +107,7 @@ class WalletTransaction extends Model
             'amount' => 'decimal:2',
             'reference_id' => 'integer',
             'meta' => 'array',
+            'posted_at' => 'datetime',
         ];
     }
 

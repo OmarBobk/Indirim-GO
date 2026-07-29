@@ -52,6 +52,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::livewire('/profile', 'pages::frontend.profile')->name('profile');
     Route::livewire('/profile/edit', 'pages::frontend.profile-edit')->name('profile.edit-information');
     Route::livewire('/wallet', 'pages::frontend.wallet')->name('wallet');
+    Route::livewire('/wallet/transactions', 'pages::frontend.wallet-transactions')->name('wallet.transactions.index');
+    Route::livewire('/wallet/topups', 'pages::frontend.wallet-topups')->name('wallet.topups.index');
+    Route::livewire('/wallet/topups/{topup}', 'pages::frontend.wallet-topup-detail')->name('wallet.topups.show');
     Route::livewire('/wallet/topup', 'pages::frontend.wallet-topup')->name('wallet.topup');
     Route::livewire('/loyalty', 'pages::frontend.loyalty')->name('loyalty');
     Route::livewire('/referral-link', 'pages::frontend.referral-link')
