@@ -25,6 +25,35 @@ final class FrontendMoney
 
     public function format(float|int|string $amount, string $currency = 'USD', int $decimals = 2): string
     {
+        [$normalizedAmount, $normalizedCurrency] = $this->normalizeUsdDisplayAmount($amount, $currency);
+
+        [$minFraction, $maxFraction] = $this->fractionDigitBounds($decimals);
+
+        return $this->formatCurrency($normalizedAmount, $normalizedCurrency, $minFraction, $maxFraction);
+    }
+
+    /**
+     * Presentation-only display envelope for a USD ledger amount.
+     * Uses the same conversion rules as {@see format()}; never invents rates.
+     *
+     * @return array{currency: string, formatted: string}
+     */
+    public function displayForUsdAmount(float|int|string $amount, int $decimals = 2): array
+    {
+        [$normalizedAmount, $displayCurrency] = $this->normalizeUsdDisplayAmount($amount, 'USD');
+        [$minFraction, $maxFraction] = $this->fractionDigitBounds($decimals);
+
+        return [
+            'currency' => $displayCurrency,
+            'formatted' => $this->formatCurrency($normalizedAmount, $displayCurrency, $minFraction, $maxFraction),
+        ];
+    }
+
+    /**
+     * @return array{0: float, 1: string}
+     */
+    private function normalizeUsdDisplayAmount(float|int|string $amount, string $currency): array
+    {
         $normalizedCurrency = strtoupper($currency);
         $normalizedAmount = (float) $amount;
 
@@ -33,9 +62,7 @@ final class FrontendMoney
             $normalizedCurrency = 'TRY';
         }
 
-        [$minFraction, $maxFraction] = $this->fractionDigitBounds($decimals);
-
-        return $this->formatCurrency($normalizedAmount, $normalizedCurrency, $minFraction, $maxFraction);
+        return [$normalizedAmount, $normalizedCurrency];
     }
 
     /**

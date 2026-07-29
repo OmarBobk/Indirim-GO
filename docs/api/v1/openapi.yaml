@@ -1,15 +1,24 @@
 openapi: 3.1.0
 info:
   title: İndirimGo Mobile API
-  version: 1.0.0
+  version: 1.1.0
   description: |
-    Authoritative contract for the customer-only İndirimGo Mobile M1 API.
+    Authoritative contract for the customer-only İndirimGo Mobile API
+    (M1 authentication + M2.1 catalog read models).
     Laravel is authoritative for authentication, authorization, validation,
-    and domain behavior.
+    catalog visibility, and every trusted price calculation.
 
     Messages are localized from `Accept-Language`. Only `ar` and `en` are
-    supported; unsupported or missing values fall back to the configured
-    Laravel locale.
+    supported; unsupported or missing values fall back through the established
+    mobile locale resolver (`SupportedLocale`, primary `config('app.locale')`).
+    Catalog `name` and `description` values are returned exactly as stored
+    (no catalog translation maps).
+
+    Money `amount` values are authoritative USD ledger totals as decimal
+    strings. `display` is presentation-only through trusted server formatting
+    and must not be parsed for calculations. Flutter must never compute
+    authoritative prices, loyalty, overrides, currency conversion, or custom
+    totals.
 
     Local development normally uses `http://localhost:8000/api/v1`. An Android
     emulator reaches that same host through `http://10.0.2.2:8000/api/v1`.
@@ -22,6 +31,7 @@ servers:
 tags:
   - name: Authentication
   - name: Account
+  - name: Catalog
 paths:
   /auth/login:
     post:
@@ -173,6 +183,200 @@ paths:
           $ref: '#/components/responses/Unauthenticated'
         '403':
           $ref: '#/components/responses/ForbiddenToken'
+  /catalog/home:
+    get:
+      tags: [Catalog]
+      summary: Authenticated catalog home shelves
+      description: |
+        Returns frequently ordered package summaries (customer-scoped, max 8),
+        featured packages (admin `order` then `name`, max 8; not sales-ranked),
+        and active root category chips (max 12). Featured and frequently ordered
+        entries include only active packages that have at least one active product.
+        Catalog responses are private and must not be shared-cached.
+      operationId: mobileCatalogHome
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AcceptLanguage'
+      responses:
+        '200':
+          description: Catalog home shelves.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: 'private, no-store'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogHomeSuccess'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/ForbiddenToken'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /packages:
+    get:
+      tags: [Catalog]
+      summary: List active packages
+      description: |
+        Lists active packages that have at least one active product.
+        Optional `category_id` uses exact active category matching only
+        (parent categories do not include descendants). Optional `q` searches
+        package name and description (trimmed, min 2, max 100) with deterministic
+        ordering by admin `order` then `name`. Offset pagination is stable.
+        Missing or inactive `category_id` values are validation errors.
+      operationId: mobileListPackages
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - name: category_id
+          in: query
+          required: false
+          description: Exact active category id filter. Descendants are not included.
+          schema:
+            type: integer
+            minimum: 1
+        - name: q
+          in: query
+          required: false
+          description: Trimmed search query against package name and description.
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 100
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: per_page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 24
+      responses:
+        '200':
+          description: Paginated package summaries.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: 'private, no-store'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PackageListSuccess'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/ForbiddenToken'
+        '422':
+          description: Validation failed (including inactive/missing category_id).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /packages/{package}:
+    get:
+      tags: [Catalog]
+      summary: Show an active package with product options
+      description: |
+        Returns one active package and its active products. Numeric package ids
+        are the public identifiers; `slug` is informational and not unique.
+        Inactive or missing packages return `package_not_found`. Package
+        requirements are not included. Products do not expose a synthetic
+        availability flag because the domain has no stock concept.
+      operationId: mobileShowPackage
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - name: package
+          in: path
+          required: true
+          description: Numeric package id.
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: Package detail with active product options.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: 'private, no-store'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PackageDetailSuccess'
+              examples:
+                english:
+                  value:
+                    data:
+                      id: 42
+                      name: Example Game Top-up
+                      slug: example-game-top-up
+                      description: Digital top-up options.
+                      image_url: https://example.test/images/packages/abc.webp
+                      products_count: 2
+                      from_price:
+                        amount: "5.00"
+                        currency: USD
+                        display:
+                          currency: USD
+                          formatted: $5.00
+                      category:
+                        id: 3
+                        name: Games
+                        slug: games
+                      products:
+                        - id: 901
+                          name: 100 Coins
+                          amount_mode: fixed
+                          unit_price:
+                            amount: "5.00"
+                            currency: USD
+                            display:
+                              currency: USD
+                              formatted: $5.00
+                          custom_amount: null
+                          minimum_price: null
+                        - id: 902
+                          name: Custom amount
+                          amount_mode: custom
+                          unit_price: null
+                          custom_amount:
+                            min: 100
+                            max: 10000
+                            step: 100
+                            unit_label: Coins
+                          minimum_price:
+                            amount: "5.00"
+                            currency: USD
+                            display:
+                              currency: USD
+                              formatted: $5.00
+                    meta:
+                      prices_visible: true
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/ForbiddenToken'
+        '404':
+          $ref: '#/components/responses/PackageNotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
 components:
   securitySchemes:
     bearerAuth:
@@ -255,6 +459,21 @@ components:
               value:
                 message: محاولات كثيرة جدًا. يرجى المحاولة لاحقًا.
                 code: too_many_requests
+    PackageNotFound:
+      description: The package is missing or inactive.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          examples:
+            english:
+              value:
+                message: Package not found.
+                code: package_not_found
+            arabic:
+              value:
+                message: الحزمة غير موجودة.
+                code: package_not_found
   schemas:
     LoginRequest:
       type: object
@@ -459,3 +678,291 @@ components:
             - unauthenticated
             - missing_mobile_ability
             - too_many_requests
+            - package_not_found
+    MoneyDisplay:
+      type: object
+      additionalProperties: false
+      required: [currency, formatted]
+      properties:
+        currency:
+          type: string
+          description: Actual display currency after trusted server conversion rules (`USD` or `TRY`).
+          enum: [USD, TRY]
+        formatted:
+          type: string
+          description: Presentation-only formatted amount. Must not be parsed for calculations.
+    Money:
+      type: object
+      additionalProperties: false
+      required: [amount, currency, display]
+      properties:
+        amount:
+          type: string
+          pattern: '^-?\d+\.\d{2}$'
+          description: Authoritative final ledger amount in USD with two decimal places.
+          example: "12.50"
+        currency:
+          type: string
+          const: USD
+        display:
+          $ref: '#/components/schemas/MoneyDisplay'
+    CategoryChip:
+      type: object
+      additionalProperties: false
+      required: [id, name, slug, image_url]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        slug:
+          type: string
+          description: Informational only; not a unique public identifier.
+        image_url:
+          type: [string, 'null']
+          format: uri
+          description: Absolute http(s) URL, or null when missing/unsafe. Never an SVG placeholder.
+    CategorySummary:
+      type: object
+      additionalProperties: false
+      required: [id, name, slug]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        slug:
+          type: string
+    CustomAmountConfig:
+      type: object
+      additionalProperties: false
+      required: [min, max, step, unit_label]
+      properties:
+        min:
+          type: [integer, 'null']
+          minimum: 1
+        max:
+          type: [integer, 'null']
+          minimum: 1
+        step:
+          type: [integer, 'null']
+          minimum: 1
+        unit_label:
+          type: [string, 'null']
+    ProductOption:
+      type: object
+      additionalProperties: false
+      required: [id, name, amount_mode, unit_price, custom_amount, minimum_price]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        amount_mode:
+          type: string
+          enum: [fixed, custom]
+        unit_price:
+          oneOf:
+            - $ref: '#/components/schemas/Money'
+            - type: 'null'
+          description: Final customer price for quantity 1 when `amount_mode=fixed`; always null for custom.
+        custom_amount:
+          oneOf:
+            - $ref: '#/components/schemas/CustomAmountConfig'
+            - type: 'null'
+        minimum_price:
+          oneOf:
+            - $ref: '#/components/schemas/Money'
+            - type: 'null'
+          description: |
+            For custom products, final customer total using `custom_amount.min`.
+            Null when prices are hidden, configuration is incomplete, or mode is fixed.
+            Never derived from amount 1 unless 1 is the real minimum.
+    PackageSummary:
+      type: object
+      additionalProperties: false
+      required: [id, name, slug, image_url, products_count, from_price, category]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        slug:
+          type: string
+          description: Informational only; not a unique public identifier.
+        image_url:
+          type: [string, 'null']
+          format: uri
+        products_count:
+          type: integer
+          minimum: 0
+        from_price:
+          oneOf:
+            - $ref: '#/components/schemas/Money'
+            - type: 'null'
+          description: |
+            Minimum currently purchasable total across active products.
+            Fixed products use quantity 1; custom products use `custom_amount.min`.
+        category:
+          oneOf:
+            - $ref: '#/components/schemas/CategorySummary'
+            - type: 'null'
+    FrequentlyOrderedPackage:
+      type: object
+      additionalProperties: false
+      required: [id, name, slug, image_url, products_count, from_price, category, times_ordered]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        slug:
+          type: string
+        image_url:
+          type: [string, 'null']
+          format: uri
+        products_count:
+          type: integer
+          minimum: 0
+        from_price:
+          oneOf:
+            - $ref: '#/components/schemas/Money'
+            - type: 'null'
+        category:
+          oneOf:
+            - $ref: '#/components/schemas/CategorySummary'
+            - type: 'null'
+        times_ordered:
+          type: integer
+          minimum: 1
+    PackageDetail:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - slug
+        - description
+        - image_url
+        - products_count
+        - from_price
+        - category
+        - products
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: [string, 'null']
+        image_url:
+          type: [string, 'null']
+          format: uri
+        products_count:
+          type: integer
+          minimum: 0
+        from_price:
+          oneOf:
+            - $ref: '#/components/schemas/Money'
+            - type: 'null'
+        category:
+          oneOf:
+            - $ref: '#/components/schemas/CategorySummary'
+            - type: 'null'
+        products:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProductOption'
+    CatalogHome:
+      type: object
+      additionalProperties: false
+      required: [frequently_ordered, featured_packages, categories]
+      properties:
+        frequently_ordered:
+          type: array
+          maxItems: 8
+          items:
+            $ref: '#/components/schemas/FrequentlyOrderedPackage'
+        featured_packages:
+          type: array
+          maxItems: 8
+          items:
+            $ref: '#/components/schemas/PackageSummary'
+          description: Admin-ordered package shelf; not sales-ranked.
+        categories:
+          type: array
+          maxItems: 12
+          items:
+            $ref: '#/components/schemas/CategoryChip'
+    CatalogHomeSuccess:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/CatalogHome'
+        meta:
+          $ref: '#/components/schemas/CatalogMeta'
+    PackageListSuccess:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/PackageSummary'
+        meta:
+          $ref: '#/components/schemas/PackageListMeta'
+    PackageDetailSuccess:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/PackageDetail'
+        meta:
+          $ref: '#/components/schemas/CatalogMeta'
+    CatalogMeta:
+      type: object
+      additionalProperties: false
+      required: [prices_visible]
+      properties:
+        prices_visible:
+          type: boolean
+          description: When false, all money fields are null while keys remain present.
+    PackageListMeta:
+      type: object
+      additionalProperties: false
+      required: [prices_visible, pagination]
+      properties:
+        prices_visible:
+          type: boolean
+        pagination:
+          $ref: '#/components/schemas/OffsetPagination'
+    OffsetPagination:
+      type: object
+      additionalProperties: false
+      required: [page, per_page, total, last_page]
+      properties:
+        page:
+          type: integer
+          minimum: 1
+        per_page:
+          type: integer
+          minimum: 1
+          maximum: 50
+        total:
+          type: integer
+          minimum: 0
+        last_page:
+          type: integer
+          minimum: 1

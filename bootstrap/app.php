@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 use Laravel\Sanctum\Exceptions\MissingAbilityException;
 use Laravel\Sanctum\Http\Middleware\CheckAbilities;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -81,5 +82,17 @@ return Application::configure(basePath: dirname(__DIR__))
                 'message' => __('messages.mobile_api.too_many_requests'),
                 'code' => 'too_many_requests',
             ], 429, $exception->getHeaders());
+        });
+
+        $exceptions->render(function (NotFoundHttpException $exception, Request $request): ?JsonResponse {
+            if (! $request->is('api/v1/packages', 'api/v1/packages/*')
+                && $exception->getMessage() !== 'package_not_found') {
+                return null;
+            }
+
+            return response()->json([
+                'message' => __('messages.mobile_api.package_not_found'),
+                'code' => 'package_not_found',
+            ], 404);
         });
     })->create();

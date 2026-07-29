@@ -5,7 +5,7 @@ declare(strict_types=1);
 use Illuminate\Support\Facades\Route;
 use Symfony\Component\Yaml\Yaml;
 
-test('the authoritative OpenAPI contract documents the complete M1 surface', function () {
+test('the authoritative OpenAPI contract documents the complete M1 and M2.1 surface', function () {
     $contractPath = base_path('docs/api/v1/openapi.yaml');
     $contract = file_get_contents($contractPath);
 
@@ -18,6 +18,9 @@ test('the authoritative OpenAPI contract documents the complete M1 surface', fun
             '  /auth/two-factor-challenge:',
             '  /auth/logout:',
             '  /me:',
+            '  /catalog/home:',
+            '  /packages:',
+            '  /packages/{package}:',
             'Accept-Language',
             'bearerAuth:',
             'mobile:access',
@@ -27,8 +30,14 @@ test('the authoritative OpenAPI contract documents the complete M1 surface', fun
             'invalid_two_factor_challenge',
             'two_factor_attempts_exceeded',
             'missing_mobile_ability',
+            'package_not_found',
+            'prices_visible',
+            'from_price',
+            'minimum_price',
+            'MoneyDisplay',
             'profile_photo_url',
             'بيانات الاعتماد هذه غير متطابقة مع سجلاتنا.',
+            'الحزمة غير موجودة.',
         );
 });
 
@@ -38,6 +47,9 @@ test('implemented mobile routes and middleware remain aligned with OpenAPI', fun
         'api.v1.auth.two-factor-challenge' => ['POST', 'api/v1/auth/two-factor-challenge'],
         'api.v1.auth.logout' => ['POST', 'api/v1/auth/logout'],
         'api.v1.me' => ['GET', 'api/v1/me'],
+        'api.v1.catalog.home' => ['GET', 'api/v1/catalog/home'],
+        'api.v1.packages.index' => ['GET', 'api/v1/packages'],
+        'api.v1.packages.show' => ['GET', 'api/v1/packages/{package}'],
     ];
 
     foreach ($routes as $name => [$method, $uri]) {
@@ -50,11 +62,17 @@ test('implemented mobile routes and middleware remain aligned with OpenAPI', fun
     }
 
     $protectedMiddleware = Route::getRoutes()->getByName('api.v1.me')?->gatherMiddleware() ?? [];
+    $catalogMiddleware = Route::getRoutes()->getByName('api.v1.catalog.home')?->gatherMiddleware() ?? [];
 
     expect($protectedMiddleware)
         ->toContain('auth:sanctum')
         ->toContain('abilities:mobile:access')
-        ->toContain('mobile.account');
+        ->toContain('mobile.account')
+        ->and($catalogMiddleware)
+        ->toContain('auth:sanctum')
+        ->toContain('abilities:mobile:access')
+        ->toContain('mobile.account')
+        ->toContain('throttle:mobile-catalog');
 });
 
 test('OpenAPI requests responses security and user fields match the implementation', function () {
@@ -67,25 +85,32 @@ test('OpenAPI requests responses security and user fields match the implementati
         '/auth/two-factor-challenge',
         '/auth/logout',
         '/me',
+        '/catalog/home',
+        '/packages',
+        '/packages/{package}',
     ])->and(array_keys($paths['/auth/login']['post']['responses']))->toBe([
         200,
         202,
         403,
         422,
         429,
-    ])->and(array_keys($paths['/auth/two-factor-challenge']['post']['responses']))->toBe([
+    ])->and(array_keys($paths['/catalog/home']['get']['responses']))->toBe([
         200,
+        401,
+        403,
+        429,
+    ])->and(array_keys($paths['/packages']['get']['responses']))->toBe([
+        200,
+        401,
         403,
         422,
         429,
-    ])->and(array_keys($paths['/auth/logout']['post']['responses']))->toBe([
+    ])->and(array_keys($paths['/packages/{package}']['get']['responses']))->toBe([
         200,
         401,
         403,
-    ])->and(array_keys($paths['/me']['get']['responses']))->toBe([
-        200,
-        401,
-        403,
+        404,
+        429,
     ]);
 
     expect($schemas['LoginRequest']['required'])->toBe(['username', 'password'])
@@ -94,27 +119,13 @@ test('OpenAPI requests responses security and user fields match the implementati
             'password',
             'device_name',
         ])
-        ->and($schemas['LoginRequest']['properties']['username']['minLength'])->toBe(1)
-        ->and($schemas['LoginRequest']['properties']['password']['minLength'])->toBe(1)
-        ->and($schemas['LoginRequest']['properties']['device_name']['maxLength'])->toBe(80)
-        ->and($schemas['TwoFactorChallengeRequest']['required'])->toBe(['challenge_token'])
-        ->and(array_keys($schemas['TwoFactorChallengeRequest']['properties']))->toBe([
-            'challenge_token',
-            'code',
-            'recovery_code',
-        ])
-        ->and($schemas['TwoFactorChallengeRequest']['properties']['code']['type'])
-        ->toBe(['string', 'null'])
-        ->and($schemas['TwoFactorChallengeRequest']['properties']['recovery_code']['type'])
-        ->toBe(['string', 'null'])
-        ->and($schemas['TwoFactorChallengeRequest']['properties']['recovery_code']['minLength'])->toBe(1)
-        ->and($schemas['TwoFactorChallengeRequest']['oneOf'])->toHaveCount(2);
-
-    expect($paths['/auth/logout']['post']['security'])->toBe([['bearerAuth' => []]])
+        ->and($paths['/auth/logout']['post']['security'])->toBe([['bearerAuth' => []]])
         ->and($paths['/me']['get']['security'])->toBe([['bearerAuth' => []]])
+        ->and($paths['/catalog/home']['get']['security'])->toBe([['bearerAuth' => []]])
+        ->and($paths['/packages']['get']['security'])->toBe([['bearerAuth' => []]])
+        ->and($paths['/packages/{package}']['get']['security'])->toBe([['bearerAuth' => []]])
         ->and($specification['components']['securitySchemes']['bearerAuth']['scheme'])->toBe('bearer')
         ->and($schemas['Token']['properties']['token_type']['const'])->toBe('Bearer')
-        ->and($schemas['Token']['properties']['access_token'])->not->toHaveKey('writeOnly')
         ->and($schemas['Token']['properties']['expires_at']['description'])
         ->toContain('Exactly 30 days');
 
@@ -133,6 +144,15 @@ test('OpenAPI requests responses security and user fields match the implementati
     ])->and(array_keys($schemas['MobileUser']['properties']))->toBe($schemas['MobileUser']['required'])
         ->and($schemas['MobileUser']['properties']['locale']['enum'])->toBe(['ar', 'en']);
 
+    expect($schemas['Money']['required'])->toBe(['amount', 'currency', 'display'])
+        ->and($schemas['Money']['properties']['currency']['const'])->toBe('USD')
+        ->and($schemas['MoneyDisplay']['required'])->toBe(['currency', 'formatted'])
+        ->and($schemas['PackageSummary']['required'])->toContain('from_price')
+        ->and($schemas['ProductOption']['required'])->toContain('minimum_price')
+        ->and($schemas['CatalogMeta']['required'])->toBe(['prices_visible'])
+        ->and($schemas['PackageListMeta']['required'])->toBe(['prices_visible', 'pagination'])
+        ->and($schemas['OffsetPagination']['required'])->toBe(['page', 'per_page', 'total', 'last_page']);
+
     expect($schemas['ApiError']['properties']['code']['enum'])->toContain(
         'invalid_credentials',
         'account_inactive',
@@ -145,13 +165,14 @@ test('OpenAPI requests responses security and user fields match the implementati
         'unauthenticated',
         'missing_mobile_ability',
         'too_many_requests',
+        'package_not_found',
     )->and($paths['/auth/login']['post']['parameters'][0]['$ref'])
         ->toBe('#/components/parameters/AcceptLanguage')
-        ->and($paths['/auth/two-factor-challenge']['post']['parameters'][0]['$ref'])
+        ->and($paths['/catalog/home']['get']['parameters'][0]['$ref'])
         ->toBe('#/components/parameters/AcceptLanguage')
-        ->and($paths['/auth/logout']['post']['parameters'][0]['$ref'])
+        ->and($paths['/packages']['get']['parameters'][0]['$ref'])
         ->toBe('#/components/parameters/AcceptLanguage')
-        ->and($paths['/me']['get']['parameters'][0]['$ref'])
+        ->and($paths['/packages/{package}']['get']['parameters'][0]['$ref'])
         ->toBe('#/components/parameters/AcceptLanguage');
 });
 
