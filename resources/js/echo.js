@@ -7,6 +7,7 @@ import {
     handleNotificationReceived,
     initCustomerActivityInvalidation,
 } from './customer-activity-invalidation';
+import { handleFinancialStateChanged } from './customer-financial-invalidation';
 
 window.Pusher = Pusher;
 
@@ -31,6 +32,9 @@ if (import.meta.env.VITE_REVERB_APP_KEY && window.Laravel?.userId) {
         })
         .listen('.CustomerActivityInvalidated', (payload) => {
             handleDomainInvalidated(payload ?? {});
+        })
+        .listen('.CustomerFinancialStateChanged', (payload) => {
+            handleFinancialStateChanged(payload ?? {});
         });
 }
 

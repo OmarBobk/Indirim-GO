@@ -25,12 +25,20 @@ Authoritative financial model for karman.store.
 - `app/Actions/Refunds/ApproveRefundRequest.php`
 - `app/Actions/Commissions/CreatePayoutBatch.php`
 - `app/Console/Commands/WalletReconcile.php`, `ProfitSettleCommand.php`
+- **M6.1 read model:** `app/Actions/Financial/GetCustomerFinancialOverview.php`, `app/Support/Financial/*`, `app/Support/CustomerFinancialPresenter.php`, `app/DTOs/Financial/*`
+- `resources/js/customer-financial-invalidation.js` (Echo → Livewire invalidate)
 - `config/billing.php`
 
 ## Features
 
-- [[Customer Financial Centre]] — M6 canonical (M6.0.1 kernel shipped)
+- [[Customer Financial Centre]] — M6 canonical (M6.0.1 kernel + **M6.1 Overview** shipped)
 - [[Customer Activity]] — wallet events in timeline (projection only)
+
+## Customer overview (M6.1)
+
+- `/wallet` = Financial Overview (available-to-spend hero, pending ≤3, recent posted ≤5)
+- Full ledger / filters / detail deferred to M6.2
+- Realtime: invalidation only on existing user private channel
 
 ## Related
 

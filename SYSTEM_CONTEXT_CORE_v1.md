@@ -130,7 +130,7 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - **Customer UX:** `CustomerWalletDisplay` — stacked header balance (green positive / red debt), Limit/Available secondary when facility Active; mobile header chip surfaces limit/available without opening wallet. Wallet timeline humanized via `CustomerSystemEventPresenter` when timeline `audience="customer"`.
 - **Config:** `billing.wallet_credit_limit_max`, `billing.wallet_payment_terms_days` (`config/billing.php`).
 - **Out of scope (still true):** debt forgiveness / write-off. **M6.0.1 shipped:** all product posted wallet mutations use `WalletLedger` (incl. purchase/topup/refund/commission/settlement). Debit floor uses `Wallet::minimumAllowedBalance()`. `wallet:reconcile` is audit-only by default; `--repair` is audited snapshot set (compensating TX cannot close drift). See `Vault/Features/Customer Financial Centre.md`.
-- **M6 target:** Wallet becomes customer Financial Control Centre (overview / ledger / top-ups / refunds); salesperson unpaid earnings stay on `/salesperson-dashboard`; receipts start as printable HTML; realtime via `CustomerFinancialStateChanged` (server event shipped; client in M6.7).
+- **M6 target:** Wallet becomes customer Financial Control Centre (overview / ledger / top-ups / refunds); salesperson unpaid earnings stay on `/salesperson-dashboard`; receipts start as printable HTML; overview realtime via `CustomerFinancialStateChanged` (invalidation only; client coalescer shipped in M6.1).
 
 ---
 
@@ -250,6 +250,7 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - **2026-07 (M5):** **Customer Activity** — read-model spine + Activity page + action-required domain readers + realtime invalidation (M5.4) + query-budget hardening (M5.4.1). Home Needs attention island was shipped then rolled back (wallet chrome restored on mobile top bar). See `Vault/Features/Customer Activity.md`.
 - **2026-07 (M6.0):** **Customer Financial Centre architecture** — full mutation/idempotency/precision audit; approved kernel-first roadmap. See `Vault/Features/Customer Financial Centre.md`.
 - **2026-07 (M6.0.1):** **Wallet mutation kernel** — `WalletLedger` + `LedgerMoney`; migrate purchase/topup/refund/commission/settlement; posted TX immutability; `CustomerFinancialStateChanged`; reconcile audit-only + snapshot `--repair`; pending top-up lock uniqueness.
+- **2026-07 (M6.1):** **Customer Financial Overview** — `/wallet` read-model (`GetCustomerFinancialOverview` → DTOs → `CustomerFinancialPresenter`); available-to-spend hero; pending ≤3; recent posted ≤5; Echo `.CustomerFinancialStateChanged` → `customer-financial-invalidate` (same private user channel; separate coalescer).
 
 ---
 

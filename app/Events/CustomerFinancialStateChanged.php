@@ -13,7 +13,7 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Str;
 
 /**
- * Invalidation-only signal for customer financial surfaces (M6.7 will consume).
+ * Invalidation-only signal for customer financial surfaces.
  * Payload must never include balances, amounts, or source IDs.
  */
 class CustomerFinancialStateChanged implements ShouldBroadcastNow
