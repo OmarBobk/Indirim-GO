@@ -4,9 +4,14 @@ declare(strict_types=1);
 
 use App\Actions\MobileAuth\CreateMobileTwoFactorChallenge;
 use App\Enums\Timezone;
+use App\Events\ActivityLogChanged;
 use App\Models\User;
 use Carbon\CarbonImmutable;
+use Illuminate\Broadcasting\Broadcasters\NullBroadcaster;
+use Illuminate\Broadcasting\BroadcastException;
+use Illuminate\Log\Events\MessageLogged;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Hash;
 use Laravel\Fortify\Contracts\TwoFactorAuthenticationProvider;
 use Laravel\Sanctum\PersonalAccessToken;
@@ -16,6 +21,7 @@ use Laravel\Telescope\Telescope;
 use Mockery\MockInterface;
 use Spatie\Activitylog\Models\Activity;
 use Spatie\Permission\Models\Role;
+use Symfony\Component\Yaml\Yaml;
 
 function m11Customer(array $attributes = []): User
 {
@@ -856,4 +862,216 @@ test('existing web username authentication still works', function () {
 
     $this->assertAuthenticatedAs($user);
     expect(Hash::check('123', $user->password))->toBeTrue();
+});
+
+function m13FailingRealtimeBroadcaster(string $failureMessage): void
+{
+    app('Illuminate\Broadcasting\BroadcastManager')->extend('failing', function () use ($failureMessage) {
+        return new class($failureMessage) extends NullBroadcaster
+        {
+            public function __construct(private readonly string $failureMessage) {}
+
+            public function broadcast(array $channels, $event, array $payload = []): void
+            {
+                throw new BroadcastException($this->failureMessage);
+            }
+        };
+    });
+
+    config([
+        'broadcasting.default' => 'failing',
+        'broadcasting.connections.failing' => [
+            'driver' => 'failing',
+        ],
+    ]);
+}
+
+test('valid mobile login succeeds when activity log Reverb broadcast fails', function () {
+    $this->freezeTime();
+    $now = CarbonImmutable::now();
+    $user = m11Customer([
+        'username' => 'reverb-resilient-customer',
+        'password' => Hash::make('super-secret-password-value'),
+    ]);
+
+    $signedFailure = 'Pusher error contacting http://127.0.0.1:8080/apps/demo/events'
+        .'?auth_key=demo-key&auth_signature=signed-demo-signature&auth_timestamp=1710000000'
+        .': cURL error 7: Failed to connect to 127.0.0.1 port 8080';
+    m13FailingRealtimeBroadcaster($signedFailure);
+
+    $warnings = [];
+    Event::listen(MessageLogged::class, function (MessageLogged $event) use (&$warnings): void {
+        if ($event->level === 'warning' && $event->message === 'Activity log broadcast failed') {
+            $warnings[] = $event->context;
+        }
+    });
+
+    $response = $this->postJson('/api/v1/auth/login', [
+        'username' => $user->username,
+        'password' => 'super-secret-password-value',
+        'device_name' => 'Android Emulator',
+    ]);
+
+    $response
+        ->assertOk()
+        ->assertJsonPath('data.token.token_type', 'Bearer')
+        ->assertJsonPath('data.token.expires_at', $now->addDays(30)->toIso8601String())
+        ->assertJsonPath('data.user.id', $user->id)
+        ->assertJsonStructure([
+            'data' => [
+                'token' => ['access_token', 'token_type', 'expires_at'],
+                'user' => ['id', 'username'],
+            ],
+        ]);
+
+    $plainTextToken = $response->json('data.token.access_token');
+    $token = PersonalAccessToken::findToken($plainTextToken);
+    $activity = Activity::query()
+        ->where('event', 'user.login')
+        ->where('subject_id', $user->id)
+        ->latest('id')
+        ->first();
+
+    $contract = Yaml::parseFile(base_path('docs/api/v1/openapi.yaml'));
+    $loginSuccessSchema = $contract['components']['schemas']['AuthenticationSuccess'] ?? null;
+    $requiredDataKeys = $loginSuccessSchema['properties']['data']['required'] ?? [];
+
+    expect($user->tokens()->count())->toBe(1)
+        ->and($token)->not->toBeNull()
+        ->and($token?->abilities)->toBe(['mobile:access'])
+        ->and($token?->expires_at?->toIso8601String())->toBe($now->addDays(30)->toIso8601String())
+        ->and($activity)->not->toBeNull()
+        ->and($warnings)->toHaveCount(1)
+        ->and($warnings[0])->toMatchArray([
+            'error_id' => 'activity_log_broadcast_failed',
+            'exception_class' => BroadcastException::class,
+        ])
+        ->and($warnings[0])->toHaveKey('activity_id')
+        ->and($warnings[0]['activity_id'])->toBe($activity?->id)
+        ->and(json_encode($warnings[0], JSON_THROW_ON_ERROR))
+        ->not->toContain(
+            'auth_key=',
+            'auth_signature=',
+            'signed-demo-signature',
+            'demo-key',
+            $plainTextToken,
+            'super-secret-password-value',
+        )
+        ->and($loginSuccessSchema)->not->toBeNull()
+        ->and($requiredDataKeys)->toBe(['token', 'user'])
+        ->and($response->json('data'))->toHaveKeys($requiredDataKeys);
+});
+
+test('successful activity log broadcast path still publishes during mobile login', function () {
+    Event::fake([ActivityLogChanged::class]);
+
+    $user = m11Customer([
+        'username' => 'broadcast-success-customer',
+        'password' => Hash::make('super-secret-password-value'),
+    ]);
+
+    $this->postJson('/api/v1/auth/login', [
+        'username' => $user->username,
+        'password' => 'super-secret-password-value',
+        'device_name' => 'Android Emulator',
+    ])->assertOk();
+
+    $activity = Activity::query()
+        ->where('event', 'user.login')
+        ->where('subject_id', $user->id)
+        ->latest('id')
+        ->firstOrFail();
+
+    Event::assertDispatched(ActivityLogChanged::class, function (ActivityLogChanged $event) use ($activity): bool {
+        return $event->activityId === $activity->id
+            && $event->reason === 'created';
+    });
+
+    expect($user->tokens()->count())->toBe(1);
+});
+
+test('invalid credentials still fail when the activity log broadcaster is failing', function () {
+    m13FailingRealtimeBroadcaster('cURL error 7: Failed to connect to 127.0.0.1 port 8080');
+
+    $user = m11Customer();
+
+    $this->postJson('/api/v1/auth/login', [
+        'username' => $user->username,
+        'password' => 'wrong-password',
+    ])
+        ->assertUnprocessable()
+        ->assertExactJson([
+            'message' => __('messages.mobile_api.invalid_credentials'),
+            'code' => 'invalid_credentials',
+        ]);
+
+    expect($user->tokens()->count())->toBe(0)
+        ->and(Activity::query()->where('event', 'user.login')->where('subject_id', $user->id)->count())->toBe(0);
+});
+
+test('blocked inactive and non-customer denials remain unchanged when broadcasting fails', function (string $state, int $status, string $code) {
+    m13FailingRealtimeBroadcaster('cURL error 7: Failed to connect to 127.0.0.1 port 8080');
+
+    if ($state === 'non-customer') {
+        $role = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+        $user = User::factory()->create();
+        $user->assignRole($role);
+    } else {
+        $user = m11Customer();
+        $user->forceFill($state === 'inactive'
+            ? ['is_active' => false]
+            : ['blocked_at' => now()])->save();
+    }
+
+    $this->postJson('/api/v1/auth/login', [
+        'username' => $user->username,
+        'password' => '123',
+    ])
+        ->assertStatus($status)
+        ->assertJsonPath('code', $code);
+
+    expect($user->tokens()->count())->toBe(0);
+})->with([
+    'inactive' => ['inactive', 422, 'account_inactive'],
+    'blocked' => ['blocked', 422, 'account_blocked'],
+    'non-customer' => ['non-customer', 403, 'customer_role_required'],
+]);
+
+test('two factor challenge response remains contract-correct when broadcasting would fail', function () {
+    m13FailingRealtimeBroadcaster('cURL error 7: Failed to connect to 127.0.0.1 port 8080');
+
+    $user = m11Customer();
+    m11EnableTwoFactor($user);
+
+    $this->postJson('/api/v1/auth/login', [
+        'username' => $user->username,
+        'password' => '123',
+        'device_name' => '2FA Phone',
+    ])
+        ->assertAccepted()
+        ->assertJsonPath('data.two_factor_required', true)
+        ->assertJsonStructure(['data' => ['challenge_token', 'expires_at']]);
+
+    expect($user->tokens()->count())->toBe(0)
+        ->and($user->refresh()->last_login_at)->toBeNull();
+});
+
+test('authoritative login recording failures are not swallowed by broadcast isolation', function () {
+    $user = m11Customer([
+        'username' => 'authoritative-failure-customer',
+        'password' => Hash::make('super-secret-password-value'),
+    ]);
+
+    Activity::creating(function (): void {
+        throw new RuntimeException('durable activity persistence failed');
+    });
+
+    $this->postJson('/api/v1/auth/login', [
+        'username' => $user->username,
+        'password' => 'super-secret-password-value',
+        'device_name' => 'Android Emulator',
+    ])->assertServerError();
+
+    expect($user->tokens()->count())->toBe(0)
+        ->and(Activity::query()->where('event', 'user.login')->where('subject_id', $user->id)->count())->toBe(0);
 });

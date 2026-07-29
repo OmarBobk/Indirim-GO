@@ -124,6 +124,12 @@ composer test:lint
 - Base: `staging`
 - Branch: `cursor/mobile-api-v1-auth-5bcf` (Cursor Cloud branch policy)
 
+## Successors
+
+- [[Mobile M1.2 — Flutter Foundation and Authentication]] — Flutter client foundation merged to mobile `main`
+- [[Mobile M1.2 Flutter Authentication Architecture]]
+- [[Mobile M1.3 — Local Integration and Closeout]] — local emulator integration closeout + auth/Reverb failure isolation
+
 ## Gotchas
 
 - `config('sanctum.expiration')` intentionally remains `null`; only mobile PATs receive an explicit `expires_at`.
@@ -135,3 +141,4 @@ composer test:lint
 - Run the Sanctum migration before serving mobile requests.
 - Existing npm audit reports vulnerabilities in the current frontend lockfile; M1.1 did not change frontend dependencies.
 - Customer Activity, notification unread state, realtime behavior, and mobile repository files are outside this milestone.
+- M1.3 discovered that successful mobile login can create a durable `user.login` activity row that then publishes optional `ActivityLogChanged` realtime; Reverb downtime must not fail authentication (see M1.3).
