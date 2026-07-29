@@ -1,0 +1,461 @@
+openapi: 3.1.0
+info:
+  title: İndirimGo Mobile API
+  version: 1.0.0
+  description: |
+    Authoritative contract for the customer-only İndirimGo Mobile M1 API.
+    Laravel is authoritative for authentication, authorization, validation,
+    and domain behavior.
+
+    Messages are localized from `Accept-Language`. Only `ar` and `en` are
+    supported; unsupported or missing values fall back to the configured
+    Laravel locale.
+
+    Local development normally uses `http://localhost:8000/api/v1`. An Android
+    emulator reaches that same host through `http://10.0.2.2:8000/api/v1`.
+    Clients must configure the base URL per environment instead of hardcoding it.
+servers:
+  - url: http://localhost:8000/api/v1
+    description: Local Laravel server
+  - url: http://10.0.2.2:8000/api/v1
+    description: Local Laravel server from an Android emulator
+tags:
+  - name: Authentication
+  - name: Account
+paths:
+  /auth/login:
+    post:
+      tags: [Authentication]
+      summary: Authenticate a customer
+      description: |
+        Authenticates by normalized username and password. A token is returned
+        only when every authentication requirement succeeds. Customers with
+        confirmed Fortify two-factor authentication receive a one-time,
+        five-minute challenge instead.
+      operationId: mobileLogin
+      parameters:
+        - $ref: '#/components/parameters/AcceptLanguage'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Authentication completed and a 30-day token was issued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthenticationSuccess'
+        '202':
+          description: Password accepted; two-factor authentication is required.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TwoFactorChallengeRequired'
+        '403':
+          $ref: '#/components/responses/CustomerRoleRequired'
+        '422':
+          description: Validation failed, credentials are invalid, or the account cannot log in.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ValidationError'
+                  - $ref: '#/components/schemas/ApiError'
+              examples:
+                invalidCredentialsEnglish:
+                  value:
+                    message: These credentials do not match our records.
+                    code: invalid_credentials
+                invalidCredentialsArabic:
+                  value:
+                    message: بيانات الاعتماد هذه غير متطابقة مع سجلاتنا.
+                    code: invalid_credentials
+                inactiveArabic:
+                  value:
+                    message: حسابك غير نشط. يرجى الاتصال بالدعم.
+                    code: account_inactive
+                validationEnglish:
+                  value:
+                    message: The given data was invalid.
+                    errors:
+                      username:
+                        - The username field is required.
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /auth/two-factor-challenge:
+    post:
+      tags: [Authentication]
+      summary: Complete a mobile two-factor challenge
+      description: |
+        Accepts exactly one authenticator code or recovery code. The opaque
+        challenge is single-use, expires after approximately five minutes,
+        permits at most five invalid verification attempts, and is bound to the
+        customer and validated device name established at password login.
+        A successful recovery code is replaced using Fortify behavior.
+      operationId: completeMobileTwoFactorChallenge
+      parameters:
+        - $ref: '#/components/parameters/AcceptLanguage'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TwoFactorChallengeRequest'
+      responses:
+        '200':
+          description: Two-factor authentication completed and a 30-day token was issued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthenticationSuccess'
+        '403':
+          $ref: '#/components/responses/CustomerRoleRequired'
+        '422':
+          description: Validation failed or the challenge/code is invalid, expired, replayed, or over-attempted.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ValidationError'
+                  - $ref: '#/components/schemas/ApiError'
+              examples:
+                invalidCodeEnglish:
+                  value:
+                    message: The two-factor authentication code is invalid.
+                    code: invalid_two_factor_code
+                expiredChallengeArabic:
+                  value:
+                    message: تحدي المصادقة الثنائية غير صالح أو منتهي الصلاحية.
+                    code: invalid_two_factor_challenge
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /auth/logout:
+    post:
+      tags: [Authentication]
+      summary: Revoke the current mobile token
+      description: Revokes only the bearer token used for this request.
+      operationId: mobileLogout
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AcceptLanguage'
+      responses:
+        '200':
+          description: Current token revoked.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogoutSuccess'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/ForbiddenToken'
+  /me:
+    get:
+      tags: [Account]
+      summary: Return the current mobile customer
+      operationId: mobileMe
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AcceptLanguage'
+      responses:
+        '200':
+          description: Current customer profile.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserSuccess'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/ForbiddenToken'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Sanctum
+      description: |
+        Laravel Sanctum personal access token. Mobile tokens have only the
+        `mobile:access` ability and an explicit `expires_at` 30 days after issue.
+        A real bearer PAT is required; Laravel web-session cookies are not accepted
+        for these protected mobile routes. There is no refresh-token endpoint;
+        users authenticate again after expiry.
+  parameters:
+    AcceptLanguage:
+      name: Accept-Language
+      in: header
+      required: false
+      description: Preferred response language. Supported primary language tags are `ar` and `en`.
+      schema:
+        type: string
+        examples: [en, ar, 'ar-SA,ar;q=0.9,en;q=0.8']
+  responses:
+    Unauthenticated:
+      description: Token is missing, invalid, expired, revoked, or the account became invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          examples:
+            english:
+              value:
+                message: Unauthenticated.
+                code: unauthenticated
+            blockedArabic:
+              value:
+                message: انتهت صلاحية الوصول لأن هذا الحساب أصبح محظورًا.
+                code: account_blocked
+    CustomerRoleRequired:
+      description: Valid credentials belong to an identity that cannot use the customer mobile app.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          example:
+            message: This account cannot use the customer mobile application.
+            code: customer_role_required
+    ForbiddenToken:
+      description: The identity is not a customer or the token lacks the required mobile ability.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          examples:
+            role:
+              value:
+                message: This account cannot use the customer mobile application.
+                code: customer_role_required
+            ability:
+              value:
+                message: This token cannot access the mobile API.
+                code: missing_mobile_ability
+    TooManyRequests:
+      description: Rate limit exceeded. The `Retry-After` response header is preserved.
+      headers:
+        Retry-After:
+          description: Seconds until another request may be attempted.
+          schema:
+            type: integer
+            minimum: 1
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          examples:
+            english:
+              value:
+                message: Too many attempts. Please try again later.
+                code: too_many_requests
+            arabic:
+              value:
+                message: محاولات كثيرة جدًا. يرجى المحاولة لاحقًا.
+                code: too_many_requests
+  schemas:
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: Fortify username identifier; lowercased when configured.
+          example: omar
+        password:
+          type: string
+          format: password
+          minLength: 1
+          maxLength: 255
+          writeOnly: true
+        device_name:
+          type: [string, 'null']
+          maxLength: 80
+          example: Omar Android
+    TwoFactorChallengeRequest:
+      type: object
+      required: [challenge_token]
+      properties:
+        challenge_token:
+          type: string
+          minLength: 43
+          maxLength: 255
+          writeOnly: true
+        code:
+          type: [string, 'null']
+          pattern: '^[0-9]{6}$'
+          writeOnly: true
+          description: Six-digit authenticator code. Mutually exclusive with `recovery_code`.
+        recovery_code:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 255
+          writeOnly: true
+          description: Fortify recovery code. Mutually exclusive with `code`.
+      oneOf:
+        - required: [code]
+          properties:
+            code:
+              type: string
+            recovery_code:
+              type: 'null'
+        - required: [recovery_code]
+          properties:
+            code:
+              type: 'null'
+            recovery_code:
+              type: string
+              minLength: 1
+    AuthenticationSuccess:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          type: object
+          additionalProperties: false
+          required: [token, user]
+          properties:
+            token:
+              $ref: '#/components/schemas/Token'
+            user:
+              $ref: '#/components/schemas/MobileUser'
+    TwoFactorChallengeRequired:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          type: object
+          additionalProperties: false
+          required: [two_factor_required, challenge_token, expires_at]
+          properties:
+            two_factor_required:
+              type: boolean
+              const: true
+            challenge_token:
+              type: string
+              description: Opaque one-time credential returned only in this response.
+            expires_at:
+              type: string
+              format: date-time
+              description: Approximately five minutes after challenge creation.
+    Token:
+      type: object
+      additionalProperties: false
+      required: [access_token, token_type, expires_at]
+      properties:
+        access_token:
+          type: string
+          description: Plain-text Sanctum token returned once. Never logged or stored by Laravel in plain text.
+        token_type:
+          type: string
+          const: Bearer
+        expires_at:
+          type: string
+          format: date-time
+          description: Exactly 30 days after token issue.
+    MobileUser:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - username
+        - email
+        - phone
+        - country_code
+        - locale
+        - preferred_currency
+        - timezone
+        - profile_photo_url
+        - email_verified_at
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+        phone:
+          type: [string, 'null']
+          description: Display-only in Mobile M1.
+        country_code:
+          type: [string, 'null']
+        locale:
+          type: string
+          enum: [ar, en]
+        preferred_currency:
+          type: string
+          example: USD
+        timezone:
+          type: [string, 'null']
+        profile_photo_url:
+          type: [string, 'null']
+          format: uri
+          description: Safe absolute URL generated from the configured public storage disk.
+        email_verified_at:
+          type: [string, 'null']
+          format: date-time
+    UserSuccess:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/MobileUser'
+    LogoutSuccess:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          type: object
+          additionalProperties: false
+          required: [message]
+          properties:
+            message:
+              type: string
+              example: Logged out successfully.
+    ValidationError:
+      type: object
+      additionalProperties: false
+      required: [message, errors]
+      properties:
+        message:
+          type: string
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+    ApiError:
+      type: object
+      additionalProperties: false
+      required: [message, code]
+      properties:
+        message:
+          type: string
+        code:
+          type: string
+          enum:
+            - invalid_credentials
+            - account_inactive
+            - account_blocked
+            - customer_role_required
+            - invalid_two_factor_challenge
+            - invalid_two_factor_code
+            - invalid_recovery_code
+            - two_factor_attempts_exceeded
+            - unauthenticated
+            - missing_mobile_ability
+            - too_many_requests

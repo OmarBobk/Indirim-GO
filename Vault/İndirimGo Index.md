@@ -20,6 +20,11 @@ Central map for indirimGo knowledge. Use this vault with [[Ask → Plan → Agen
 - [[Refunds & Settlements]] — refund requests, commission payouts
 - [[Customer Activity]] — unified activity feed (in progress)
 
+## Mobile
+
+- [[Mobile M1.1 — Laravel API Foundation and Authentication]] — customer auth, Fortify 2FA, Sanctum PAT, `/api/v1`
+- [[Mobile M1.1 Authentication Architecture]] — accepted auth and API-contract decisions
+
 ## Workflow
 
 1. Create a note from [[Templates/Feature Brief]] (or duplicate an existing feature note).

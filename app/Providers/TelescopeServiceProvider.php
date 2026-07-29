@@ -22,6 +22,18 @@ class TelescopeServiceProvider extends TelescopeApplicationServiceProvider
         $isLocal = $this->app->environment('local');
 
         Telescope::filter(function (IncomingEntry $entry) use ($isLocal) {
+            if ($entry->isRequest()) {
+                $uri = (string) ($entry->content['uri'] ?? '');
+                $path = '/'.ltrim((string) (parse_url($uri, PHP_URL_PATH) ?: $uri), '/');
+
+                if (in_array($path, [
+                    '/api/v1/auth/login',
+                    '/api/v1/auth/two-factor-challenge',
+                ], true)) {
+                    return false;
+                }
+            }
+
             return $isLocal ||
                    $entry->isReportableException() ||
                    $entry->isFailedRequest() ||
@@ -36,16 +48,25 @@ class TelescopeServiceProvider extends TelescopeApplicationServiceProvider
      */
     protected function hideSensitiveRequestDetails(): void
     {
-        if ($this->app->environment('local')) {
-            return;
-        }
-
-        Telescope::hideRequestParameters(['_token']);
+        Telescope::hideRequestParameters([
+            '_token',
+            'password',
+            'password_confirmation',
+            'code',
+            'recovery_code',
+            'challenge_token',
+        ]);
 
         Telescope::hideRequestHeaders([
+            'authorization',
             'cookie',
             'x-csrf-token',
             'x-xsrf-token',
+        ]);
+
+        Telescope::hideResponseParameters([
+            'data.token.access_token',
+            'data.challenge_token',
         ]);
     }
 
