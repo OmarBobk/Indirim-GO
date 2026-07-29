@@ -10,6 +10,8 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
 use Laravel\Fortify\Contracts\TwoFactorAuthenticationProvider;
 use Laravel\Sanctum\PersonalAccessToken;
+use Laravel\Telescope\EntryType;
+use Laravel\Telescope\IncomingEntry;
 use Laravel\Telescope\Telescope;
 use Mockery\MockInterface;
 use Spatie\Activitylog\Models\Activity;
@@ -155,6 +157,22 @@ test('login request validation uses the API envelope', function () {
         ->assertJsonMissingPath('code');
 });
 
+test('empty login and recovery values are rejected consistently with the contract', function () {
+    $this->postJson('/api/v1/auth/login', [
+        'username' => '',
+        'password' => '',
+    ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['username', 'password']);
+
+    $this->postJson('/api/v1/auth/two-factor-challenge', [
+        'challenge_token' => str_repeat('x', 43),
+        'recovery_code' => '',
+    ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['code', 'recovery_code']);
+});
+
 test('Telescope redacts mobile authentication request and response secrets', function () {
     expect(Telescope::$hiddenRequestParameters)
         ->toContain('password', 'code', 'recovery_code', 'challenge_token')
@@ -162,6 +180,26 @@ test('Telescope redacts mobile authentication request and response secrets', fun
         ->toContain('authorization', 'cookie')
         ->and(Telescope::$hiddenResponseParameters)
         ->toContain('data.token.access_token', 'data.challenge_token');
+
+    $sensitiveEntry = (new IncomingEntry([
+        'uri' => 'http://localhost/api/v1/auth/login',
+        'response_status' => 500,
+        'payload' => [
+            'password' => '0',
+            'code' => '0',
+            'recovery_code' => '0',
+            'challenge_token' => '0',
+        ],
+    ]))->type(EntryType::REQUEST);
+    $ordinaryFailedEntry = (new IncomingEntry([
+        'uri' => 'http://localhost/unrelated',
+        'response_status' => 500,
+    ]))->type(EntryType::REQUEST);
+    $isRecorded = fn (IncomingEntry $entry): bool => collect(Telescope::$filterUsing)
+        ->every(fn (callable $filter): bool => $filter($entry));
+
+    expect($isRecorded($sensitiveEntry))->toBeFalse()
+        ->and($isRecorded($ordinaryFailedEntry))->toBeTrue();
 });
 
 test('wrong passwords have one response regardless of account state role or two factor', function (string $condition) {
@@ -388,6 +426,31 @@ test('two factor input requires exactly one code type', function (array $payload
     'neither' => [[]],
     'both' => [['code' => '123456', 'recovery_code' => 'recovery-code']],
 ]);
+
+test('two factor input accepts a null companion field as absent', function () {
+    $recoveryUser = m11Customer();
+    m11EnableTwoFactor($recoveryUser, ['nullable-companion-recovery']);
+    $recoveryChallenge = m11ChallengeToken($recoveryUser);
+
+    $this->postJson('/api/v1/auth/two-factor-challenge', [
+        'challenge_token' => $recoveryChallenge,
+        'code' => null,
+        'recovery_code' => 'nullable-companion-recovery',
+    ])->assertOk();
+
+    $authenticatorUser = m11Customer();
+    m11EnableTwoFactor($authenticatorUser);
+    $authenticatorChallenge = m11ChallengeToken($authenticatorUser);
+    $this->mock(TwoFactorAuthenticationProvider::class, function (MockInterface $mock): void {
+        $mock->shouldReceive('verify')->once()->andReturnTrue();
+    });
+
+    $this->postJson('/api/v1/auth/two-factor-challenge', [
+        'challenge_token' => $authenticatorChallenge,
+        'code' => '123456',
+        'recovery_code' => null,
+    ])->assertOk();
+});
 
 test('expired challenges cannot be completed', function () {
     $user = m11Customer();

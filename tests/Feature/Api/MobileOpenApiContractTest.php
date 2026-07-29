@@ -94,6 +94,8 @@ test('OpenAPI requests responses security and user fields match the implementati
             'password',
             'device_name',
         ])
+        ->and($schemas['LoginRequest']['properties']['username']['minLength'])->toBe(1)
+        ->and($schemas['LoginRequest']['properties']['password']['minLength'])->toBe(1)
         ->and($schemas['LoginRequest']['properties']['device_name']['maxLength'])->toBe(80)
         ->and($schemas['TwoFactorChallengeRequest']['required'])->toBe(['challenge_token'])
         ->and(array_keys($schemas['TwoFactorChallengeRequest']['properties']))->toBe([
@@ -101,12 +103,18 @@ test('OpenAPI requests responses security and user fields match the implementati
             'code',
             'recovery_code',
         ])
+        ->and($schemas['TwoFactorChallengeRequest']['properties']['code']['type'])
+        ->toBe(['string', 'null'])
+        ->and($schemas['TwoFactorChallengeRequest']['properties']['recovery_code']['type'])
+        ->toBe(['string', 'null'])
+        ->and($schemas['TwoFactorChallengeRequest']['properties']['recovery_code']['minLength'])->toBe(1)
         ->and($schemas['TwoFactorChallengeRequest']['oneOf'])->toHaveCount(2);
 
     expect($paths['/auth/logout']['post']['security'])->toBe([['bearerAuth' => []]])
         ->and($paths['/me']['get']['security'])->toBe([['bearerAuth' => []]])
         ->and($specification['components']['securitySchemes']['bearerAuth']['scheme'])->toBe('bearer')
         ->and($schemas['Token']['properties']['token_type']['const'])->toBe('Bearer')
+        ->and($schemas['Token']['properties']['access_token'])->not->toHaveKey('writeOnly')
         ->and($schemas['Token']['properties']['expires_at']['description'])
         ->toContain('Exactly 30 days');
 

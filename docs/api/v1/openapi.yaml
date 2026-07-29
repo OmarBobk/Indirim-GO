@@ -262,12 +262,14 @@ components:
       properties:
         username:
           type: string
+          minLength: 1
           maxLength: 255
           description: Fortify username identifier; lowercased when configured.
           example: omar
         password:
           type: string
           format: password
+          minLength: 1
           maxLength: 255
           writeOnly: true
         device_name:
@@ -284,22 +286,30 @@ components:
           maxLength: 255
           writeOnly: true
         code:
-          type: string
+          type: [string, 'null']
           pattern: '^[0-9]{6}$'
           writeOnly: true
           description: Six-digit authenticator code. Mutually exclusive with `recovery_code`.
         recovery_code:
-          type: string
+          type: [string, 'null']
+          minLength: 1
           maxLength: 255
           writeOnly: true
           description: Fortify recovery code. Mutually exclusive with `code`.
       oneOf:
         - required: [code]
-          not:
-            required: [recovery_code]
+          properties:
+            code:
+              type: string
+            recovery_code:
+              type: 'null'
         - required: [recovery_code]
-          not:
-            required: [code]
+          properties:
+            code:
+              type: 'null'
+            recovery_code:
+              type: string
+              minLength: 1
     AuthenticationSuccess:
       type: object
       additionalProperties: false
@@ -341,7 +351,6 @@ components:
       properties:
         access_token:
           type: string
-          writeOnly: true
           description: Plain-text Sanctum token returned once. Never logged or stored by Laravel in plain text.
         token_type:
           type: string

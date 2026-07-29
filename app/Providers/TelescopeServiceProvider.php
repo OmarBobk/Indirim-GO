@@ -22,6 +22,18 @@ class TelescopeServiceProvider extends TelescopeApplicationServiceProvider
         $isLocal = $this->app->environment('local');
 
         Telescope::filter(function (IncomingEntry $entry) use ($isLocal) {
+            if ($entry->isRequest()) {
+                $uri = (string) ($entry->content['uri'] ?? '');
+                $path = '/'.ltrim((string) (parse_url($uri, PHP_URL_PATH) ?: $uri), '/');
+
+                if (in_array($path, [
+                    '/api/v1/auth/login',
+                    '/api/v1/auth/two-factor-challenge',
+                ], true)) {
+                    return false;
+                }
+            }
+
             return $isLocal ||
                    $entry->isReportableException() ||
                    $entry->isFailedRequest() ||
