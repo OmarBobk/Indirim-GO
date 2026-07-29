@@ -12,6 +12,7 @@ The customer Flutter client needs a stateless Laravel authentication boundary wi
 ## Decision
 
 - Use Laravel Sanctum personal access tokens for native mobile authentication.
+- Require a real Sanctum bearer PAT on protected mobile routes; reject web-session `TransientToken` authentication without altering the browser session.
 - Permit only users holding the `customer` role.
 - Give mobile tokens only the `mobile:access` ability.
 - Set `expires_at` explicitly to 30 days on each mobile token.
@@ -23,10 +24,12 @@ The customer Flutter client needs a stateless Laravel authentication boundary wi
 - Publish and review the API contract at `docs/api/v1/openapi.yaml`; implementation and tests must follow it.
 - Use local Laravel until a staging URL exists. Android emulators reach the host through `10.0.2.2`.
 - Keep API base URLs environment-configured rather than hardcoded.
+- Exclude mobile login and 2FA request entries from Telescope and configure defense-in-depth redaction for authentication request fields, headers, returned PATs, and challenge tokens.
 
 ## Alternatives considered
 
 - **Fortify web sessions in Flutter:** rejected because the native client requires a bearer-token lifecycle and must not depend on browser session state.
+- **Allow Sanctum web-session fallback on `/api/v1`:** rejected because transient tokens satisfy every ability and would break PAT expiry/logout semantics.
 - **OAuth/Passport:** rejected because first-party customer PATs do not need OAuth client and grant complexity.
 - **JWT with refresh tokens:** rejected because it adds signing, rotation, and revocation behavior not required for M1.
 - **Unsigned user ID as 2FA challenge:** rejected because it is client-controlled, enumerable, and replayable.
@@ -53,6 +56,7 @@ The customer Flutter client needs a stateless Laravel authentication boundary wi
 - `config/sanctum.php`
 - `app/Actions/MobileAuth/*`
 - `app/Http/Middleware/EnsureMobileAccountCanAuthenticate.php`
+- `app/Providers/TelescopeServiceProvider.php`
 - `app/Http/Resources/Api/V1/*`
 - `docs/api/v1/openapi.yaml`
 

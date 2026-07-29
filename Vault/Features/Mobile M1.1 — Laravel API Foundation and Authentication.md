@@ -1,5 +1,5 @@
 ---
-status: implemented
+status: verified
 created: 2026-07-29
 feature: mobile-m1-1-api-auth
 pull_request: https://github.com/OmarBobk/Indirim-GO/pull/38
@@ -18,6 +18,7 @@ Flutter can authenticate a customer, complete existing Fortify 2FA, read a safe 
 - Customer-only access; no staff roles or permission dump
 - `username` remains the login identifier and follows Fortify lowercase normalization
 - Laravel Sanctum personal access tokens with only `mobile:access`
+- Protected mobile routes require a real bearer PAT; web-session authentication is rejected without ending the web session
 - Explicit 30-day expiry per mobile token; no global token expiry change
 - No refresh-token flow
 - Full Fortify authenticator-code and recovery-code support
@@ -40,6 +41,7 @@ See [[Mobile M1.1 Authentication Architecture]].
 - `app/Http/Middleware/SetApiLocale.php` — stateless `Accept-Language`
 - `app/Http/Middleware/EnsureMobileAccountCanAuthenticate.php` — token-aware `canLogin()` and customer-role recheck
 - `app/Http/Resources/Api/V1/*` — safe authentication and customer profile envelopes
+- `app/Providers/TelescopeServiceProvider.php` — excludes sensitive login/2FA request entries and redacts auth request/response data
 - `config/mobile_api.php` — ability, token lifetime, challenge lifetime/attempt/lock limits
 - `database/migrations/2026_07_29_024057_create_personal_access_tokens_table.php`
 - `docs/api/v1/openapi.yaml`
@@ -56,6 +58,7 @@ See [[Mobile M1.1 Authentication Architecture]].
 - Account status and customer role are rechecked before token issue and on protected requests.
 - Invalid protected accounts lose only their current mobile token; web sessions are unaffected.
 - Logout revokes only the current token.
+- Telescope does not record mobile login/2FA request entries; request fields, auth headers, returned PATs, and challenge values are also configured for redaction.
 
 ## Local integration
 
@@ -78,8 +81,9 @@ See [[Mobile M1.1 Authentication Architecture]].
 - [x] Arabic and English API messages
 - [x] Authoritative OpenAPI contract
 - [x] Existing web auth focused tests pass
-- [x] Existing M5 Customer Activity tests pass without modification
-- [ ] Repository-wide suite fully green; ten pre-existing failures remain outside M1.1
+- [x] Existing web login, 2FA, recovery-code, remember-me, audit, logout, redirect, session-status, and rate-limit behavior passes focused regression tests
+- [x] M5 protected files remain unchanged; its flaky Activity assertion fails identically on the base commit
+- [ ] Repository-wide suite fully green; all nine final feature failures are already failing identically on the base commit
 
 ## Setup and verification commands
 
@@ -90,6 +94,7 @@ php artisan route:list --path=api/v1 -v
 php artisan config:show mobile_api
 php artisan config:show sanctum
 php artisan test --compact tests/Feature/Api/MobileAuthenticationTest.php tests/Feature/Api/MobileOpenApiContractTest.php
+php artisan test --compact tests/Feature/Auth/WebAuthenticationRegressionTest.php
 php artisan test --compact tests/Feature/Auth/AuthenticationTest.php tests/Feature/Auth/TwoFactorChallengeTest.php tests/Feature/Auth/LoginLocaleSyncTest.php tests/Feature/BlockedUserSessionTest.php
 php artisan test --compact tests/Feature/AuthActivityLogTest.php --filter="user login and logout"
 php artisan test --compact tests/Unit/CustomerActivityPresenterTest.php tests/Unit/CustomerActivityDTOTest.php tests/Feature/CustomerActivityReadModelTest.php tests/Feature/CustomerActivityRealtimeTest.php tests/Feature/CustomerActivityPageRealtimeTest.php tests/Feature/CustomerActivityActionRequiredTest.php tests/Feature/CustomerActivityPerformanceTest.php tests/Feature/CustomerActivityPageTest.php
@@ -100,13 +105,17 @@ composer test:lint
 
 ## Verification result
 
-- Mobile API targeted tests: pass, 235 assertions
-- Existing web auth focused tests: pass, 45 assertions
-- Existing login/logout audit test: pass, 2 assertions
-- Untouched M5 Customer Activity suite: pass, 288 assertions
+- Toolchain: PHP 8.4.23, Composer 2.7.1, Node 22.14.0, npm 10.9.7
+- Mobile API/OpenAPI targeted tests: pass, 355 assertions
+- Dedicated web-auth regression tests: pass, 60 assertions
+- Combined final auth verification: pass, 415 assertions
 - Pint: pass
 - Repository has no configured static-analysis command beyond Pint
-- Full suite: 10 unrelated pre-existing failures (missing seeded customer role in four tests, two random category-order collisions, two custom-amount pricing expectation mismatches, one locale-sensitive 2FA settings assertion, one settlement fixture assertion)
+- Final feature full suite: 9 failures, 3,499 assertions
+- Exact `origin/staging` (`b833e89`) full suite: 10 failures, 3,073 assertions
+- Every final feature failure has the same failure message and source line on `origin/staging`; the base has one additional random package-order collision.
+- The earlier reported feature run had 10 failures because random unique-order and locale/activity flakes vary between runs. The controlled final comparison supersedes that count.
+- Targeted M5 rerun: one `CustomerActivityPerformanceTest` assertion failure at line 173; the exact failure is present on the base commit and no M5 file changed.
 - PHP 8.4 emits dependency deprecation notices during tests; these are not M1.1 failures
 
 ## Pull request
@@ -119,6 +128,8 @@ composer test:lint
 
 - `config('sanctum.expiration')` intentionally remains `null`; only mobile PATs receive an explicit `expires_at`.
 - Native Flutter uses bearer PATs, not Sanctum SPA cookie authentication.
+- Sanctum web-session `TransientToken` is intentionally rejected on protected mobile routes.
+- Distinct inactive, blocked, non-customer, and 2FA-required responses occur only after a correct password, as required by the approved login contract; wrong passwords remain uniform.
 - Production cache must be shared by all Laravel instances so challenge locks and one-time state remain authoritative.
 - `APP_URL` must be correct for absolute profile-photo URLs.
 - Run the Sanctum migration before serving mobile requests.

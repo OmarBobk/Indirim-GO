@@ -13,7 +13,7 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - **Cart model:** cart state is client-side (`localStorage` key `karman.cart.v1`), but checkout always revalidates and recalculates on server.
 - **Access model:** backend routes are hidden by `backend` middleware and permission checks (404 on denial by design).
 - **Mutation safety:** financial writes must stay transactional and idempotent (`lockForUpdate`, idempotency keys, `DB::afterCommit` side effects).
-- **Mobile auth:** customer-only `/api/v1` uses Sanctum PATs with `mobile:access`, explicit 30-day expiry, no refresh token, and Fortify-backed 2FA challenges. Contract: `docs/api/v1/openapi.yaml`.
+- **Mobile auth:** customer-only `/api/v1` requires real Sanctum bearer PATs (web-session fallback rejected) with `mobile:access`, explicit 30-day expiry, no refresh token, and Fortify-backed 2FA challenges. Contract: `docs/api/v1/openapi.yaml`.
 - **Agent rules:** follow `.cursor/rules/laravel-boost.mdc` for stack versions, conventions, and karman.store financial guardrails.
 
 ---
