@@ -22,6 +22,7 @@ use App\Services\NotificationRecipientService;
 use App\Services\SystemEventService;
 use App\Support\AdminOpsBroadcaster;
 use App\Support\CustomerActivityBroadcaster;
+use App\Support\LedgerMoney;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -100,7 +101,7 @@ class RefundOrderItem
 
             $refundAmount = $this->refundAmountForFulfillment($lockedItem);
 
-            if ($refundAmount <= 0) {
+            if (LedgerMoney::compare($refundAmount, LedgerMoney::ZERO) !== 1) {
                 throw ValidationException::withMessages([
                     'order_item' => __('messages.refund_not_allowed'),
                 ]);
@@ -219,25 +220,25 @@ class RefundOrderItem
      * Custom-amount lines store a per-custom-unit price that often rounds to 0.00 at 2dp; the paid total is line_total.
      * Fixed lines with quantity > 1 use one fulfillment per unit, so refund one unit's share (unit_price, or line_total / qty fallback).
      */
-    private function refundAmountForFulfillment(OrderItem $item): float
+    private function refundAmountForFulfillment(OrderItem $item): string
     {
         $mode = $item->amount_mode ?? ProductAmountMode::Fixed;
-        $lineTotal = (float) $item->line_total;
-        $unitPrice = (float) $item->unit_price;
+        $lineTotal = LedgerMoney::normalize((string) $item->line_total);
+        $unitPrice = LedgerMoney::normalize((string) $item->unit_price);
         $quantity = max(1, (int) $item->quantity);
 
         if ($mode === ProductAmountMode::Custom) {
-            return round($lineTotal, 2);
+            return $lineTotal;
         }
 
-        if ($unitPrice > 0) {
-            return round($unitPrice, 2);
+        if (LedgerMoney::compare($unitPrice, LedgerMoney::ZERO) === 1) {
+            return $unitPrice;
         }
 
-        if ($lineTotal > 0) {
-            return round($lineTotal / $quantity, 2);
+        if (LedgerMoney::compare($lineTotal, LedgerMoney::ZERO) === 1) {
+            return bcdiv($lineTotal, (string) $quantity, 2);
         }
 
-        return 0.0;
+        return LedgerMoney::ZERO;
     }
 }

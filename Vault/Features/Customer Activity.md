@@ -57,6 +57,7 @@ Customers see one **Activity** page: timeline of orders, wallet, topups, refunds
 
 ## Related
 
+- [[Customer Financial Centre]] — M6 financial truth stays out of Activity
 - [[Wallet & Ledger]]
 - [[Refunds & Settlements]]
 - [[Orders & Checkout]]

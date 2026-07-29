@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Actions\Wallets;
 
 use App\DTOs\WalletAdjustmentResult;
+use App\DTOs\WalletPosting;
+use App\Enums\CustomerFinancialInvalidationReason;
 use App\Enums\WalletAdjustmentKind;
 use App\Enums\WalletTransactionDirection;
 use App\Enums\WalletTransactionType;
@@ -13,6 +15,8 @@ use App\Models\User;
 use App\Models\Wallet;
 use App\Services\SystemEventService;
 use App\Services\WalletLedger;
+use App\Support\CustomerFinancialBroadcaster;
+use App\Support\LedgerMoney;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -51,13 +55,13 @@ final class AdjustWallet
             ]);
         }
 
-        $normalizedAmount = trim($amount);
-        if ($normalizedAmount === '' || ! is_numeric($normalizedAmount) || bccomp($normalizedAmount, '0', 2) !== 1) {
+        try {
+            $normalizedAmount = LedgerMoney::normalizePositive(trim($amount));
+        } catch (\InvalidArgumentException) {
             throw ValidationException::withMessages([
                 'amount' => __('messages.wallet_adjustment_amount_invalid'),
             ]);
         }
-        $normalizedAmount = bcadd($normalizedAmount, '0', 2);
 
         $reason = $reason !== null ? trim($reason) : null;
         if ($reason === '') {
@@ -92,16 +96,23 @@ final class AdjustWallet
                 'ip_address' => $ipAddress,
             ], fn (mixed $value): bool => $value !== null && $value !== '');
 
-            $result = $this->ledger->post(
+            $result = $this->ledger->post(new WalletPosting(
                 wallet: $wallet,
                 type: WalletTransactionType::Adjustment,
                 direction: WalletTransactionDirection::Credit,
                 amount: $normalizedAmount,
                 idempotencyKey: $idempotencyKey,
                 meta: $meta,
-            );
+            ));
 
             $transaction = $result->transaction;
+
+            if (! $result->wasReplayed) {
+                CustomerFinancialBroadcaster::dispatch(
+                    (int) $targetUser->id,
+                    CustomerFinancialInvalidationReason::BalanceChanged,
+                );
+            }
 
             $this->systemEvents->record(
                 'wallet.adjustment.posted',

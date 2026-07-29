@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Actions\Topups;
 
+use App\Enums\CustomerActivityInvalidationReason;
+use App\Enums\CustomerFinancialInvalidationReason;
 use App\Enums\TopupRequestStatus;
 use App\Events\TopupRequestsChanged;
 use App\Models\TopupProof;
@@ -13,6 +15,9 @@ use App\Models\Wallet;
 use App\Models\WebsiteSetting;
 use App\Notifications\TopupRequestedNotification;
 use App\Services\NotificationRecipientService;
+use App\Support\CustomerActivityBroadcaster;
+use App\Support\CustomerFinancialBroadcaster;
+use App\Support\LedgerMoney;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -27,26 +32,39 @@ class SubmitCustomerTopupRequest
 
     public function handle(
         User $user,
-        float $enteredAmount,
+        string|float|int $enteredAmount,
         int $paymentMethodId,
         bool $attachProof,
         ?UploadedFile $proofFile = null,
     ): TopupRequest {
-        $wallet = Wallet::forUser($user);
-        $requestAmount = $this->normalizeAmountForWalletCurrency($enteredAmount, $user, $wallet);
+        return DB::transaction(function () use ($user, $enteredAmount, $paymentMethodId, $attachProof, $proofFile): TopupRequest {
+            $wallet = Wallet::query()
+                ->where('user_id', $user->id)
+                ->lockForUpdate()
+                ->first();
 
-        $hasPending = TopupRequest::query()
-            ->where('user_id', $user->id)
-            ->where('status', TopupRequestStatus::Pending)
-            ->exists();
+            if ($wallet === null) {
+                $wallet = Wallet::forUser($user);
+                $wallet = Wallet::query()
+                    ->whereKey($wallet->id)
+                    ->lockForUpdate()
+                    ->firstOrFail();
+            }
 
-        if ($hasPending) {
-            throw ValidationException::withMessages([
-                'topupAmount' => __('messages.topup_request_pending'),
-            ]);
-        }
+            $hasPending = TopupRequest::query()
+                ->where('user_id', $user->id)
+                ->where('status', TopupRequestStatus::Pending)
+                ->lockForUpdate()
+                ->exists();
 
-        return DB::transaction(function () use ($user, $wallet, $paymentMethodId, $requestAmount, $attachProof, $proofFile): TopupRequest {
+            if ($hasPending) {
+                throw ValidationException::withMessages([
+                    'topupAmount' => __('messages.topup_request_pending'),
+                ]);
+            }
+
+            $requestAmount = $this->normalizeAmountForWalletCurrency($enteredAmount, $user, $wallet);
+
             $topupRequest = $this->createTopupRequest->handle([
                 'user_id' => $user->id,
                 'wallet_id' => $wallet->id,
@@ -75,6 +93,15 @@ class SubmitCustomerTopupRequest
                     'payment_method' => $topupRequest->paymentMethod?->name,
                 ])
                 ->log('Topup requested');
+
+            CustomerActivityBroadcaster::dispatch(
+                (int) $user->id,
+                CustomerActivityInvalidationReason::TopupStateChanged,
+            );
+            CustomerFinancialBroadcaster::dispatch(
+                (int) $user->id,
+                CustomerFinancialInvalidationReason::TopupStateChanged,
+            );
 
             $topupRequestId = $topupRequest->id;
 
@@ -118,8 +145,10 @@ class SubmitCustomerTopupRequest
         ]);
     }
 
-    private function normalizeAmountForWalletCurrency(float $enteredAmount, User $user, Wallet $wallet): float
+    private function normalizeAmountForWalletCurrency(string|float|int $enteredAmount, User $user, Wallet $wallet): string
     {
+        $normalizedEntered = LedgerMoney::normalizePositive((string) $enteredAmount);
+
         if (
             strtoupper((string) $user->preferred_currency) === 'TRY'
             && strtoupper((string) $wallet->currency) === 'USD'
@@ -127,13 +156,14 @@ class SubmitCustomerTopupRequest
             $rate = WebsiteSetting::getUsdTryRate();
 
             if ($rate !== null && $rate > 0) {
-                $tryCents = (int) round($enteredAmount * 100);
+                // Integer cents path avoids float drift for TRY→USD conversion.
+                $tryCents = (int) round((float) bcmul($normalizedEntered, '100', 0));
                 $usdCents = (int) ceil($tryCents / $rate);
 
-                return $usdCents / 100;
+                return LedgerMoney::normalizePositive(bcdiv((string) $usdCents, '100', 2));
             }
         }
 
-        return $enteredAmount;
+        return $normalizedEntered;
     }
 }

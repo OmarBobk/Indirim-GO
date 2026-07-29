@@ -5,12 +5,16 @@ declare(strict_types=1);
 namespace App\Actions\Refunds;
 
 use App\Actions\Fulfillments\AppendFulfillmentLog;
+use App\DTOs\WalletPosting;
 use App\Enums\CommissionStatus;
+use App\Enums\CustomerActivityInvalidationReason;
+use App\Enums\CustomerFinancialInvalidationReason;
 use App\Enums\FulfillmentLogLevel;
 use App\Enums\FulfillmentStatus;
 use App\Enums\OrderStatus;
 use App\Enums\WalletTransactionDirection;
 use App\Enums\WalletTransactionType;
+use App\Exceptions\InvalidWalletPostingAmountException;
 use App\Jobs\EvaluateLoyaltyForUser;
 use App\Models\Commission;
 use App\Models\Fulfillment;
@@ -22,7 +26,11 @@ use App\Models\WalletTransaction;
 use App\Notifications\RefundApprovedNotification;
 use App\Services\OperationalIntelligenceService;
 use App\Services\SystemEventService;
+use App\Services\WalletLedger;
 use App\Support\AdminOpsBroadcaster;
+use App\Support\CustomerActivityBroadcaster;
+use App\Support\CustomerFinancialBroadcaster;
+use App\Support\LedgerMoney;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -30,6 +38,10 @@ use Illuminate\Validation\ValidationException;
 
 class ApproveRefundRequest
 {
+    public function __construct(
+        private readonly WalletLedger $ledger = new WalletLedger,
+    ) {}
+
     public function handle(User $actor, int $transactionId): WalletTransaction
     {
         if (! $actor->can('process_refunds')) {
@@ -66,7 +78,15 @@ class ApproveRefundRequest
                     ]);
                 }
 
-                if ((float) $transaction->amount <= 0) {
+                try {
+                    $normalizedAmount = LedgerMoney::normalize((string) $transaction->amount);
+                } catch (InvalidWalletPostingAmountException) {
+                    throw ValidationException::withMessages([
+                        'refund' => __('messages.refund_not_allowed'),
+                    ]);
+                }
+
+                if (LedgerMoney::compare($normalizedAmount, LedgerMoney::ZERO) !== 1) {
                     throw ValidationException::withMessages([
                         'refund' => __('messages.refund_not_allowed'),
                     ]);
@@ -218,20 +238,29 @@ class ApproveRefundRequest
                     ? 'refund:fulfillment:'.$fulfillment->id
                     : ($orderItem !== null ? 'refund:order_item:'.$orderItem->id : 'refund:order:'.$order->id);
                 $approvedReason = data_get($transaction->meta, 'reason') ?? data_get($transaction->meta, 'note');
+                $amount = LedgerMoney::normalizePositive($normalizedAmount);
 
-                $transaction->status = WalletTransaction::STATUS_POSTED;
-                $transaction->idempotency_key = $idempotencyKey;
-                $transaction->meta = array_merge($transaction->meta ?? [], array_filter([
-                    'state' => 'refund_posted',
-                    'admin_id' => $adminId,
-                    'approved_by' => $adminId,
-                    'approved_at' => now()->toIso8601String(),
-                    'reason' => $approvedReason,
-                    'order_id' => $order->id,
-                ], fn ($value) => $value !== null && $value !== ''));
-                $transaction->save();
+                $result = $this->ledger->post(new WalletPosting(
+                    wallet: $wallet,
+                    type: WalletTransactionType::Refund,
+                    direction: WalletTransactionDirection::Credit,
+                    amount: $amount,
+                    idempotencyKey: $idempotencyKey,
+                    meta: array_filter([
+                        'state' => 'refund_posted',
+                        'admin_id' => $adminId,
+                        'approved_by' => $adminId,
+                        'approved_at' => now()->toIso8601String(),
+                        'reason' => $approvedReason,
+                        'order_id' => $order->id,
+                    ], fn ($value) => $value !== null && $value !== ''),
+                    referenceType: $transaction->reference_type,
+                    referenceId: (int) $transaction->reference_id,
+                    pendingTransaction: $transaction,
+                ));
 
-                $wallet->increment('balance', $transaction->amount);
+                $transaction = $result->transaction;
+                $wallet = $result->wallet;
 
                 $orderRefunded = false;
                 if ($transaction->reference_type === Order::class && $order->status !== OrderStatus::Refunded) {
@@ -248,17 +277,19 @@ class ApproveRefundRequest
                     ]);
                     $fulfillment->update(['meta' => $fulfillmentMeta]);
 
-                    app(AppendFulfillmentLog::class)->handle(
-                        $fulfillment,
-                        FulfillmentLogLevel::Info,
-                        'Refund approved',
-                        [
-                            'action' => 'refunded',
-                            'actor_type' => 'admin',
-                            'actor_id' => $adminId,
-                            'transaction_id' => $transaction->id,
-                        ]
-                    );
+                    if (! $result->wasReplayed) {
+                        app(AppendFulfillmentLog::class)->handle(
+                            $fulfillment,
+                            FulfillmentLogLevel::Info,
+                            'Refund approved',
+                            [
+                                'action' => 'refunded',
+                                'actor_type' => 'admin',
+                                'actor_id' => $adminId,
+                                'transaction_id' => $transaction->id,
+                            ]
+                        );
+                    }
                 }
 
                 if ($fulfillment !== null && ! $orderRefunded) {
@@ -276,6 +307,10 @@ class ApproveRefundRequest
                         $order->update(['status' => OrderStatus::Refunded]);
                         $orderRefunded = true;
                     }
+                }
+
+                if ($result->wasReplayed) {
+                    return $transaction;
                 }
 
                 activity()
@@ -314,7 +349,7 @@ class ApproveRefundRequest
                     $transaction,
                     $actor,
                     [
-                        'amount' => (float) $transaction->amount,
+                        'amount' => $amount,
                         'order_id' => $order->id,
                     ],
                     'info',
@@ -367,7 +402,7 @@ class ApproveRefundRequest
                             $admin,
                             [
                                 'order_id' => data_get($tx->meta, 'order_id'),
-                                'amount' => (float) $tx->amount,
+                                'amount' => (string) $tx->amount,
                             ],
                             'info',
                             false,
@@ -381,6 +416,19 @@ class ApproveRefundRequest
                     }
                     dispatch(new EvaluateLoyaltyForUser((int) $userId));
                 });
+
+                CustomerFinancialBroadcaster::dispatch(
+                    (int) $userId,
+                    CustomerFinancialInvalidationReason::BalanceChanged,
+                );
+                CustomerFinancialBroadcaster::dispatch(
+                    (int) $userId,
+                    CustomerFinancialInvalidationReason::RefundStateChanged,
+                );
+                CustomerActivityBroadcaster::dispatch(
+                    (int) $userId,
+                    CustomerActivityInvalidationReason::RefundStateChanged,
+                );
 
                 AdminOpsBroadcaster::dispatch('refund-approved');
 

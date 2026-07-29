@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Actions\Refunds;
 
 use App\Actions\Fulfillments\AppendFulfillmentLog;
+use App\Enums\CustomerActivityInvalidationReason;
+use App\Enums\CustomerFinancialInvalidationReason;
 use App\Enums\FulfillmentLogLevel;
 use App\Enums\FulfillmentStatus;
 use App\Enums\WalletTransactionType;
@@ -15,6 +17,8 @@ use App\Models\WalletTransaction;
 use App\Notifications\RefundRejectedNotification;
 use App\Services\SystemEventService;
 use App\Support\AdminOpsBroadcaster;
+use App\Support\CustomerActivityBroadcaster;
+use App\Support\CustomerFinancialBroadcaster;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -135,6 +139,18 @@ class RejectRefundRequest
             $rejectedTransactionId = $transaction->id;
             $orderOwnerId = (int) data_get($transaction->meta, 'user_id', 0);
             $adminIdForEvent = $adminId;
+
+            if ($orderOwnerId > 0) {
+                CustomerActivityBroadcaster::dispatch(
+                    $orderOwnerId,
+                    CustomerActivityInvalidationReason::RefundStateChanged,
+                );
+                CustomerFinancialBroadcaster::dispatch(
+                    $orderOwnerId,
+                    CustomerFinancialInvalidationReason::RefundStateChanged,
+                );
+            }
+
             DB::afterCommit(function () use ($rejectedTransactionId, $orderOwnerId, $adminIdForEvent): void {
                 $tx = WalletTransaction::query()->find($rejectedTransactionId);
                 if ($tx === null || $orderOwnerId === 0) {

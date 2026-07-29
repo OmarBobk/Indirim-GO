@@ -8,7 +8,7 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 
 ## 0. AI operator contract (read first)
 
-- **Financial truth:** `wallet_transactions` + `wallets.balance` are authoritative. `system_events` is a mirror/timeline only.
+- **Financial truth:** `wallet_transactions` + `wallets.balance` are authoritative. `system_events` is a mirror/timeline only. Customer Activity is projection only — never the ledger. M6 architecture: `Vault/Features/Customer Financial Centre.md` (M6.0 approved 2026-07-29).
 - **Pricing truth:** server-side pricing is authoritative (`app/Domain/Pricing/*`, `CustomerPriceService`, `PriceCalculator`). Never trust client totals.
 - **Cart model:** cart state is client-side (`localStorage` key `karman.cart.v1`), but checkout always revalidates and recalculates on server.
 - **Access model:** backend routes are hidden by `backend` middleware and permission checks (404 on denial by design).
@@ -56,16 +56,16 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 
 ## 4. Critical invariants (do not break)
 
-1. Every wallet balance mutation corresponds to one posted wallet transaction and one financial system event.
+1. Every wallet balance mutation corresponds to one posted wallet transaction and one financial system event (ops snapshot reconcile is the documented exception under `--repair`).
 2. Never derive balances from `system_events`.
-3. Payment/refund/topup/settlement writes are done inside DB transactions with row locks.
-4. Idempotency on money paths is mandatory (`purchase:order:{id}`, `refund:*`, `settlement:{id}`).
-5. Notification/realtime emissions happen after commit (`DB::afterCommit`).
+3. Payment/refund/topup/settlement writes are done inside DB transactions with row locks via `WalletLedger`.
+4. Idempotency on money paths is mandatory (`purchase:order:{id}`, `topup:{id}`, `refund:*`, `commission_credit:{id}`, `settlement:{id}`).
+5. Notification/realtime emissions happen after commit (`DB::afterCommit` / financial+activity broadcasters).
 6. Custom-amount lines remain quantity-1 semantic lines with `requested_amount`.
 7. Pricing-rule coverage must include computed custom-amount entry totals.
 8. Backend visibility must remain permission-based (no role-only shortcuts).
 9. Commission payouts are wallet credits (`commission_credit`) and must be idempotent by `commission_credit:{commission_id}`.
-10. Customer wallet balance **may be negative** under an Active credit facility; spend checks use `WalletSpendPolicy` / `availableToSpend()`, not raw `balance >= total`. Platform wallets never overdraft.
+10. Customer wallet balance **may be negative** under an Active credit facility; spend checks use `WalletSpendPolicy` / `availableToSpend()`, and `WalletLedger` enforces `minimumAllowedBalance()` after lock. Platform wallets never overdraft.
 
 ---
 
@@ -129,7 +129,8 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - **Admin UI:** `/credit-facility` (`can:manage_wallet_credit`) — ops list with filters (relevant/granted/active/suspended/overdrawn/not_granted), review-before-save confirm, `UpdateCreditFacility` action. Limit cannot be set below outstanding debt. Audit: activity + system event `wallet.credit_facility.updated` with `previous_*` / `new_*` props (limit, terms, enabled, status).
 - **Customer UX:** `CustomerWalletDisplay` — stacked header balance (green positive / red debt), Limit/Available secondary when facility Active; mobile header chip surfaces limit/available without opening wallet. Wallet timeline humanized via `CustomerSystemEventPresenter` when timeline `audience="customer"`.
 - **Config:** `billing.wallet_credit_limit_max`, `billing.wallet_payment_terms_days` (`config/billing.php`).
-- **Out of scope (still true):** debt forgiveness / write-off; migrating purchase debits onto `WalletLedger`.
+- **Out of scope (still true):** debt forgiveness / write-off. **M6.0.1 shipped:** all product posted wallet mutations use `WalletLedger` (incl. purchase/topup/refund/commission/settlement). Debit floor uses `Wallet::minimumAllowedBalance()`. `wallet:reconcile` is audit-only by default; `--repair` is audited snapshot set (compensating TX cannot close drift). See `Vault/Features/Customer Financial Centre.md`.
+- **M6 target:** Wallet becomes customer Financial Control Centre (overview / ledger / top-ups / refunds); salesperson unpaid earnings stay on `/salesperson-dashboard`; receipts start as printable HTML; realtime via `CustomerFinancialStateChanged` (server event shipped; client in M6.7).
 
 ---
 
@@ -247,6 +248,8 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - **2026-06:** Wasim **two-phase** automation (purchase `submitted` → reconcile on supplier orders page); Wasim admin credentials + worker session clear; checkout **`cart_hash`** idempotency limited to pending + short paid window (`CheckoutResult`); **Ops Assistant** admin chat (`/admin/assistant`, sidebar nav, read-only order/wallet/fulfillment lookups).
 - **2026-07:** **Supplier price scans** + `/price-drift` UI, reactive fulfillment price flags, stale-scan sweep; **admin exception counts** (`GetAdminExceptionCounts`) for dashboard/sidebar badges; **`CustomerDeliveredPayload`** for safe customer-facing delivered payload rendering (incl. image URLs); **registration security** — Cloudflare Turnstile + honeypot + registration rate limits (`app/Domain/Security/*`); **wallet credit facility / overdraft** — `credit_enabled` + `credit_limit` + `payment_terms_days` + `credit_status`, `WalletSpendPolicy`, `/credit-facility` (`manage_wallet_credit`), customer header/wallet display + humanized facility timeline events.
 - **2026-07 (M5):** **Customer Activity** — read-model spine + Activity page + action-required domain readers + realtime invalidation (M5.4) + query-budget hardening (M5.4.1). Home Needs attention island was shipped then rolled back (wallet chrome restored on mobile top bar). See `Vault/Features/Customer Activity.md`.
+- **2026-07 (M6.0):** **Customer Financial Centre architecture** — full mutation/idempotency/precision audit; approved kernel-first roadmap. See `Vault/Features/Customer Financial Centre.md`.
+- **2026-07 (M6.0.1):** **Wallet mutation kernel** — `WalletLedger` + `LedgerMoney`; migrate purchase/topup/refund/commission/settlement; posted TX immutability; `CustomerFinancialStateChanged`; reconcile audit-only + snapshot `--repair`; pending top-up lock uniqueness.
 
 ---
 
@@ -270,6 +273,7 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - `app/Models/Wallet.php` (credit helpers), `app/Enums/CreditFacilityStatus.php`, `WalletSpendFailureReason.php`
 - `app/DTOs/WalletSpendDecision.php`, `app/Exceptions/WalletSpendDeniedException.php`
 - `app/Support/CustomerWalletDisplay.php`, `CustomerSystemEventPresenter.php`
+- `Vault/Features/Customer Financial Centre.md` (M6 architecture contract)
 - `app/Actions/Commissions/CreatePayoutBatch.php`
 - `app/Actions/Refunds/ApproveRefundRequest.php`
 - `app/Actions/Fulfillments/ClaimFulfillment.php`, `CreateFulfillmentsForOrder.php`, **`DispatchFulfillmentAutomationRun.php`**, **`IngestFulfillmentAutomationResult.php`**, **`ScheduleWasimOrderReconcile.php`**, **`RetryFulfillmentAutomation.php`**
