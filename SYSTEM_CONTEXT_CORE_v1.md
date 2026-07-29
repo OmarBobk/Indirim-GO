@@ -13,6 +13,7 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - **Cart model:** cart state is client-side (`localStorage` key `karman.cart.v1`), but checkout always revalidates and recalculates on server.
 - **Access model:** backend routes are hidden by `backend` middleware and permission checks (404 on denial by design).
 - **Mutation safety:** financial writes must stay transactional and idempotent (`lockForUpdate`, idempotency keys, `DB::afterCommit` side effects).
+- **Mobile auth:** customer-only `/api/v1` uses Sanctum PATs with `mobile:access`, explicit 30-day expiry, no refresh token, and Fortify-backed 2FA challenges. Contract: `docs/api/v1/openapi.yaml`.
 - **Agent rules:** follow `.cursor/rules/laravel-boost.mdc` for stack versions, conventions, and karman.store financial guardrails.
 
 ---
@@ -263,6 +264,7 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 ## 16. Primary source files for AI prompts
 
 - `routes/web.php`, `routes/automation.php`, `routes/channels.php`, `routes/console.php`, `routes/ai.php`
+- **Mobile API:** `routes/api.php`, `config/mobile_api.php`, `app/Actions/MobileAuth/*`, `app/Http/Controllers/Api/V1/*`, `app/Http/Resources/Api/V1/*`, `docs/api/v1/openapi.yaml`
 - `config/permission.php`, `config/fortify.php`, `config/referral.php`, **`config/fulfillment_automation.php`** (incl. `price_scan`), **`config/billing.php`**, **`config/security.php`**, `config/services.php` (`turnstile`, `openai`)
 - `app/Actions/Orders/CheckoutFromPayload.php`, **`CheckoutResult.php`**, `CreateOrderFromCartPayload.php`, `PayOrderWithWallet.php`
 - `app/Actions/Wallets/UpdateCreditFacility.php`, `AdjustWallet.php`
@@ -296,4 +298,5 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - **Agent rules:** `.cursor/rules/laravel-boost.mdc` (stack versions, financial guardrails, testing/Pint/Livewire conventions)
 - **Companion map:** `Docs/PROJECT_STRUCTURE.md` (full layout); backlog scratchpad: `Docs/doc.md` (verify code — do not trust outdated “not installed” notes without checking `composer.json`)
 - **Obsidian + ChatGPT pipeline:** `Vault/Karman Index.md`, `Vault/Workflow/Ask → Plan → Agent Pipeline.md`, `Docs/CHATGPT_PROJECT_PROMPT.md`, active feature notes under `Vault/Features/`
+- **Mobile M1.1 context:** `Vault/Features/Mobile M1.1 — Laravel API Foundation and Authentication.md`, `Vault/Decisions/Mobile M1.1 Authentication Architecture.md`
 - **Vault sync rule (Cursor agents):** `.cursor/rules/050-vault-sync.mdc` — update feature notes after meaningful work; end with `Vault sync: …`
