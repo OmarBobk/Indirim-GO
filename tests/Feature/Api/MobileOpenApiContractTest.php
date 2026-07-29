@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Illuminate\Support\Facades\Route;
+use Symfony\Component\Yaml\Yaml;
 
 test('the authoritative OpenAPI contract documents the complete M1 surface', function () {
     $contractPath = base_path('docs/api/v1/openapi.yaml');
@@ -54,6 +55,96 @@ test('implemented mobile routes and middleware remain aligned with OpenAPI', fun
         ->toContain('auth:sanctum')
         ->toContain('abilities:mobile:access')
         ->toContain('mobile.account');
+});
+
+test('OpenAPI requests responses security and user fields match the implementation', function () {
+    $specification = Yaml::parseFile(base_path('docs/api/v1/openapi.yaml'));
+    $paths = $specification['paths'];
+    $schemas = $specification['components']['schemas'];
+
+    expect(array_keys($paths))->toBe([
+        '/auth/login',
+        '/auth/two-factor-challenge',
+        '/auth/logout',
+        '/me',
+    ])->and(array_keys($paths['/auth/login']['post']['responses']))->toBe([
+        200,
+        202,
+        403,
+        422,
+        429,
+    ])->and(array_keys($paths['/auth/two-factor-challenge']['post']['responses']))->toBe([
+        200,
+        403,
+        422,
+        429,
+    ])->and(array_keys($paths['/auth/logout']['post']['responses']))->toBe([
+        200,
+        401,
+        403,
+    ])->and(array_keys($paths['/me']['get']['responses']))->toBe([
+        200,
+        401,
+        403,
+    ]);
+
+    expect($schemas['LoginRequest']['required'])->toBe(['username', 'password'])
+        ->and(array_keys($schemas['LoginRequest']['properties']))->toBe([
+            'username',
+            'password',
+            'device_name',
+        ])
+        ->and($schemas['LoginRequest']['properties']['device_name']['maxLength'])->toBe(80)
+        ->and($schemas['TwoFactorChallengeRequest']['required'])->toBe(['challenge_token'])
+        ->and(array_keys($schemas['TwoFactorChallengeRequest']['properties']))->toBe([
+            'challenge_token',
+            'code',
+            'recovery_code',
+        ])
+        ->and($schemas['TwoFactorChallengeRequest']['oneOf'])->toHaveCount(2);
+
+    expect($paths['/auth/logout']['post']['security'])->toBe([['bearerAuth' => []]])
+        ->and($paths['/me']['get']['security'])->toBe([['bearerAuth' => []]])
+        ->and($specification['components']['securitySchemes']['bearerAuth']['scheme'])->toBe('bearer')
+        ->and($schemas['Token']['properties']['token_type']['const'])->toBe('Bearer')
+        ->and($schemas['Token']['properties']['expires_at']['description'])
+        ->toContain('Exactly 30 days');
+
+    expect($schemas['MobileUser']['required'])->toBe([
+        'id',
+        'name',
+        'username',
+        'email',
+        'phone',
+        'country_code',
+        'locale',
+        'preferred_currency',
+        'timezone',
+        'profile_photo_url',
+        'email_verified_at',
+    ])->and(array_keys($schemas['MobileUser']['properties']))->toBe($schemas['MobileUser']['required'])
+        ->and($schemas['MobileUser']['properties']['locale']['enum'])->toBe(['ar', 'en']);
+
+    expect($schemas['ApiError']['properties']['code']['enum'])->toContain(
+        'invalid_credentials',
+        'account_inactive',
+        'account_blocked',
+        'customer_role_required',
+        'invalid_two_factor_challenge',
+        'invalid_two_factor_code',
+        'invalid_recovery_code',
+        'two_factor_attempts_exceeded',
+        'unauthenticated',
+        'missing_mobile_ability',
+        'too_many_requests',
+    )->and($paths['/auth/login']['post']['parameters'][0]['$ref'])
+        ->toBe('#/components/parameters/AcceptLanguage')
+        ->and($paths['/auth/two-factor-challenge']['post']['parameters'][0]['$ref'])
+        ->toBe('#/components/parameters/AcceptLanguage')
+        ->and($paths['/auth/logout']['post']['parameters'][0]['$ref'])
+        ->toBe('#/components/parameters/AcceptLanguage')
+        ->and($paths['/me']['get']['parameters'][0]['$ref'])
+        ->toBe('#/components/parameters/AcceptLanguage');
 });
 
 test('mobile security configuration matches the published token semantics', function () {

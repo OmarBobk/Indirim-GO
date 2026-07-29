@@ -8,6 +8,7 @@ use App\Exceptions\MobileApiException;
 use App\Models\User;
 use Closure;
 use Illuminate\Http\Request;
+use Laravel\Sanctum\PersonalAccessToken;
 use Symfony\Component\HttpFoundation\Response;
 
 class EnsureMobileAccountCanAuthenticate
@@ -22,6 +23,14 @@ class EnsureMobileAccountCanAuthenticate
         $user = $request->user();
 
         if (! $user instanceof User) {
+            throw new MobileApiException(
+                'messages.mobile_api.unauthenticated',
+                'unauthenticated',
+                401,
+            );
+        }
+
+        if (! $user->currentAccessToken() instanceof PersonalAccessToken) {
             throw new MobileApiException(
                 'messages.mobile_api.unauthenticated',
                 'unauthenticated',

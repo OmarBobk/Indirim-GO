@@ -182,7 +182,9 @@ components:
       description: |
         Laravel Sanctum personal access token. Mobile tokens have only the
         `mobile:access` ability and an explicit `expires_at` 30 days after issue.
-        There is no refresh-token endpoint; users authenticate again after expiry.
+        A real bearer PAT is required; Laravel web-session cookies are not accepted
+        for these protected mobile routes. There is no refresh-token endpoint;
+        users authenticate again after expiry.
   parameters:
     AcceptLanguage:
       name: Accept-Language

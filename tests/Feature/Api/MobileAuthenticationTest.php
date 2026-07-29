@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
 use Laravel\Fortify\Contracts\TwoFactorAuthenticationProvider;
 use Laravel\Sanctum\PersonalAccessToken;
+use Laravel\Telescope\Telescope;
 use Mockery\MockInterface;
 use Spatie\Activitylog\Models\Activity;
 use Spatie\Permission\Models\Role;
@@ -74,11 +75,12 @@ test('a customer can log in with username and receive a scoped 30 day token', fu
         'timezone' => Timezone::Turkey,
         'preferred_currency' => 'USD',
         'locale' => 'en',
+        'password' => Hash::make('super-secret-password-value'),
     ]);
 
     $response = $this->postJson('/api/v1/auth/login', [
         'username' => $user->username,
-        'password' => '123',
+        'password' => 'super-secret-password-value',
         'device_name' => 'Omar Android',
     ]);
 
@@ -93,6 +95,13 @@ test('a customer can log in with username and receive a scoped 30 day token', fu
 
     $plainTextToken = $response->json('data.token.access_token');
     $token = PersonalAccessToken::findToken($plainTextToken);
+    [, $tokenSecret] = explode('|', $plainTextToken, 2);
+    $activity = Activity::query()
+        ->where('event', 'user.login')
+        ->where('subject_id', $user->id)
+        ->latest('id')
+        ->firstOrFail();
+    $activityPayload = $activity->properties->toJson();
 
     expect($token)
         ->not->toBeNull()
@@ -102,8 +111,10 @@ test('a customer can log in with username and receive a scoped 30 day token', fu
         ->toBe($now->addDays(30)->toIso8601String())
         ->and($user->refresh()->last_login_at)
         ->not->toBeNull()
-        ->and(Activity::query()->where('event', 'user.login')->where('subject_id', $user->id)->exists())
-        ->toBeTrue();
+        ->and($token?->token)->toBe(hash('sha256', $tokenSecret))
+        ->not->toContain($plainTextToken)
+        ->and($activityPayload)
+        ->not->toContain('super-secret-password-value', $plainTextToken, $tokenSecret);
 });
 
 test('login normalizes username exactly as configured by Fortify', function () {
@@ -143,6 +154,41 @@ test('login request validation uses the API envelope', function () {
         ->assertJsonValidationErrors(['username', 'password'])
         ->assertJsonMissingPath('code');
 });
+
+test('Telescope redacts mobile authentication request and response secrets', function () {
+    expect(Telescope::$hiddenRequestParameters)
+        ->toContain('password', 'code', 'recovery_code', 'challenge_token')
+        ->and(Telescope::$hiddenRequestHeaders)
+        ->toContain('authorization', 'cookie')
+        ->and(Telescope::$hiddenResponseParameters)
+        ->toContain('data.token.access_token', 'data.challenge_token');
+});
+
+test('wrong passwords have one response regardless of account state role or two factor', function (string $condition) {
+    $user = m11Customer();
+
+    if ($condition === 'inactive') {
+        $user->forceFill(['is_active' => false])->save();
+    } elseif ($condition === 'blocked') {
+        $user->forceFill(['blocked_at' => now()])->save();
+    } elseif ($condition === 'non-customer') {
+        $user->syncRoles([]);
+    } else {
+        m11EnableTwoFactor($user);
+    }
+
+    $this->postJson('/api/v1/auth/login', [
+        'username' => $user->username,
+        'password' => 'wrong-password',
+    ])
+        ->assertUnprocessable()
+        ->assertExactJson([
+            'message' => __('messages.mobile_api.invalid_credentials'),
+            'code' => 'invalid_credentials',
+        ]);
+
+    expect($user->tokens()->count())->toBe(0);
+})->with(['inactive', 'blocked', 'non-customer', 'two-factor']);
 
 test('inactive and blocked customers retain localized account denial behavior', function (string $state, string $code) {
     $user = m11Customer();
@@ -211,6 +257,8 @@ test('unverified customers are not newly blocked from mobile login', function ()
 });
 
 test('two factor customers receive a hashed short lived challenge and no token', function () {
+    $this->freezeTime();
+    $now = CarbonImmutable::now();
     $user = m11Customer();
     m11EnableTwoFactor($user);
 
@@ -223,13 +271,22 @@ test('two factor customers receive a hashed short lived challenge and no token',
     $response
         ->assertAccepted()
         ->assertJsonPath('data.two_factor_required', true)
+        ->assertJsonPath('data.expires_at', $now->addMinutes(5)->toIso8601String())
         ->assertJsonStructure(['data' => ['challenge_token', 'expires_at']]);
 
     $challengeToken = $response->json('data.challenge_token');
+    $challengeState = Cache::get(CreateMobileTwoFactorChallenge::cacheKey($challengeToken));
 
     expect(strlen($challengeToken))->toBeGreaterThanOrEqual(43)
         ->and(Cache::has(CreateMobileTwoFactorChallenge::cacheKey($challengeToken)))->toBeTrue()
         ->and(Cache::has('mobile-api:two-factor:'.$challengeToken))->toBeFalse()
+        ->and(array_keys($challengeState))->toBe([
+            'user_id',
+            'device_name',
+            'attempts',
+            'expires_at',
+        ])
+        ->and(json_encode($challengeState, JSON_THROW_ON_ERROR))->not->toContain($challengeToken)
         ->and($user->tokens()->count())->toBe(0)
         ->and($user->refresh()->last_login_at)->toBeNull();
 });
@@ -273,6 +330,28 @@ test('a valid recovery code is consumed under the challenge lock', function () {
         ->toHaveCount(1)
         ->not->toContain('single-use-recovery')
         ->and($user->tokens()->count())->toBe(1);
+});
+
+test('the same recovery code cannot complete two independently issued challenges', function () {
+    $user = m11Customer();
+    m11EnableTwoFactor($user, ['single-consumer-code']);
+    $firstChallenge = m11ChallengeToken($user);
+    $secondChallenge = m11ChallengeToken($user);
+
+    $this->postJson('/api/v1/auth/two-factor-challenge', [
+        'challenge_token' => $firstChallenge,
+        'recovery_code' => 'single-consumer-code',
+    ])->assertOk();
+
+    $this->postJson('/api/v1/auth/two-factor-challenge', [
+        'challenge_token' => $secondChallenge,
+        'recovery_code' => 'single-consumer-code',
+    ])
+        ->assertUnprocessable()
+        ->assertJsonPath('code', 'invalid_recovery_code');
+
+    expect($user->tokens()->count())->toBe(1)
+        ->and($user->refresh()->recoveryCodes())->not->toContain('single-consumer-code');
 });
 
 test('invalid authenticator and recovery codes fail safely without issuing tokens', function (string $field, string $value, string $code) {
@@ -344,6 +423,31 @@ test('a successful challenge cannot be replayed', function () {
         ->assertJsonPath('code', 'invalid_two_factor_challenge');
 
     expect($user->tokens()->count())->toBe(1);
+});
+
+test('a simultaneous submission cannot enter a challenge while its lock is held', function () {
+    $user = m11Customer();
+    m11EnableTwoFactor($user);
+    $challengeToken = m11ChallengeToken($user);
+    $lock = Cache::lock(
+        CreateMobileTwoFactorChallenge::cacheKey($challengeToken).':lock',
+        10,
+    );
+
+    expect($lock->get())->toBeTrue();
+
+    try {
+        $this->postJson('/api/v1/auth/two-factor-challenge', [
+            'challenge_token' => $challengeToken,
+            'code' => '123456',
+        ])
+            ->assertUnprocessable()
+            ->assertJsonPath('code', 'invalid_two_factor_challenge');
+    } finally {
+        $lock->release();
+    }
+
+    expect($user->tokens()->count())->toBe(0);
 });
 
 test('a challenge is destroyed at its invalid attempt limit', function () {
@@ -436,7 +540,9 @@ test('account status and customer role are rechecked at challenge completion', f
     m11EnableTwoFactor($user);
     $challengeToken = m11ChallengeToken($user);
 
-    if ($change === 'blocked') {
+    if ($change === 'inactive') {
+        $user->forceFill(['is_active' => false])->save();
+    } elseif ($change === 'blocked') {
         $user->forceFill(['blocked_at' => now()])->save();
     } else {
         $user->syncRoles([]);
@@ -450,9 +556,26 @@ test('account status and customer role are rechecked at challenge completion', f
     $response->assertStatus($status)->assertJsonPath('code', $code);
     expect($user->tokens()->count())->toBe(0);
 })->with([
+    'inactive' => ['inactive', 422, 'account_inactive'],
     'blocked' => ['blocked', 422, 'account_blocked'],
     'role removed' => ['role', 403, 'customer_role_required'],
 ]);
+
+test('a challenge is rejected if two factor is disabled after password verification', function () {
+    $user = m11Customer();
+    m11EnableTwoFactor($user);
+    $challengeToken = m11ChallengeToken($user);
+    $user->forceFill(['two_factor_confirmed_at' => null])->save();
+
+    $this->postJson('/api/v1/auth/two-factor-challenge', [
+        'challenge_token' => $challengeToken,
+        'recovery_code' => 'recovery-code-1',
+    ])
+        ->assertUnprocessable()
+        ->assertJsonPath('code', 'invalid_two_factor_challenge');
+
+    expect($user->tokens()->count())->toBe(0);
+});
 
 test('me returns only the approved mobile profile fields', function () {
     $user = m11Customer([
@@ -536,6 +659,25 @@ test('missing invalid expired and revoked tokens are rejected', function (string
         ->assertJsonPath('code', 'unauthenticated');
 })->with(['missing', 'invalid', 'expired', 'revoked']);
 
+test('web sessions cannot substitute for a scoped mobile personal access token', function (string $endpoint, string $method) {
+    $user = m11Customer();
+    $this->actingAs($user);
+
+    $response = $method === 'GET'
+        ? $this->getJson($endpoint)
+        : $this->postJson($endpoint);
+
+    $response
+        ->assertUnauthorized()
+        ->assertJsonPath('code', 'unauthenticated');
+
+    $this->assertAuthenticatedAs($user);
+    expect($user->tokens()->count())->toBe(0);
+})->with([
+    'me' => ['/api/v1/me', 'GET'],
+    'logout' => ['/api/v1/auth/logout', 'POST'],
+]);
+
 test('tokens without the mobile ability are forbidden', function () {
     $user = m11Customer();
     $token = $user->createToken('other-client', ['orders:read'], now()->addDays(30));
@@ -556,6 +698,34 @@ test('a blocked account loses its current mobile token on the next request', fun
         ->getJson('/api/v1/me')
         ->assertUnauthorized()
         ->assertJsonPath('code', 'account_blocked');
+
+    expect(PersonalAccessToken::query()->find($tokenId))->toBeNull();
+});
+
+test('an inactive account loses its current mobile token on the next request', function () {
+    $user = m11Customer();
+    $token = $user->createToken('mobile', ['mobile:access'], now()->addDays(30));
+    $tokenId = $token->accessToken->getKey();
+    $user->forceFill(['is_active' => false])->save();
+
+    $this->withHeaders(m11Bearer($token->plainTextToken))
+        ->getJson('/api/v1/me')
+        ->assertUnauthorized()
+        ->assertJsonPath('code', 'account_inactive');
+
+    expect(PersonalAccessToken::query()->find($tokenId))->toBeNull();
+});
+
+test('a customer role removal revokes the current token and forbids mobile access', function () {
+    $user = m11Customer();
+    $token = $user->createToken('mobile', ['mobile:access'], now()->addDays(30));
+    $tokenId = $token->accessToken->getKey();
+    $user->syncRoles([]);
+
+    $this->withHeaders(m11Bearer($token->plainTextToken))
+        ->getJson('/api/v1/me')
+        ->assertForbidden()
+        ->assertJsonPath('code', 'customer_role_required');
 
     expect(PersonalAccessToken::query()->find($tokenId))->toBeNull();
 });
@@ -601,6 +771,15 @@ test('API errors and validation are localized in English and Arabic', function (
         'بيانات الاعتماد هذه غير متطابقة مع سجلاتنا.',
     ],
 ]);
+
+test('unsupported Accept-Language values fall back to the configured locale', function () {
+    config(['app.locale' => 'en']);
+
+    $this->withHeader('Accept-Language', 'fr-FR,fr;q=0.9')
+        ->postJson('/api/v1/auth/login', [])
+        ->assertUnprocessable()
+        ->assertJsonPath('message', 'The given data was invalid.');
+});
 
 test('existing web username authentication still works', function () {
     $user = User::factory()->create(['username' => 'web-auth-user']);
