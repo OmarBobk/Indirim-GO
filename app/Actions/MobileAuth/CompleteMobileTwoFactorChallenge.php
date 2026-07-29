@@ -11,6 +11,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\RateLimiter;
 use Laravel\Fortify\Contracts\TwoFactorAuthenticationProvider;
 use Laravel\Fortify\Fortify;
 
@@ -80,71 +81,139 @@ final class CompleteMobileTwoFactorChallenge
             );
         }
 
-        return DB::transaction(function () use ($cacheKey, $challenge, $code, $recoveryCode): MobileAuthenticationResult {
+        $userAttemptKey = $this->userAttemptKey($challenge['user_id']);
+        $userLock = Cache::lock(
+            $userAttemptKey.':lock',
+            (int) config('mobile_api.two_factor_challenge.lock_seconds', 10),
+        );
+
+        return $userLock->block(
+            (int) config('mobile_api.two_factor_challenge.lock_wait_seconds', 2),
+            fn (): MobileAuthenticationResult => $this->completeForUserUnderLock(
+                $cacheKey,
+                $challenge,
+                $code,
+                $recoveryCode,
+                $userAttemptKey,
+            ),
+        );
+    }
+
+    /**
+     * @param  array{user_id: mixed, device_name?: mixed, attempts: mixed, expires_at: mixed}  $challenge
+     */
+    private function completeForUserUnderLock(
+        string $cacheKey,
+        array $challenge,
+        ?string $code,
+        ?string $recoveryCode,
+        string $userAttemptKey,
+    ): MobileAuthenticationResult {
+        $maxAttempts = (int) config('mobile_api.two_factor_challenge.max_attempts', 5);
+
+        if (RateLimiter::tooManyAttempts($userAttemptKey, $maxAttempts)) {
+            Cache::forget($cacheKey);
+
+            throw new MobileApiException(
+                'messages.mobile_api.two_factor_attempts_exceeded',
+                'two_factor_attempts_exceeded',
+                422,
+            );
+        }
+
+        $outcome = DB::transaction(function () use (
+            $cacheKey,
+            $challenge,
+            $code,
+            $recoveryCode,
+            $userAttemptKey,
+        ): array {
             $user = User::query()->lockForUpdate()->find($challenge['user_id']);
 
             if ($user === null || ! $user->hasEnabledTwoFactorAuthentication()) {
-                Cache::forget($cacheKey);
-
-                throw new MobileApiException(
-                    'messages.mobile_api.invalid_two_factor_challenge',
-                    'invalid_two_factor_challenge',
-                    422,
-                );
+                return [
+                    'error_code' => 'invalid_two_factor_challenge',
+                    'status' => 422,
+                    'counts_attempt' => false,
+                ];
             }
 
-            $this->assertUserCanCompleteChallenge($user, $cacheKey);
+            if (! $user->canLogin()) {
+                return [
+                    'error_code' => $user->isActive() ? 'account_blocked' : 'account_inactive',
+                    'status' => 422,
+                    'counts_attempt' => false,
+                ];
+            }
+
+            if (! $user->hasRole('customer')) {
+                return [
+                    'error_code' => 'customer_role_required',
+                    'status' => 403,
+                    'counts_attempt' => false,
+                ];
+            }
 
             $valid = $code !== null
                 ? $this->verifyAuthenticatorCode($user, $code)
                 : $this->consumeRecoveryCode($user, (string) $recoveryCode);
 
             if (! $valid) {
-                $this->recordFailedAttempt(
-                    $cacheKey,
-                    $challenge,
-                    $recoveryCode !== null ? 'invalid_recovery_code' : 'invalid_two_factor_code',
-                );
+                return [
+                    'error_code' => $recoveryCode !== null
+                        ? 'invalid_recovery_code'
+                        : 'invalid_two_factor_code',
+                    'status' => 422,
+                    'counts_attempt' => true,
+                ];
             }
 
             Cache::forget($cacheKey);
+            RateLimiter::clear($userAttemptKey);
 
-            return $this->issueMobileAccessToken->execute(
-                $user,
-                is_string($challenge['device_name'] ?? null) ? $challenge['device_name'] : null,
-            );
+            return [
+                'result' => $this->issueMobileAccessToken->execute(
+                    $user,
+                    is_string($challenge['device_name'] ?? null) ? $challenge['device_name'] : null,
+                ),
+            ];
         });
-    }
 
-    private function assertUserCanCompleteChallenge(User $user, string $cacheKey): void
-    {
-        if (! $user->canLogin()) {
+        if (($outcome['counts_attempt'] ?? false) === true) {
+            $this->recordFailedAttempt(
+                $cacheKey,
+                $challenge,
+                $userAttemptKey,
+                (string) $outcome['error_code'],
+            );
+        }
+
+        if (isset($outcome['error_code'], $outcome['status'])) {
             Cache::forget($cacheKey);
-
-            if (! $user->isActive()) {
-                throw new MobileApiException(
-                    'messages.mobile_api.account_inactive',
-                    'account_inactive',
-                    422,
-                );
-            }
 
             throw new MobileApiException(
-                'messages.mobile_api.account_blocked',
-                'account_blocked',
+                'messages.mobile_api.'.$outcome['error_code'],
+                (string) $outcome['error_code'],
+                (int) $outcome['status'],
+            );
+        }
+
+        if (! ($outcome['result'] ?? null) instanceof MobileAuthenticationResult) {
+            Cache::forget($cacheKey);
+
+            throw new MobileApiException(
+                'messages.mobile_api.invalid_two_factor_challenge',
+                'invalid_two_factor_challenge',
                 422,
             );
         }
 
-        if (! $user->hasRole('customer')) {
-            Cache::forget($cacheKey);
+        return $outcome['result'];
+    }
 
-            throw new MobileApiException(
-                'messages.mobile_api.customer_role_required',
-                'customer_role_required',
-                403,
-            );
-        }
+    private function userAttemptKey(mixed $userId): string
+    {
+        return 'mobile-api:two-factor-user:'.hash('sha256', (string) $userId);
     }
 
     private function verifyAuthenticatorCode(User $user, string $code): bool
@@ -177,12 +246,18 @@ final class CompleteMobileTwoFactorChallenge
     /**
      * @param  array{user_id: mixed, device_name?: mixed, attempts: mixed, expires_at: mixed}  $challenge
      */
-    private function recordFailedAttempt(string $cacheKey, array $challenge, string $errorCode): never
-    {
+    private function recordFailedAttempt(
+        string $cacheKey,
+        array $challenge,
+        string $userAttemptKey,
+        string $errorCode,
+    ): never {
         $attempts = (int) $challenge['attempts'] + 1;
         $maxAttempts = (int) config('mobile_api.two_factor_challenge.max_attempts', 5);
+        $decaySeconds = (int) config('mobile_api.two_factor_challenge.lifetime_minutes', 5) * 60;
+        $userAttempts = RateLimiter::hit($userAttemptKey, $decaySeconds);
 
-        if ($attempts >= $maxAttempts) {
+        if ($attempts >= $maxAttempts || $userAttempts >= $maxAttempts) {
             Cache::forget($cacheKey);
 
             throw new MobileApiException(

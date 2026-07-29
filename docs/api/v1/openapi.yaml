@@ -69,6 +69,10 @@ paths:
                   value:
                     message: These credentials do not match our records.
                     code: invalid_credentials
+                invalidCredentialsArabic:
+                  value:
+                    message: بيانات الاعتماد هذه غير متطابقة مع سجلاتنا.
+                    code: invalid_credentials
                 inactiveArabic:
                   value:
                     message: حسابك غير نشط. يرجى الاتصال بالدعم.
@@ -252,7 +256,6 @@ components:
   schemas:
     LoginRequest:
       type: object
-      additionalProperties: false
       required: [username, password]
       properties:
         username:
@@ -271,7 +274,6 @@ components:
           example: Omar Android
     TwoFactorChallengeRequest:
       type: object
-      additionalProperties: false
       required: [challenge_token]
       properties:
         challenge_token:

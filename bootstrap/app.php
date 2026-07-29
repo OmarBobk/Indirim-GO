@@ -5,11 +5,12 @@ use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Exceptions\ThrottleRequestsException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\Exceptions\ThrottleRequestsException;
 use Laravel\Sanctum\Exceptions\MissingAbilityException;
 use Laravel\Sanctum\Http\Middleware\CheckAbilities;
+use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -59,8 +60,9 @@ return Application::configure(basePath: dirname(__DIR__))
             ], 401);
         });
 
-        $exceptions->render(function (MissingAbilityException $exception, Request $request): ?JsonResponse {
-            if (! $request->is('api/v1/*')) {
+        $exceptions->render(function (AccessDeniedHttpException $exception, Request $request): ?JsonResponse {
+            if (! $request->is('api/v1/*')
+                || ! ($exception->getPrevious() instanceof MissingAbilityException)) {
                 return null;
             }
 

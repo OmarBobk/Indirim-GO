@@ -377,6 +377,43 @@ test('a challenge is destroyed at its invalid attempt limit', function () {
     expect($user->tokens()->count())->toBe(0);
 });
 
+test('the account attempt budget persists with database cache across new challenges', function () {
+    config(['cache.default' => 'database']);
+
+    $user = m11Customer();
+    m11EnableTwoFactor($user);
+    $firstChallenge = m11ChallengeToken($user);
+
+    $this->mock(TwoFactorAuthenticationProvider::class, function (MockInterface $mock): void {
+        $mock->shouldReceive('verify')->times(5)->andReturnFalse();
+    });
+
+    for ($attempt = 1; $attempt <= 4; $attempt++) {
+        $this->postJson('/api/v1/auth/two-factor-challenge', [
+            'challenge_token' => $firstChallenge,
+            'code' => '123456',
+        ])->assertJsonPath('code', 'invalid_two_factor_code');
+    }
+
+    $secondChallenge = m11ChallengeToken($user);
+
+    $this->postJson('/api/v1/auth/two-factor-challenge', [
+        'challenge_token' => $secondChallenge,
+        'code' => '123456',
+    ])
+        ->assertUnprocessable()
+        ->assertJsonPath('code', 'two_factor_attempts_exceeded');
+
+    $this->postJson('/api/v1/auth/two-factor-challenge', [
+        'challenge_token' => $firstChallenge,
+        'code' => '123456',
+    ])
+        ->assertUnprocessable()
+        ->assertJsonPath('code', 'two_factor_attempts_exceeded');
+
+    expect($user->tokens()->count())->toBe(0);
+});
+
 test('two factor challenge requests have a dedicated rate limit', function () {
     $payload = [
         'challenge_token' => str_repeat('x', 43),

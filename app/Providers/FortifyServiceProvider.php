@@ -102,19 +102,25 @@ class FortifyServiceProvider extends ServiceProvider
             return Limit::perMinute(5)->by($throttleKey);
         });
 
-        RateLimiter::for('mobile-login', function (Request $request): Limit {
+        RateLimiter::for('mobile-login', function (Request $request): array {
             $username = $request->input(Fortify::username());
             $normalizedUsername = is_string($username) ? Str::lower($username) : '';
             $throttleKey = Str::transliterate($normalizedUsername.'|'.$request->ip());
 
-            return Limit::perMinute(5)->by($throttleKey);
+            return [
+                Limit::perMinute(5)->by($throttleKey),
+                Limit::perMinute(30)->by('mobile-login-ip|'.$request->ip()),
+            ];
         });
 
-        RateLimiter::for('mobile-two-factor', function (Request $request): Limit {
+        RateLimiter::for('mobile-two-factor', function (Request $request): array {
             $challengeToken = $request->input('challenge_token');
             $challengeHash = hash('sha256', is_string($challengeToken) ? $challengeToken : '');
 
-            return Limit::perMinute(10)->by($challengeHash.'|'.$request->ip());
+            return [
+                Limit::perMinute(10)->by($challengeHash.'|'.$request->ip()),
+                Limit::perMinute(30)->by('mobile-two-factor-ip|'.$request->ip()),
+            ];
         });
     }
 
