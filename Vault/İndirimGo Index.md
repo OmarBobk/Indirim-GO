@@ -18,12 +18,16 @@ Central map for indirimGo knowledge. Use this vault with [[Ask → Plan → Agen
 - [[Orders & Checkout]] — cart, buy-now, pay with wallet
 - [[Fulfillments & Automation]] — supplier worker, retries, delivered payload
 - [[Refunds & Settlements]] — refund requests, commission payouts
-- [[Customer Activity]] — unified activity feed (in progress)
+- [[Customer Activity]] — unified activity feed (shipped; Home Needs attention deferred)
 
 ## Mobile
 
-- [[Mobile M1.1 — Laravel API Foundation and Authentication]] — customer auth, Fortify 2FA, Sanctum PAT, `/api/v1`
+- [[Mobile M1.1 — Laravel API Foundation and Authentication]] — Laravel `staging` customer auth foundation (`924d511`)
 - [[Mobile M1.1 Authentication Architecture]] — accepted auth and API-contract decisions
+- [[Mobile M1.2 — Flutter Foundation and Authentication]] — mobile `main` Flutter auth foundation (`1b26478…`, PR #1 merged)
+- [[Mobile M1.2 Flutter Authentication Architecture]] — Riverpod/go_router/Dio/secure-storage decisions
+- [[Mobile M1.3 — Local Integration and Closeout]] — local emulator integration + auth/Reverb failure isolation (in review)
+- Next after M1.3 acceptance: Mobile Commerce Shell (requires approved Laravel catalog/package/product OpenAPI first)
 
 ## Workflow
 

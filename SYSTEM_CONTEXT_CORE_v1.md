@@ -14,6 +14,7 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - **Access model:** backend routes are hidden by `backend` middleware and permission checks (404 on denial by design).
 - **Mutation safety:** financial writes must stay transactional and idempotent (`lockForUpdate`, idempotency keys, `DB::afterCommit` side effects).
 - **Mobile auth:** customer-only `/api/v1` requires real Sanctum bearer PATs (web-session fallback rejected) with `mobile:access`, explicit 30-day expiry, no refresh token, and Fortify-backed 2FA challenges. Contract: `docs/api/v1/openapi.yaml`.
+- **Optional realtime isolation:** authentication and other authoritative flows must not fail when optional Reverb/Pusher publication fails. Durable activity rows remain; `ActivityLogBroadcaster` isolates `ActivityLogChanged` transport errors with safe logs (no signed broadcaster URLs/secrets).
 - **Agent rules:** follow `.cursor/rules/laravel-boost.mdc` for stack versions, conventions, and karman.store financial guardrails.
 
 ---
@@ -186,7 +187,7 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 ## 11. Realtime, notifications, Activity, and bugs
 
 - **User private channel:** `private-App.Models.User.{id}` (notifications + `CustomerActivityInvalidated`).
-- **Admin channels:** fulfillments, topups, activities, system-events, bugs, **`admin.automation`** (automation run inbox).
+- **Admin channels:** fulfillments, topups, activities (`ActivityLogChanged` via `ActivityLogBroadcaster`), system-events, bugs, **`admin.automation`** (automation run inbox). Activity-log realtime is optional and must not fail originating requests (including mobile login).
 - **Customer notifications = delivery + authoritative unread truth** (`notifications` table / `unreadNotifications()`).
 - **Customer Activity = projection only** (not financial/ops truth). Canonical route `/activity` (`activity.index`); `/notifications` is a compatibility alias to the same Livewire page.
 - **Read model:** `GetCustomerActivity` orchestrates `NotificationActivityReader` + `TopupActionRequiredReader` + `RefundActionRequiredReader` + `OrderActionRequiredReader` → `CustomerActivityMerger` → DTOs → `CustomerActivityPresenter` (typed destinations; never trust stored notification URLs).
@@ -264,7 +265,7 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 ## 16. Primary source files for AI prompts
 
 - `routes/web.php`, `routes/automation.php`, `routes/channels.php`, `routes/console.php`, `routes/ai.php`
-- **Mobile API:** `routes/api.php`, `config/mobile_api.php`, `app/Actions/MobileAuth/*`, `app/Http/Controllers/Api/V1/*`, `app/Http/Resources/Api/V1/*`, `docs/api/v1/openapi.yaml`
+- **Mobile API:** `routes/api.php`, `config/mobile_api.php`, `app/Actions/MobileAuth/*`, `app/Http/Controllers/Api/V1/*`, `app/Http/Resources/Api/V1/*`, `docs/api/v1/openapi.yaml`, `app/Support/ActivityLogBroadcaster.php`
 - `config/permission.php`, `config/fortify.php`, `config/referral.php`, **`config/fulfillment_automation.php`** (incl. `price_scan`), **`config/billing.php`**, **`config/security.php`**, `config/services.php` (`turnstile`, `openai`)
 - `app/Actions/Orders/CheckoutFromPayload.php`, **`CheckoutResult.php`**, `CreateOrderFromCartPayload.php`, `PayOrderWithWallet.php`
 - `app/Actions/Wallets/UpdateCreditFacility.php`, `AdjustWallet.php`
@@ -299,4 +300,5 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - **Companion map:** `Docs/PROJECT_STRUCTURE.md` (full layout); backlog scratchpad: `Docs/doc.md` (verify code — do not trust outdated “not installed” notes without checking `composer.json`)
 - **Obsidian + ChatGPT pipeline:** `Vault/Karman Index.md`, `Vault/Workflow/Ask → Plan → Agent Pipeline.md`, `Docs/CHATGPT_PROJECT_PROMPT.md`, active feature notes under `Vault/Features/`
 - **Mobile M1.1 context:** `Vault/Features/Mobile M1.1 — Laravel API Foundation and Authentication.md`, `Vault/Decisions/Mobile M1.1 Authentication Architecture.md`
+- **Mobile M1.2/M1.3 context:** `Vault/Features/Mobile M1.2 — Flutter Foundation and Authentication.md`, `Vault/Decisions/Mobile M1.2 Flutter Authentication Architecture.md`, `Vault/Features/Mobile M1.3 — Local Integration and Closeout.md` (Flutter repo `OmarBobk/indirimGo-mobile` `main`; local emulator API `http://10.0.2.2:8000/api/v1`; no staging API URL yet; do not merge Laravel `staging`→`main` merely to close M1.3; next milestone Mobile Commerce Shell after approved catalog OpenAPI)
 - **Vault sync rule (Cursor agents):** `.cursor/rules/050-vault-sync.mdc` — update feature notes after meaningful work; end with `Vault sync: …`
