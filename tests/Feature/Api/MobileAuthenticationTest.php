@@ -431,6 +431,9 @@ test('two factor input accepts a null companion field as absent', function () {
     $recoveryUser = m11Customer();
     m11EnableTwoFactor($recoveryUser, ['nullable-companion-recovery']);
     $recoveryChallenge = m11ChallengeToken($recoveryUser);
+    $this->mock(TwoFactorAuthenticationProvider::class, function (MockInterface $mock): void {
+        $mock->shouldReceive('verify')->once()->andReturnTrue();
+    });
 
     $this->postJson('/api/v1/auth/two-factor-challenge', [
         'challenge_token' => $recoveryChallenge,
@@ -441,9 +444,6 @@ test('two factor input accepts a null companion field as absent', function () {
     $authenticatorUser = m11Customer();
     m11EnableTwoFactor($authenticatorUser);
     $authenticatorChallenge = m11ChallengeToken($authenticatorUser);
-    $this->mock(TwoFactorAuthenticationProvider::class, function (MockInterface $mock): void {
-        $mock->shouldReceive('verify')->once()->andReturnTrue();
-    });
 
     $this->postJson('/api/v1/auth/two-factor-challenge', [
         'challenge_token' => $authenticatorChallenge,
