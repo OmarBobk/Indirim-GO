@@ -4,7 +4,6 @@ namespace App\Providers;
 
 use App\Domain\Security\Contracts\HumanVerifier;
 use App\Domain\Security\Services\TurnstileVerifier;
-use App\Events\ActivityLogChanged;
 use App\Events\AutomationRunChanged;
 use App\Events\BugInboxChanged;
 use App\Events\FulfillmentListChanged;
@@ -13,6 +12,7 @@ use App\Listeners\BroadcastAdminOpsInboxOnDomainEvents;
 use App\Listeners\SendBugRecordedAdminNotifications;
 use App\Services\CustomerPriceService;
 use App\Services\PriceCalculator;
+use App\Support\ActivityLogBroadcaster;
 use Carbon\CarbonImmutable;
 use Illuminate\Auth\Events\Logout;
 use Illuminate\Foundation\Vite;
@@ -166,11 +166,7 @@ class AppServiceProvider extends ServiceProvider
     protected function registerActivityBroadcasting(): void
     {
         Activity::created(function (Activity $activity): void {
-            $activityId = $activity->id;
-
-            DB::afterCommit(static function () use ($activityId): void {
-                event(new ActivityLogChanged($activityId));
-            });
+            ActivityLogBroadcaster::dispatchCreated($activity->id);
         });
     }
 }
