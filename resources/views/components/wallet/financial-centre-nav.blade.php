@@ -25,6 +25,14 @@
             'test' => 'financial-nav-refunds',
         ],
     ];
+
+    if (auth()->user()?->can('view_referrals')) {
+        $links['earnings'] = [
+            'href' => route('wallet.earnings.index'),
+            'label' => __('messages.financial_nav_earnings'),
+            'test' => 'financial-nav-earnings',
+        ];
+    }
 @endphp
 
 <nav

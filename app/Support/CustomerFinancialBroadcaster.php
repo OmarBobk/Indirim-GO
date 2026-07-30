@@ -12,21 +12,42 @@ use Illuminate\Support\Facades\Log;
 
 final class CustomerFinancialBroadcaster
 {
-    public static function dispatch(int|User $user, CustomerFinancialInvalidationReason $reason): void
-    {
+    /**
+     * @param  CustomerFinancialInvalidationReason|list<CustomerFinancialInvalidationReason>  $reasons
+     */
+    public static function dispatch(
+        int|User $user,
+        CustomerFinancialInvalidationReason|array $reasons,
+    ): void {
+        $reasons = $reasons instanceof CustomerFinancialInvalidationReason ? [$reasons] : $reasons;
+        $reasons = array_values(array_reduce(
+            $reasons,
+            static function (array $carry, mixed $reason): array {
+                if ($reason instanceof CustomerFinancialInvalidationReason) {
+                    $carry[$reason->value] = $reason;
+                }
+
+                return $carry;
+            },
+            [],
+        ));
+
         $userId = $user instanceof User ? (int) $user->id : $user;
 
-        if ($userId <= 0) {
+        if ($userId <= 0 || $reasons === []) {
             return;
         }
 
-        $callback = static function () use ($userId, $reason): void {
+        $callback = static function () use ($userId, $reasons): void {
             try {
-                event(new CustomerFinancialStateChanged($userId, $reason));
+                event(new CustomerFinancialStateChanged($userId, $reasons));
             } catch (\Throwable $exception) {
                 Log::warning('Customer financial invalidation broadcast failed', [
                     'user_id' => $userId,
-                    'reason' => $reason->value,
+                    'reasons' => array_map(
+                        static fn (CustomerFinancialInvalidationReason $reason): string => $reason->value,
+                        $reasons,
+                    ),
                     'message' => $exception->getMessage(),
                 ]);
             }

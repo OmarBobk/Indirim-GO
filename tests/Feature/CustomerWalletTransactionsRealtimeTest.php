@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Enums\CustomerFinancialInvalidationReason;
 use App\Enums\WalletTransactionDirection;
 use App\Enums\WalletTransactionType;
 use App\Models\User;
@@ -46,7 +47,15 @@ it('refreshes page one on financial invalidate', function (): void {
     ]);
 
     $component
-        ->dispatch('customer-financial-invalidate')
+        ->dispatch(
+            'customer-financial-invalidate',
+            reasons: [CustomerFinancialInvalidationReason::RefundStateChanged->value],
+        )
+        ->assertSet('hasPendingRefresh', false)
+        ->dispatch(
+            'customer-financial-invalidate',
+            reasons: [CustomerFinancialInvalidationReason::TransactionPosted->value],
+        )
         ->assertSee('WTX-BBBBBBBBBB')
         ->assertSet('hasPendingRefresh', false);
 });
@@ -83,7 +92,15 @@ it('shows pending banner on page two without replacing rows', function (): void 
     ]);
 
     $component
-        ->dispatch('customer-financial-invalidate')
+        ->dispatch(
+            'customer-financial-invalidate',
+            reasons: [CustomerFinancialInvalidationReason::RefundStateChanged->value],
+        )
+        ->assertSet('hasPendingRefresh', false)
+        ->dispatch(
+            'customer-financial-invalidate',
+            reasons: [CustomerFinancialInvalidationReason::TransactionPosted->value],
+        )
         ->assertSet('hasPendingRefresh', true)
         ->assertDontSee('WTX-NEWNEWNEW1');
 

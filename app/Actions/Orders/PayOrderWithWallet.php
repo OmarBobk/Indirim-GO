@@ -153,7 +153,7 @@ class PayOrderWithWallet
             if (! $result->wasReplayed) {
                 CustomerFinancialBroadcaster::dispatch(
                     (int) $lockedOrder->user_id,
-                    CustomerFinancialInvalidationReason::BalanceChanged,
+                    CustomerFinancialInvalidationReason::TransactionPosted,
                 );
             }
 
@@ -239,6 +239,8 @@ class PayOrderWithWallet
         $commissionRatePercent = $this->resolveCommissionRatePercent($salespersonId);
         $commissionMultiplier = bcdiv($commissionRatePercent, '100', 4);
 
+        $createdCommission = false;
+
         foreach ($order->items as $item) {
             $lineTotal = LedgerMoney::normalize((string) $item->line_total);
             $quantity = max(1, (int) $item->quantity);
@@ -248,7 +250,7 @@ class PayOrderWithWallet
                 $orderTotal = $unitTotal;
                 $commissionAmount = bcmul($orderTotal, $commissionMultiplier, 2);
 
-                $this->createCommissionForFulfillment(
+                $createdCommission = $this->createCommissionForFulfillment(
                     $order->id,
                     (int) $fulfillment->id,
                     $salespersonId,
@@ -257,8 +259,15 @@ class PayOrderWithWallet
                     $orderTotal,
                     $commissionAmount,
                     $commissionRatePercent
-                );
+                ) || $createdCommission;
             }
+        }
+
+        if ($createdCommission) {
+            CustomerFinancialBroadcaster::dispatch(
+                $salespersonId,
+                CustomerFinancialInvalidationReason::CommissionStateChanged,
+            );
         }
     }
 
@@ -271,7 +280,7 @@ class PayOrderWithWallet
         string $orderTotal,
         string $commissionAmount,
         string $commissionRatePercent
-    ): void {
+    ): bool {
         try {
             Commission::query()->create([
                 'order_id' => $orderId,
@@ -285,11 +294,15 @@ class PayOrderWithWallet
                 'status' => CommissionStatus::Pending,
                 'paid_at' => null,
             ]);
+
+            return true;
         } catch (QueryException $exception) {
             // Duplicate fulfillment_id (unique) can happen under race; keep idempotent.
             if ($exception->getCode() !== '23000') {
                 throw $exception;
             }
+
+            return false;
         }
     }
 

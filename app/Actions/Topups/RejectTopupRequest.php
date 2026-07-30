@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Actions\Topups;
 
-use App\Enums\CustomerActivityInvalidationReason;
 use App\Enums\CustomerFinancialInvalidationReason;
 use App\Enums\TopupRequestStatus;
 use App\Events\TopupRequestsChanged;
@@ -13,7 +12,6 @@ use App\Models\User;
 use App\Models\WalletTransaction;
 use App\Notifications\TopupRejectedNotification;
 use App\Services\SystemEventService;
-use App\Support\CustomerActivityBroadcaster;
 use App\Support\CustomerFinancialBroadcaster;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -89,10 +87,6 @@ class RejectTopupRequest
             $rejectedByIdForEvent = $rejectedById;
             $ownerUserId = (int) $request->user_id;
 
-            CustomerActivityBroadcaster::dispatch(
-                $ownerUserId,
-                CustomerActivityInvalidationReason::TopupStateChanged,
-            );
             CustomerFinancialBroadcaster::dispatch(
                 $ownerUserId,
                 CustomerFinancialInvalidationReason::TopupStateChanged,

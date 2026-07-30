@@ -2,6 +2,7 @@
 
 use App\Actions\Financial\GetCustomerFinancialOverview;
 use App\Support\CustomerFinancialPresenter;
+use App\Support\Financial\CustomerFinancialRealtimeScope;
 use Illuminate\View\View;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\On;
@@ -32,7 +33,18 @@ new #[Layout('layouts::frontend')] class extends Component
     public function onFinancialInvalidate(
         GetCustomerFinancialOverview $getOverview,
         CustomerFinancialPresenter $presenter,
+        array $reasons = [],
+        bool $isReconcile = false,
     ): void {
+        if (! CustomerFinancialRealtimeScope::isRelevant(
+            ['reasons' => $reasons, 'isReconcile' => $isReconcile],
+            CustomerFinancialRealtimeScope::SURFACE_OVERVIEW,
+        )) {
+            $this->skipRender();
+
+            return;
+        }
+
         $this->isRefreshing = true;
         $this->loadOverview($getOverview, $presenter);
         $this->isRefreshing = false;
@@ -78,6 +90,7 @@ new #[Layout('layouts::frontend')] class extends Component
 <x-storefront.page
     width="work"
     data-test="wallet-page"
+    data-financial-surface="overview"
     aria-busy="{{ $this->isRefreshing ? 'true' : 'false' }}"
     wire:key="financial-overview"
 >
@@ -92,17 +105,6 @@ new #[Layout('layouts::frontend')] class extends Component
         />
 
         <x-wallet.financial-centre-nav active="overview" />
-
-        <div
-            class="sr-only"
-            aria-live="polite"
-            aria-atomic="true"
-            data-test="financial-overview-live-region"
-        >
-            @if ($this->isRefreshing)
-                {{ __('messages.financial_information_updated') }}
-            @endif
-        </div>
 
         <x-wallet.overview-balance :balance="$overview['balance']" :busy="$this->isRefreshing" />
 

@@ -109,6 +109,7 @@ class CreatePayoutBatch
             ]);
             $creditedCount = 0;
             $creditedTotal = '0.00';
+            $affectedSalespersonIds = [];
 
             foreach ($eligible as $candidateCommission) {
                 $commission = Commission::query()
@@ -243,14 +244,7 @@ class CreatePayoutBatch
                 }
 
                 if (! $result->wasReplayed) {
-                    CustomerFinancialBroadcaster::dispatch(
-                        (int) $salesperson->id,
-                        CustomerFinancialInvalidationReason::BalanceChanged,
-                    );
-                    CustomerFinancialBroadcaster::dispatch(
-                        (int) $salesperson->id,
-                        CustomerFinancialInvalidationReason::CommissionCredited,
-                    );
+                    $affectedSalespersonIds[(int) $salesperson->id] = true;
 
                     $salespersonId = (int) $salesperson->id;
                     $commissionId = (int) $commission->id;
@@ -283,6 +277,16 @@ class CreatePayoutBatch
                 'total_amount' => $creditedTotal,
                 'commission_count' => $creditedCount,
             ]);
+
+            foreach (array_keys($affectedSalespersonIds) as $salespersonId) {
+                CustomerFinancialBroadcaster::dispatch(
+                    (int) $salespersonId,
+                    [
+                        CustomerFinancialInvalidationReason::TransactionPosted,
+                        CustomerFinancialInvalidationReason::CommissionStateChanged,
+                    ],
+                );
+            }
 
             Log::info('Commission payout batch created.', [
                 'batch_id' => $batch->id,

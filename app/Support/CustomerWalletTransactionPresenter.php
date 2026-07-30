@@ -129,6 +129,7 @@ final class CustomerWalletTransactionPresenter
             FinancialDestinationType::WalletRefunds => __('messages.financial_nav_refunds'),
             FinancialDestinationType::WalletRefundDetail => __('messages.refund_view_request'),
             FinancialDestinationType::SalespersonDashboard => __('messages.financial_salesperson_earnings_link'),
+            FinancialDestinationType::WalletEarnings => __('messages.financial_salesperson_earnings_link'),
             default => __('messages.details'),
         };
     }

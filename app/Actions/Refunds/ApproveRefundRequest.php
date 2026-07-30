@@ -384,17 +384,43 @@ class ApproveRefundRequest
 
                 if ($fulfillment !== null) {
                     // Commission credits are NOT reversed on refund in Phase 1.
+                    $salespersonIds = Commission::query()
+                        ->where('fulfillment_id', $fulfillment->id)
+                        ->where('status', CommissionStatus::Pending)
+                        ->pluck('salesperson_id')
+                        ->unique()
+                        ->filter()
+                        ->values()
+                        ->all();
+
                     Commission::query()
                         ->where('fulfillment_id', $fulfillment->id)
                         ->where('status', CommissionStatus::Pending)
                         ->update(['status' => CommissionStatus::Failed]);
                 } else {
                     // Commission credits are NOT reversed on refund in Phase 1.
+                    $salespersonIds = Commission::query()
+                        ->where('order_id', $order->id)
+                        ->whereNull('fulfillment_id')
+                        ->where('status', CommissionStatus::Pending)
+                        ->pluck('salesperson_id')
+                        ->unique()
+                        ->filter()
+                        ->values()
+                        ->all();
+
                     Commission::query()
                         ->where('order_id', $order->id)
                         ->whereNull('fulfillment_id')
                         ->where('status', CommissionStatus::Pending)
                         ->update(['status' => CommissionStatus::Failed]);
+                }
+
+                foreach ($salespersonIds as $salespersonId) {
+                    CustomerFinancialBroadcaster::dispatch(
+                        (int) $salespersonId,
+                        CustomerFinancialInvalidationReason::CommissionStateChanged,
+                    );
                 }
 
                 $userId = $order->user_id;
@@ -427,11 +453,10 @@ class ApproveRefundRequest
 
                 CustomerFinancialBroadcaster::dispatch(
                     (int) $userId,
-                    CustomerFinancialInvalidationReason::BalanceChanged,
-                );
-                CustomerFinancialBroadcaster::dispatch(
-                    (int) $userId,
-                    CustomerFinancialInvalidationReason::RefundStateChanged,
+                    [
+                        CustomerFinancialInvalidationReason::TransactionPosted,
+                        CustomerFinancialInvalidationReason::RefundStateChanged,
+                    ],
                 );
                 CustomerActivityBroadcaster::dispatch(
                     (int) $userId,

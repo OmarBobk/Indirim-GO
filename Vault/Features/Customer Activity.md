@@ -51,6 +51,8 @@ Customers see one **Activity** page: timeline of orders, wallet, topups, refunds
 ## Gotchas
 
 - Banner / mark-all always in DOM (`x-show`)
+- **M6.7 boundary:** Activity and Financial use separate semantic coalescers on the same private user channel. Financial invalidation never recounts/marks notifications; Activity invalidation never refreshes financial surfaces without a companion financial server event.
+- Activity and Financial init/reconnect bindings are guarded once per tab; lifecycle reconciliation reloads each system from its own server truth.
 - Mobile top bar: wallet chrome + realtime bell badge
 - Home Operational placeholder remains hidden (`customer-home-operational-placeholder`)
 - Deploy: migrate indexes; Reverb origins; secure cookies; `npm run build`

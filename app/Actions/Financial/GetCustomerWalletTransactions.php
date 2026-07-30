@@ -274,7 +274,7 @@ final class GetCustomerWalletTransactions
                 ? new FinancialDestinationDTO(FinancialDestinationType::OrderDetail, ['order_number' => $orderNumber])
                 : new FinancialDestinationDTO(FinancialDestinationType::Orders),
             WalletTransactionType::Topup => $this->topupDestination($meta),
-            WalletTransactionType::CommissionCredit => new FinancialDestinationDTO(FinancialDestinationType::SalespersonDashboard),
+            WalletTransactionType::CommissionCredit => new FinancialDestinationDTO(FinancialDestinationType::WalletEarnings),
             WalletTransactionType::Adjustment => null,
             default => null,
         };

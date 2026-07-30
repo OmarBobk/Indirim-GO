@@ -3,6 +3,7 @@
 use App\Actions\Topups\GetCustomerTopupDetail;
 use App\Models\WebsiteSetting;
 use App\Support\CustomerTopupPresenter;
+use App\Support\Financial\CustomerFinancialRealtimeScope;
 use App\Support\TopupRequestPublicRef;
 use Illuminate\View\View;
 use Livewire\Attributes\Layout;
@@ -28,8 +29,17 @@ new #[Layout('layouts::frontend')] class extends Component
     }
 
     #[On('customer-financial-invalidate')]
-    public function handleFinancialInvalidate(): void
+    public function handleFinancialInvalidate(array $reasons = [], bool $isReconcile = false): void
     {
+        if (! CustomerFinancialRealtimeScope::isRelevant(
+            ['reasons' => $reasons, 'isReconcile' => $isReconcile],
+            CustomerFinancialRealtimeScope::SURFACE_TOPUP_DETAIL,
+        )) {
+            $this->skipRender();
+
+            return;
+        }
+
         $this->loadDetail();
         $this->dispatch('topup-detail-updated');
     }
@@ -69,6 +79,7 @@ new #[Layout('layouts::frontend')] class extends Component
 <x-storefront.page
     width="work"
     data-test="wallet-topup-detail-page"
+    data-financial-surface="topup-detail"
     aria-busy="{{ $this->isBusy ? 'true' : 'false' }}"
 >
     <div class="storefront-section-stack">

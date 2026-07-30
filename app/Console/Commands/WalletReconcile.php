@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Enums\CustomerFinancialInvalidationReason;
 use App\Enums\WalletTransactionDirection;
 use App\Models\Wallet;
 use App\Models\WalletTransaction;
 use App\Notifications\WalletReconciledNotification;
 use App\Services\NotificationRecipientService;
 use App\Services\OperationalIntelligenceService;
+use App\Support\CustomerFinancialBroadcaster;
 use App\Support\LedgerMoney;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -102,6 +104,10 @@ class WalletReconcile extends Command
                 // Policy C: snapshot repair — ledger sum is authoritative; no new TX
                 // (a ledger post cannot close balance-vs-sum drift).
                 $lockedWallet->update(['balance' => $expected]);
+                CustomerFinancialBroadcaster::dispatch(
+                    (int) $lockedWallet->user_id,
+                    CustomerFinancialInvalidationReason::BalanceChanged,
+                );
 
                 activity()
                     ->inLog('payments')

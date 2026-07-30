@@ -37,10 +37,14 @@ final class CustomerFinancialPresenter
                 'track_refunds_href' => route('wallet.refunds.index'),
                 'view_transactions_href' => route('wallet.transactions.index'),
                 'loyalty_href' => route('loyalty'),
-                'salesperson_href' => $overview->showSalespersonLink && Route::has('salesperson.dashboard')
-                    ? route('salesperson.dashboard')
-                    : null,
-                'show_salesperson_link' => $overview->showSalespersonLink && Route::has('salesperson.dashboard'),
+                'salesperson_href' => $overview->showSalespersonLink && Route::has('wallet.earnings.index')
+                    ? route('wallet.earnings.index')
+                    : ($overview->showSalespersonLink && Route::has('salesperson.dashboard')
+                        ? route('salesperson.dashboard')
+                        : null),
+                'show_salesperson_link' => $overview->showSalespersonLink && (
+                    Route::has('wallet.earnings.index') || Route::has('salesperson.dashboard')
+                ),
             ],
             'pending' => [
                 'items' => array_map(

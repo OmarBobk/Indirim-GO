@@ -10,7 +10,10 @@ namespace App\Enums;
 enum CustomerFinancialInvalidationReason: string
 {
     case BalanceChanged = 'balance_changed';
+    case TransactionPosted = 'transaction_posted';
+    case CreditFacilityChanged = 'credit_facility_changed';
     case TopupStateChanged = 'topup_state_changed';
     case RefundStateChanged = 'refund_state_changed';
-    case CommissionCredited = 'commission_credited';
+    case CommissionStateChanged = 'commission_state_changed';
+    case PayoutRequestStateChanged = 'payout_request_state_changed';
 }

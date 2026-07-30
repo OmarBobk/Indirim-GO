@@ -4,6 +4,7 @@ use App\Actions\Topups\GetCustomerTopupRequests;
 use App\DTOs\Topups\CustomerTopupFilters;
 use App\DTOs\Topups\CustomerTopupPageDTO;
 use App\Support\CustomerTopupPresenter;
+use App\Support\Financial\CustomerFinancialRealtimeScope;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\View\View;
 use Livewire\Attributes\Layout;
@@ -85,12 +86,18 @@ new #[Layout('layouts::frontend')] class extends Component
         $this->loadPage();
     }
 
-    /**
-     * @param  array<string, mixed>  $payload
-     */
     #[On('customer-financial-invalidate')]
-    public function handleFinancialInvalidate(array $payload = []): void
+    public function handleFinancialInvalidate(array $reasons = [], bool $isReconcile = false): void
     {
+        if (! CustomerFinancialRealtimeScope::isRelevant(
+            ['reasons' => $reasons, 'isReconcile' => $isReconcile],
+            CustomerFinancialRealtimeScope::SURFACE_TOPUP_LIST,
+        )) {
+            $this->skipRender();
+
+            return;
+        }
+
         if ($this->getPage() > 1) {
             $this->hasPendingRefresh = true;
             $this->skipRender();
@@ -189,6 +196,7 @@ new #[Layout('layouts::frontend')] class extends Component
 <x-storefront.page
     width="work"
     data-test="wallet-topups-page"
+    data-financial-surface="topup-list"
     aria-busy="{{ $this->isBusy ? 'true' : 'false' }}"
 >
     <div class="storefront-section-stack">

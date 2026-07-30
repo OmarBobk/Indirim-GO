@@ -13,6 +13,7 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - **Cart model:** cart state is client-side (`localStorage` key `karman.cart.v1`), but checkout always revalidates and recalculates on server.
 - **Access model:** backend routes are hidden by `backend` middleware and permission checks (404 on denial by design).
 - **Mutation safety:** financial writes must stay transactional and idempotent (`lockForUpdate`, idempotency keys, `DB::afterCommit` side effects).
+- **Financial realtime (M6.7):** workflow Actions emit after-commit allowlisted reason sets through `CustomerFinancialBroadcaster`; `WalletLedger` stays broadcast-unaware; payloads contain no financial values/record IDs; clients reconcile server truth.
 - **Agent rules:** follow `.cursor/rules/laravel-boost.mdc` for stack versions, conventions, and karman.store financial guardrails.
 
 ---
@@ -131,7 +132,7 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - **Customer UX:** `CustomerWalletDisplay` — stacked header balance (green positive / red debt), Limit/Available secondary when facility Active; mobile header chip surfaces limit/available without opening wallet. Wallet timeline humanized via `CustomerSystemEventPresenter` when timeline `audience="customer"`.
 - **Config:** `billing.wallet_credit_limit_max`, `billing.wallet_payment_terms_days` (`config/billing.php`).
 - **Out of scope (still true):** debt forgiveness / write-off. **M6.0.1 shipped:** all product posted wallet mutations use `WalletLedger` (incl. purchase/topup/refund/commission/settlement). Debit floor uses `Wallet::minimumAllowedBalance()`. `wallet:reconcile` is audit-only by default; `--repair` is audited snapshot set (compensating TX cannot close drift). See `Vault/Features/Customer Financial Centre.md`.
-- **M6 target:** Wallet becomes customer Financial Control Centre (overview / ledger / top-ups / refunds / transaction detail); salesperson unpaid earnings stay on `/salesperson-dashboard`; receipts are printable HTML (browser print; no server PDF in M6.5); financial realtime via `CustomerFinancialStateChanged` (invalidation only; client coalescer shipped in M6.1). **M6.2 shipped:** `/wallet/transactions` posted ledger with `public_ref` + `posted_at`. **M6.3 shipped:** `/wallet/topups` workspace + `TUP-*` refs. **M6.4 shipped:** `/wallet/refunds` workspace; refund workflow = owned refund `WalletTransaction` with early `WTX-*`; Financial Centre nav Overview|Transactions|Top-ups|Refunds. **M6.5 shipped:** `/wallet/transactions/{WTX-*}` detail + HTML receipt; snapshot-first `meta.receipt`; Actions stamp safe snapshots; WalletLedger does not query sources.
+- **M6 target:** Wallet becomes customer Financial Control Centre (overview / ledger / top-ups / refunds / transaction detail / role-gated earnings); receipts are printable HTML (browser print; no server PDF in M6.5). **M6.2 shipped:** `/wallet/transactions` posted ledger with `public_ref` + `posted_at`. **M6.3 shipped:** `/wallet/topups` workspace + `TUP-*` refs. **M6.4 shipped:** `/wallet/refunds` workspace; refund workflow = owned refund `WalletTransaction` with early `WTX-*`; Financial Centre nav Overview|Transactions|Top-ups|Refunds. **M6.5 shipped:** `/wallet/transactions/{WTX-*}` detail + HTML receipt; snapshot-first `meta.receipt`; Actions stamp safe snapshots; WalletLedger does not query sources. **M6.6 shipped:** `/wallet/earnings` salesperson commission clarity; pending ≠ spendable; clawback still deferred. **M6.7 shipped:** one reason-set financial invalidation contract, scoped surface refreshes, page-2 stability and focus/online/reconnect reconciliation.
 
 ---
 
@@ -177,16 +178,17 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - **User fields:** referral code + referred-by linkage (`referral_code`, `referred_by_user_id`).
 - **Commission model:** `commissions` table, `CommissionStatus` enum (`pending`, `credited`, `failed`), commission rate snapshots, optional `payout_batch_id`, and unique `wallet_transaction_id`.
 - **Creation trigger:** commissions are generated in `PayOrderWithWallet` after order payment/fulfillment creation.
-- **Failure interaction:** refund approval marks related pending commissions as failed.
+- **Failure interaction:** refund approval marks related pending commissions as failed; credited commissions are **not** reversed (Phase-1 debt; clawback deferred).
 - **Payout flow:** admins use `CreatePayoutBatch` through `/admin/commissions` (`can:manage_settlements`) to credit eligible completed/aged commissions to salesperson wallets. It creates `payout_batches`, posts `commission_credit` wallet transactions, records `wallet.commission.credited`, marks commissions `credited`, and notifies recipients after commit.
-- **Eligibility:** commission must be pending, not already batched/credited, order paid older than `WebsiteSetting::getCommissionPayoutWaitDays()`, and related fulfillment(s) completed; payout total must meet `WebsiteSetting::getCommissionPayoutMinAmount()` unless explicitly bypassed for a single admin credit.
-- **Salesperson dashboard:** `/salesperson-dashboard` (`can:view_referrals`) uses `SalespersonDashboardService` + `resources/views/components/dashboard/*` for KPI hero charts, payout card, leaderboard, orders table, and earnings history. Frontend `/referral-link` also requires `can:view_referrals`.
+- **Eligibility:** commission must be pending, not already batched/credited, order paid older than `WebsiteSetting::getCommissionPayoutWaitDays()`, and related fulfillment(s) completed; payout **batch** total must meet `WebsiteSetting::getCommissionPayoutMinAmount()` unless explicitly bypassed for a single admin credit. Salesperson **payout request** floor is separate: `RequestSalespersonPayout::MIN_ELIGIBLE_EXCLUSIVE` ($10 exclusive).
+- **Salesperson dashboard:** `/salesperson-dashboard` (`can:view_referrals`) = business KPIs via `SalespersonDashboardService`. **Earnings financial workspace (M6.6):** `/wallet/earnings` (`wallet.earnings.index`) via `GetSalespersonEarnings` + `SalespersonEarningsPresenter`; Financial Centre Earnings nav only with `view_referrals`. Frontend `/referral-link` also requires `can:view_referrals`.
+- **PayoutRequest:** workflow signal only (`pending`|`processed`); does not post wallet money.
 
 ---
 
 ## 11. Realtime, notifications, Activity, and bugs
 
-- **User private channel:** `private-App.Models.User.{id}` (notifications + `CustomerActivityInvalidated`).
+- **User private channel:** `private-App.Models.User.{id}` (notifications + `CustomerActivityInvalidated` + `CustomerFinancialStateChanged`).
 - **Admin channels:** fulfillments, topups, activities, system-events, bugs, **`admin.automation`** (automation run inbox).
 - **Customer notifications = delivery + authoritative unread truth** (`notifications` table / `unreadNotifications()`).
 - **Customer Activity = projection only** (not financial/ops truth). Canonical route `/activity` (`activity.index`); `/notifications` is a compatibility alias to the same Livewire page.
@@ -194,6 +196,7 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - **Activity filters:** `all` | `unread` | `action_required` (+ optional category). Action-required rows use domain unresolved state; unread never means unresolved.
 - **Home:** authenticated home keeps Command → Personal → Browse → Catalog; Operational zone is a hidden placeholder (Needs attention island not mounted on Home). Action-required items surface on `/activity`.
 - **Realtime invalidation:** domain/notification → after-commit broadcast → private user channel → JS coalescer (~600ms) → Livewire `customer-activity-invalidate`. Activity page 1 refreshes feed; page 2+ sets pending-refresh banner + `skipRender()` (zero feed reads until Refresh). Coordinator owns one unread COUNT and dispatches `customer-unread-count-updated`.
+- **Financial realtime (M6.7):** separate 600 ms reason-set coalescer on the same channel → `customer-financial-invalidate`; allowlist = transaction posted, balance repair, credit facility, top-up, refund, commission, payout request. Server `CustomerFinancialRealtimeScope` gates mounted surfaces. Page 1 refreshes once; page 2+ zero reads until Return to latest; hidden tabs defer; focus/online/reconnect reconcile once; transaction print defers one refresh. Financial events never mutate unread/Activity state.
 - **Bell:** notifications only; latest-five lazy until dropdown open; unread badge from coordinator. Mobile top bar shows wallet chrome + bell.
 - **Perf notes:** request-local Activity fetch memo; `WebsiteSetting::instance()` request-attribute memo; fulfillments `order_id` / `order_item_id` indexes (`2026_07_28_183808_add_fulfillments_order_indexes_if_missing`).
 - **Deploy:** `BROADCAST_CONNECTION=reverb`, Reverb app/Vite keys, restrict `allowed_origins`, `SESSION_SECURE_COOKIE` + HTTPS + `SESSION_DOMAIN`, run migration, `npm run build`, keep Reverb/queue workers healthy.
@@ -256,13 +259,15 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - **2026-07 (M6.3):** **Customer top-up workspace** — `/wallet/topups` + detail by `TUP-*`; create `/wallet/topup`; retry from rejected; Financial Centre nav adds Top-ups; cancellation deferred.
 - **2026-07 (M6.4):** **Customer refund workspace** — `/wallet/refunds` + detail by `WTX-*`; no RefundRequest model; recovery via order; commission clawback still out of scope.
 - **2026-07 (M6.5):** **Transaction details + printable receipts** — `/wallet/transactions/{WTX-*}`; `GetCustomerTransactionDetail`; snapshot-first receipt; browser print CSS only; no PDF/signing/QR.
+- **2026-07 (M6.6):** **Salesperson earnings clarity** — `/wallet/earnings`; Commission truth vs wallet spendable; `GetSalespersonEarnings`; payout request ≠ money movement; late-refund clawback still deferred; `CommissionStateChanged` invalidation.
+- **2026-07 (M6.7):** **Financial realtime synchronisation** — reason-set payload; Action-owned after-commit writers; replay/batch deduplication; scoped Livewire refresh; page-2 zero-read banners; hidden/focus/online/reconnect reconciliation; print-safe transaction detail.
 
 ---
 
 ## 15. Routes quick reference
 
 - **Public:** `/`, `/categories/{category:slug}`, `/cart`, `/contact`, `/404`, `language/{locale}`.
-- **Auth+verified (storefront):** `/profile`, `/wallet`, `/wallet/transactions`, `/wallet/transactions/{public_ref}`, `/wallet/topups`, `/wallet/topups/{public_ref}`, `/wallet/topup`, `/wallet/refunds`, `/wallet/refunds/{public_ref}`, `/loyalty`, `/referral-link`, `/orders`, `/orders/{order_number}`, **`/activity`** (`activity.index`; **`/notifications`** alias), `/topup-proofs/{proof}`, `/bug-attachments/{attachment}`, `POST /api/pricing/buy-now-custom-amount-quote`.
+- **Auth+verified (storefront):** `/profile`, `/wallet`, `/wallet/transactions`, `/wallet/transactions/{public_ref}`, `/wallet/topups`, `/wallet/topups/{public_ref}`, `/wallet/topup`, `/wallet/refunds`, `/wallet/refunds/{public_ref}`, `/wallet/earnings` (`can:view_referrals`), `/loyalty`, `/referral-link`, `/orders`, `/orders/{order_number}`, **`/activity`** (`activity.index`; **`/notifications`** alias), `/topup-proofs/{proof}`, `/bug-attachments/{attachment}`, `POST /api/pricing/buy-now-custom-amount-quote`.
 - **Backend:** `/dashboard` (`can:view_dashboard`), `/salesperson-dashboard` (`can:view_referrals`), `/categories`, `/packages`, `/products`, `/product-entry-prices` (`can:update_product_prices`), **`/price-drift`** (`can:update_product_prices`), `/pricing-rules`, `/loyalty-tiers`, `/admin/orders/*`, `/admin/users/*`, `/admin/users/{user}/audit`, `/fulfillments`, `/refunds`, `/topups`, `/customer-funds`, **`/credit-facility`** (`can:manage_wallet_credit`), `/settlements`, `/admin/commissions` (`can:manage_settlements`), `/admin/notifications`, `/admin/bugs/*`, `/admin/website-settings` (admin only), **`/admin/automation`** (admin only), **`/admin/assistant`** (admin only, throttled).
 - **Automation (internal):** `POST /internal/automation/runs/{uuid}/result`, `POST /internal/automation/runs/{uuid}/artifacts`, **`POST /internal/automation/price-scans/{uuid}/result`** (HMAC-signed, CSRF exempt). Worker: `POST /v1/runs`, **`POST /v1/sessions/clear`**, **`POST /v1/price-scans`** (HMAC).
 - **AI/MCP:** `POST /mcp/ops-assistant` (admin MCP server for read-only ops tools).
@@ -280,7 +285,8 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - `app/DTOs/WalletSpendDecision.php`, `app/Exceptions/WalletSpendDeniedException.php`
 - `app/Support/CustomerWalletDisplay.php`, `CustomerSystemEventPresenter.php`
 - `Vault/Features/Customer Financial Centre.md` (M6 architecture contract)
-- `app/Actions/Commissions/CreatePayoutBatch.php`
+- `app/Actions/Commissions/CreatePayoutBatch.php`, `RequestSalespersonPayout.php`
+- `app/Actions/Earnings/GetSalespersonEarnings.php`, `app/Support/Commissions/SalespersonCommissionEligibility.php`
 - `app/Actions/Refunds/ApproveRefundRequest.php`
 - `app/Actions/Fulfillments/ClaimFulfillment.php`, `CreateFulfillmentsForOrder.php`, **`DispatchFulfillmentAutomationRun.php`**, **`IngestFulfillmentAutomationResult.php`**, **`ScheduleWasimOrderReconcile.php`**, **`RetryFulfillmentAutomation.php`**
 - `app/Actions/Packages/TogglePackageFulfillment.php`, `UpsertPackage.php`

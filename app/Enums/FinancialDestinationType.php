@@ -21,5 +21,6 @@ enum FinancialDestinationType: string
     case Activity = 'activity';
     case Loyalty = 'loyalty';
     case SalespersonDashboard = 'salesperson_dashboard';
+    case WalletEarnings = 'wallet_earnings';
     case PurchaseResume = 'purchase_resume';
 }

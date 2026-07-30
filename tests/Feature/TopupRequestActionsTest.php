@@ -3,7 +3,9 @@
 use App\Actions\Topups\ApproveTopupRequest;
 use App\Actions\Topups\CreateTopupRequestAction;
 use App\Actions\Topups\RejectTopupRequest;
+use App\Enums\CustomerFinancialInvalidationReason;
 use App\Enums\TopupRequestStatus;
+use App\Events\CustomerFinancialStateChanged;
 use App\Events\TopupRequestsChanged;
 use App\Models\PaymentMethod;
 use App\Models\TopupRequest;
@@ -18,6 +20,7 @@ use Spatie\Permission\Models\Permission;
 uses(RefreshDatabase::class);
 
 test('approving a topup posts ledger and increments balance once', function () {
+    Event::fake([CustomerFinancialStateChanged::class]);
     $user = User::factory()->create();
     $approver = User::factory()->create();
     Permission::firstOrCreate(['name' => 'manage_topups']);
@@ -61,6 +64,15 @@ test('approving a topup posts ledger and increments balance once', function () {
         ->where('subject_id', $request->id)
         ->exists()
     )->toBeTrue();
+    Event::assertDispatchedTimes(CustomerFinancialStateChanged::class, 1);
+    Event::assertDispatched(
+        CustomerFinancialStateChanged::class,
+        fn (CustomerFinancialStateChanged $event): bool => $event->userId === $user->id
+            && $event->reasons === [
+                CustomerFinancialInvalidationReason::TransactionPosted,
+                CustomerFinancialInvalidationReason::TopupStateChanged,
+            ],
+    );
 });
 
 test('approving a topup dispatches change event', function () {

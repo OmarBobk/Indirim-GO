@@ -5,11 +5,13 @@ use App\Actions\Orders\RefundOrderItem;
 use App\Actions\Refunds\ApproveRefundRequest;
 use App\Actions\Refunds\RejectRefundRequest;
 use App\Enums\CommissionStatus;
+use App\Enums\CustomerFinancialInvalidationReason;
 use App\Enums\FulfillmentStatus;
 use App\Enums\OrderItemStatus;
 use App\Enums\OrderStatus;
 use App\Enums\WalletTransactionDirection;
 use App\Enums\WalletTransactionType;
+use App\Events\CustomerFinancialStateChanged;
 use App\Models\Commission;
 use App\Models\Fulfillment;
 use App\Models\Order;
@@ -20,6 +22,7 @@ use App\Models\User;
 use App\Models\Wallet;
 use App\Models\WalletTransaction;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Event;
 use Livewire\Livewire;
 use Spatie\Activitylog\Models\Activity;
 use Spatie\Permission\Models\Permission;
@@ -115,6 +118,7 @@ test('admin can approve refund request and credit wallet once', function () {
         'status' => CommissionStatus::Pending,
     ]);
 
+    Event::fake([CustomerFinancialStateChanged::class]);
     $action = new ApproveRefundRequest;
     $action->handle($admin, $refundTx->id);
     $action->handle($admin, $refundTx->id);
@@ -148,6 +152,20 @@ test('admin can approve refund request and credit wallet once', function () {
         ->where('subject_id', $payload['order']->id)
         ->exists()
     )->toBeTrue();
+    Event::assertDispatchedTimes(CustomerFinancialStateChanged::class, 2);
+    Event::assertDispatched(
+        CustomerFinancialStateChanged::class,
+        fn (CustomerFinancialStateChanged $event): bool => $event->userId === $user->id
+            && $event->reasons === [
+                CustomerFinancialInvalidationReason::TransactionPosted,
+                CustomerFinancialInvalidationReason::RefundStateChanged,
+            ],
+    );
+    Event::assertDispatched(
+        CustomerFinancialStateChanged::class,
+        fn (CustomerFinancialStateChanged $event): bool => $event->userId === $commission->salesperson_id
+            && $event->reasons === [CustomerFinancialInvalidationReason::CommissionStateChanged],
+    );
 
     (new RetryFulfillment)->handle($payload['fulfillment'], 'customer', $user->id);
     $payload['fulfillment']->refresh();

@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace App\Actions\Commissions;
 
+use App\Enums\CustomerFinancialInvalidationReason;
 use App\Enums\PayoutRequestStatus;
 use App\Models\PayoutRequest;
 use App\Models\User;
 use App\Support\AdminOpsBroadcaster;
+use App\Support\CustomerFinancialBroadcaster;
 use Illuminate\Support\Facades\Schema;
 
 final class MarkPayoutRequestProcessed
@@ -40,5 +42,9 @@ final class MarkPayoutRequestProcessed
         }
 
         AdminOpsBroadcaster::dispatch('payout-processed');
+        CustomerFinancialBroadcaster::dispatch(
+            (int) $request->user_id,
+            CustomerFinancialInvalidationReason::PayoutRequestStateChanged,
+        );
     }
 }

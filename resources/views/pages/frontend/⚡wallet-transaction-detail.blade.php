@@ -3,6 +3,7 @@
 use App\Actions\Financial\GetCustomerTransactionDetail;
 use App\Models\WebsiteSetting;
 use App\Support\CustomerTransactionDetailPresenter;
+use App\Support\Financial\CustomerFinancialRealtimeScope;
 use App\Support\WalletTransactionPublicRef;
 use Illuminate\View\View;
 use Livewire\Attributes\Layout;
@@ -21,6 +22,8 @@ new #[Layout('layouts::frontend')] class extends Component
 
     public bool $isPrinting = false;
 
+    public bool $hasDeferredRefresh = false;
+
     public function mount(string $transaction): void
     {
         abort_unless(auth()->check(), 403);
@@ -30,9 +33,21 @@ new #[Layout('layouts::frontend')] class extends Component
     }
 
     #[On('customer-financial-invalidate')]
-    public function handleFinancialInvalidate(): void
+    public function handleFinancialInvalidate(array $reasons = [], bool $isReconcile = false): void
     {
+        if (! CustomerFinancialRealtimeScope::isRelevant(
+            ['reasons' => $reasons, 'isReconcile' => $isReconcile],
+            CustomerFinancialRealtimeScope::SURFACE_TRANSACTION_DETAIL,
+        )) {
+            $this->skipRender();
+
+            return;
+        }
+
         if ($this->isPrinting) {
+            $this->hasDeferredRefresh = true;
+            $this->skipRender();
+
             return;
         }
 
@@ -48,6 +63,16 @@ new #[Layout('layouts::frontend')] class extends Component
     public function clearPrinting(): void
     {
         $this->isPrinting = false;
+
+        if (! $this->hasDeferredRefresh) {
+            $this->skipRender();
+
+            return;
+        }
+
+        $this->hasDeferredRefresh = false;
+        $this->loadDetail();
+        $this->dispatch('transaction-detail-updated');
     }
 
     private function loadDetail(): void
@@ -87,6 +112,7 @@ new #[Layout('layouts::frontend')] class extends Component
 <div
     class="transaction-detail-page"
     data-test="wallet-transaction-detail-page"
+    data-financial-surface="transaction-detail"
     data-printing="{{ $this->isPrinting ? 'true' : 'false' }}"
     aria-busy="{{ $this->isBusy ? 'true' : 'false' }}"
     x-data

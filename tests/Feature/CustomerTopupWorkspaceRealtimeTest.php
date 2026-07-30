@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Topups\CreateTopupRequestAction;
+use App\Enums\CustomerFinancialInvalidationReason;
 use App\Enums\TopupRequestStatus;
 use App\Models\PaymentMethod;
 use App\Models\User;
@@ -37,7 +38,10 @@ it('refreshes top-ups page one on financial invalidate', function (): void {
     $created = \App\Models\TopupRequest::query()->where('user_id', $user->id)->latest('id')->first();
 
     $component
-        ->dispatch('customer-financial-invalidate')
+        ->dispatch(
+            'customer-financial-invalidate',
+            reasons: [CustomerFinancialInvalidationReason::TopupStateChanged->value],
+        )
         ->assertSee($created->public_ref);
 });
 
@@ -62,6 +66,9 @@ it('shows pending banner on page two without replacing rows', function (): void 
         ->assertSet('hasPendingRefresh', false);
 
     $component
-        ->dispatch('customer-financial-invalidate')
+        ->dispatch(
+            'customer-financial-invalidate',
+            reasons: [CustomerFinancialInvalidationReason::TopupStateChanged->value],
+        )
         ->assertSet('hasPendingRefresh', true);
 });

@@ -155,7 +155,7 @@ final class CustomerRecentWalletTransactionsReader
         }
 
         if ($tx->type === WalletTransactionType::CommissionCredit) {
-            return [null, new FinancialDestinationDTO(FinancialDestinationType::SalespersonDashboard)];
+            return [null, new FinancialDestinationDTO(FinancialDestinationType::WalletEarnings)];
         }
 
         return [null, null];

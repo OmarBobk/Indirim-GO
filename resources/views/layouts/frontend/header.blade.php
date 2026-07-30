@@ -28,6 +28,13 @@
         data-storefront-shell="root"
     >
         <script>window.__addToCartMessageTemplate = @json(__('main.add_to_cart_for'));</script>
+        <div
+            id="financial-realtime-live-region"
+            class="sr-only"
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+        ></div>
 
         @auth
             <livewire:customer-notification-coordinator />

@@ -3,6 +3,7 @@
 use App\Actions\Refunds\GetCustomerRefundDetail;
 use App\Models\WebsiteSetting;
 use App\Support\CustomerRefundPresenter;
+use App\Support\Financial\CustomerFinancialRealtimeScope;
 use App\Support\WalletTransactionPublicRef;
 use Illuminate\View\View;
 use Livewire\Attributes\Layout;
@@ -28,8 +29,17 @@ new #[Layout('layouts::frontend')] class extends Component
     }
 
     #[On('customer-financial-invalidate')]
-    public function handleFinancialInvalidate(): void
+    public function handleFinancialInvalidate(array $reasons = [], bool $isReconcile = false): void
     {
+        if (! CustomerFinancialRealtimeScope::isRelevant(
+            ['reasons' => $reasons, 'isReconcile' => $isReconcile],
+            CustomerFinancialRealtimeScope::SURFACE_REFUND_DETAIL,
+        )) {
+            $this->skipRender();
+
+            return;
+        }
+
         $this->loadDetail();
         $this->dispatch('refund-detail-updated');
     }
@@ -69,6 +79,7 @@ new #[Layout('layouts::frontend')] class extends Component
 <x-storefront.page
     width="work"
     data-test="wallet-refund-detail-page"
+    data-financial-surface="refund-detail"
     aria-busy="{{ $this->isBusy ? 'true' : 'false' }}"
 >
     <div class="storefront-section-stack">

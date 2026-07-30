@@ -114,7 +114,7 @@ final class AdjustWallet
             if (! $result->wasReplayed) {
                 CustomerFinancialBroadcaster::dispatch(
                     (int) $targetUser->id,
-                    CustomerFinancialInvalidationReason::BalanceChanged,
+                    CustomerFinancialInvalidationReason::TransactionPosted,
                 );
             }
 

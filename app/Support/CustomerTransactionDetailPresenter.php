@@ -185,6 +185,7 @@ final class CustomerTransactionDetailPresenter
             FinancialDestinationType::WalletRefundDetail => __('messages.transaction_view_refund'),
             FinancialDestinationType::WalletRefunds => __('messages.financial_nav_refunds'),
             FinancialDestinationType::SalespersonDashboard => __('messages.transaction_view_earnings'),
+            FinancialDestinationType::WalletEarnings => __('messages.transaction_view_earnings'),
             default => null,
         };
     }

@@ -148,11 +148,10 @@ class ApproveTopupRequest
             if (! $result->wasReplayed) {
                 CustomerFinancialBroadcaster::dispatch(
                     (int) $request->user_id,
-                    CustomerFinancialInvalidationReason::BalanceChanged,
-                );
-                CustomerFinancialBroadcaster::dispatch(
-                    (int) $request->user_id,
-                    CustomerFinancialInvalidationReason::TopupStateChanged,
+                    [
+                        CustomerFinancialInvalidationReason::TransactionPosted,
+                        CustomerFinancialInvalidationReason::TopupStateChanged,
+                    ],
                 );
                 CustomerActivityBroadcaster::dispatch(
                     (int) $request->user_id,

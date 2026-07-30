@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Enums\CustomerFinancialInvalidationReason;
 use App\Enums\TopupRequestStatus;
 use App\Enums\WalletTransactionDirection;
 use App\Enums\WalletTransactionType;
@@ -118,7 +119,10 @@ it('refreshes overview on customer-financial-invalidate only', function (): void
     $wallet->update(['balance' => '55.00']);
 
     $component
-        ->dispatch('customer-financial-invalidate')
+        ->dispatch(
+            'customer-financial-invalidate',
+            reasons: [CustomerFinancialInvalidationReason::BalanceChanged->value],
+        )
         ->assertSee(FrontendMoney::for($user)->format(55.00, 'USD', 2));
 });
 
@@ -130,7 +134,11 @@ it('forged invalidate cannot select another user wallet', function (): void {
 
     Livewire::actingAs($owner)
         ->test('pages::frontend.wallet')
-        ->dispatch('customer-financial-invalidate', userId: $other->id)
+        ->dispatch(
+            'customer-financial-invalidate',
+            reasons: [CustomerFinancialInvalidationReason::BalanceChanged->value],
+            userId: $other->id,
+        )
         ->assertSee(FrontendMoney::for($owner)->format(11.00, 'USD', 2))
         ->assertDontSee(FrontendMoney::for($owner)->format(999.00, 'USD', 2));
 });

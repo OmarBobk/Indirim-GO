@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Financial\GetCustomerTransactionDetail;
+use App\Enums\CustomerFinancialInvalidationReason;
 use App\Enums\FinancialDestinationType;
 use App\Enums\OrderStatus;
 use App\Enums\WalletTransactionDirection;
@@ -64,6 +65,41 @@ it('loads owned posted transaction detail', function (): void {
         ->and($detail->relatedOrderNumber)->toBe('ORD-TEST-1')
         ->and($detail->productLabel)->toBe('Starter Pack')
         ->and($detail->moneyIn)->toBeFalse();
+});
+
+it('scopes realtime detail reads and defers reconciliation while printing', function (): void {
+    $user = User::factory()->create();
+    $wallet = Wallet::forUser($user);
+    $tx = makeDetailTx($wallet);
+    $component = Livewire::actingAs($user)
+        ->test('pages::frontend.wallet-transaction-detail', ['transaction' => $tx->public_ref]);
+
+    $detailReads = 0;
+    DB::listen(function ($query) use (&$detailReads): void {
+        if (str_contains(strtolower($query->sql), 'wallet_transactions')) {
+            $detailReads++;
+        }
+    });
+
+    $component->dispatch(
+        'customer-financial-invalidate',
+        reasons: [CustomerFinancialInvalidationReason::TransactionPosted->value],
+    );
+    expect($detailReads)->toBe(0);
+
+    $component
+        ->call('markPrinting')
+        ->dispatch(
+            'customer-financial-invalidate',
+            reasons: [CustomerFinancialInvalidationReason::RefundStateChanged->value],
+        )
+        ->assertSet('hasDeferredRefresh', true);
+    expect($detailReads)->toBe(0);
+
+    $component
+        ->call('clearPrinting')
+        ->assertSet('hasDeferredRefresh', false);
+    expect($detailReads)->toBeGreaterThan(0);
 });
 
 it('denies pending rejected foreign platform and malformed references', function (): void {

@@ -537,7 +537,7 @@ final class GetCustomerTransactionDetail
             'customer_safe_reason' => null,
             'destination' => $foreignSource
                 ? null
-                : new FinancialDestinationDTO(FinancialDestinationType::SalespersonDashboard),
+                : new FinancialDestinationDTO(FinancialDestinationType::WalletEarnings),
             'source_missing' => $sourceMissing || $foreignSource,
             'foreign_source' => $foreignSource,
         ];

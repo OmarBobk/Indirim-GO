@@ -22,16 +22,32 @@ class CustomerFinancialStateChanged implements ShouldBroadcastNow
 
     public readonly string $eventId;
 
-    public readonly string $occurredAt;
+    /** @var list<CustomerFinancialInvalidationReason> */
+    public readonly array $reasons;
 
+    /**
+     * @param  CustomerFinancialInvalidationReason|list<CustomerFinancialInvalidationReason>  $reasons
+     */
     public function __construct(
         public readonly int $userId,
-        public readonly CustomerFinancialInvalidationReason $reason,
+        CustomerFinancialInvalidationReason|array $reasons,
         ?string $eventId = null,
-        ?string $occurredAt = null,
     ) {
+        $reasons = $reasons instanceof CustomerFinancialInvalidationReason ? [$reasons] : $reasons;
+        $uniqueReasons = [];
+
+        foreach ($reasons as $reason) {
+            if ($reason instanceof CustomerFinancialInvalidationReason) {
+                $uniqueReasons[$reason->value] = $reason;
+            }
+        }
+
+        if ($uniqueReasons === []) {
+            throw new \InvalidArgumentException('At least one financial invalidation reason is required.');
+        }
+
+        $this->reasons = array_values($uniqueReasons);
         $this->eventId = $eventId ?? (string) Str::uuid();
-        $this->occurredAt = $occurredAt ?? now()->toIso8601String();
     }
 
     /**
@@ -50,13 +66,16 @@ class CustomerFinancialStateChanged implements ShouldBroadcastNow
     }
 
     /**
-     * @return array<string, string>
+     * @return array{reasons: list<string>, schema_version: int, event_id: string}
      */
     public function broadcastWith(): array
     {
         return [
-            'reason' => $this->reason->value,
-            'occurred_at' => $this->occurredAt,
+            'reasons' => array_map(
+                static fn (CustomerFinancialInvalidationReason $reason): string => $reason->value,
+                $this->reasons,
+            ),
+            'schema_version' => 1,
             'event_id' => $this->eventId,
         ];
     }

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Orders\RefundOrderItem;
+use App\Enums\CustomerFinancialInvalidationReason;
 use App\Enums\FulfillmentStatus;
 use App\Enums\OrderItemStatus;
 use App\Enums\OrderStatus;
@@ -64,6 +65,9 @@ it('refreshes refunds page one on financial invalidate', function (): void {
     $tx = app(RefundOrderItem::class)->handle($fulfillment, $user->id);
 
     $component
-        ->dispatch('customer-financial-invalidate')
+        ->dispatch(
+            'customer-financial-invalidate',
+            reasons: [CustomerFinancialInvalidationReason::RefundStateChanged->value],
+        )
         ->assertSee($tx->public_ref);
 });

@@ -59,6 +59,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::livewire('/wallet/topup', 'pages::frontend.wallet-topup')->name('wallet.topup');
     Route::livewire('/wallet/refunds', 'pages::frontend.wallet-refunds')->name('wallet.refunds.index');
     Route::livewire('/wallet/refunds/{refund}', 'pages::frontend.wallet-refund-detail')->name('wallet.refunds.show');
+    Route::livewire('/wallet/earnings', 'pages::frontend.wallet-earnings')
+        ->middleware('can:view_referrals')
+        ->name('wallet.earnings.index');
     Route::livewire('/loyalty', 'pages::frontend.loyalty')->name('loyalty');
     Route::livewire('/referral-link', 'pages::frontend.referral-link')
         ->middleware('can:view_referrals')

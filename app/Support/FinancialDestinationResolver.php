@@ -53,6 +53,7 @@ final class FinancialDestinationResolver
             FinancialDestinationType::SalespersonDashboard => Route::has('salesperson.dashboard')
                 ? route('salesperson.dashboard')
                 : route('wallet'),
+            FinancialDestinationType::WalletEarnings => route('wallet.earnings.index'),
             FinancialDestinationType::PurchaseResume => (string) ($destination->params['url'] ?? route('wallet')),
         };
     }
