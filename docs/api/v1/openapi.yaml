@@ -189,10 +189,11 @@ paths:
       summary: Authenticated catalog home shelves
       description: |
         Returns frequently ordered package summaries (customer-scoped, max 8),
-        featured packages (admin `order` then `name`, max 8; not sales-ranked),
-        and active root category chips (max 12). Featured and frequently ordered
-        entries include only active packages that have at least one active product.
-        Catalog responses are private and must not be shared-cached.
+        featured packages (admin `order` then `name`, max 8; not sales-ranked;
+        only packages with at least one active product are considered before the
+        limit), and active root category chips (max 12). Featured and frequently
+        ordered entries include only active packages that have at least one
+        active product. Catalog responses are private and must not be shared-cached.
       operationId: mobileCatalogHome
       security:
         - bearerAuth: []
@@ -225,7 +226,8 @@ paths:
         Optional `category_id` uses exact active category matching only
         (parent categories do not include descendants). Optional `q` searches
         package name and description (trimmed, min 2, max 100) with deterministic
-        ordering by admin `order` then `name`. Offset pagination is stable.
+        ordering by admin `order` then `name`. Characters `%`, `_`, and `\` in `q`
+        are matched literally (not as SQL LIKE wildcards). Offset pagination is stable.
         Missing or inactive `category_id` values are validation errors.
       operationId: mobileListPackages
       security:
@@ -242,7 +244,9 @@ paths:
         - name: q
           in: query
           required: false
-          description: Trimmed search query against package name and description.
+          description: |
+            Trimmed literal substring search against package name and description.
+            `%`, `_`, and `\` are treated as ordinary characters, not LIKE wildcards.
           schema:
             type: string
             minLength: 2
@@ -291,11 +295,14 @@ paths:
       tags: [Catalog]
       summary: Show an active package with product options
       description: |
-        Returns one active package and its active products. Numeric package ids
-        are the public identifiers; `slug` is informational and not unique.
-        Inactive or missing packages return `package_not_found`. Package
-        requirements are not included. Products do not expose a synthetic
-        availability flag because the domain has no stock concept.
+        Returns one active package that has at least one active product.
+        Numeric package ids are the public identifiers; `slug` is informational
+        and not unique. Missing, inactive, or active-but-empty packages return
+        `package_not_found`. Package requirements are not included. Products do
+        not expose a synthetic availability flag because the domain has no stock
+        concept. Custom products with configurations checkout would reject still
+        appear with schema-safe `custom_amount` metadata, but `minimum_price` is
+        null and they never contribute to `from_price`.
       operationId: mobileShowPackage
       security:
         - bearerAuth: []
@@ -739,6 +746,12 @@ components:
       type: object
       additionalProperties: false
       required: [min, max, step, unit_label]
+      description: |
+        Custom amount UI metadata. Values below 1 are normalized to null.
+        When the stored configuration is not purchasable under checkout rules
+        (for example min greater than max, or min not aligned to step),
+        `minimum_price` on the parent product is null and the option is excluded
+        from package `from_price`, while this metadata may still be returned.
       properties:
         min:
           type: [integer, 'null']
@@ -778,9 +791,11 @@ components:
             - $ref: '#/components/schemas/Money'
             - type: 'null'
           description: |
-            For custom products, final customer total using `custom_amount.min`.
-            Null when prices are hidden, configuration is incomplete, or mode is fixed.
-            Never derived from amount 1 unless 1 is the real minimum.
+            For custom products, final customer total using a checkout-valid
+            `custom_amount.min`. Null when prices are hidden, configuration is
+            incomplete or not purchasable under `CustomAmountValidator` rules,
+            or mode is fixed. Never derived from amount 1 unless 1 is the real
+            minimum.
     PackageSummary:
       type: object
       additionalProperties: false

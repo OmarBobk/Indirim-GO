@@ -16,9 +16,9 @@ Flutter M2.2 can load authenticated home shelves, browse/search packages, and in
 
 | Method | Path | Notes |
 |--------|------|-------|
-| GET | `/api/v1/catalog/home` | Frequently ordered ≤8, featured ≤8, categories ≤12 |
-| GET | `/api/v1/packages` | `category_id?`, `q?` (2–100), `page`, `per_page` (default 24, max 50) |
-| GET | `/api/v1/packages/{package}` | Active package + active products; 404 `package_not_found` |
+| GET | `/api/v1/catalog/home` | Frequently ordered ≤8, featured ≤8 (sellable only before limit), categories ≤12 |
+| GET | `/api/v1/packages` | `category_id?`, `q?` (2–100, literal LIKE), `page`, `per_page` (default 24, max 50) |
+| GET | `/api/v1/packages/{package}` | Active package with ≥1 active product; else 404 `package_not_found` |
 
 All require Sanctum PAT + `mobile:access` + `mobile.account` + `SetApiLocale` + `throttle:mobile-catalog` (60/min user, 120/min IP).
 
@@ -27,20 +27,22 @@ All require Sanctum PAT + `mobile:access` + `mobile.account` + `SetApiLocale` + 
 - Ledger `amount` is USD decimal string (2 dp, bankers rounding via existing services).
 - `display.{currency,formatted}` from `FrontendMoney::displayForUsdAmount`.
 - Fixed: `unit_price` for qty 1; `custom_amount`/`minimum_price` null.
-- Custom: `unit_price` null; `custom_amount` metadata; `minimum_price` = total at `custom_amount_min` (never amount 1 unless min is 1).
-- Package `from_price` = min purchasable total across active products (fixed qty 1 or custom min).
+- Custom: `unit_price` null; schema-safe `custom_amount` metadata (bounds &lt; 1 → null); `minimum_price` only when `CustomAmountValidator` accepts the configured min.
+- Invalid custom configs never contribute to package `from_price` and never 500.
+- Package `from_price` = min purchasable total across active products (fixed qty 1 or valid custom min).
 - When `prices_visible=false`, money fields are null; keys remain.
 
 ## Category / search
 
 - Exact active `category_id` only (no descendant inclusion).
 - Inactive/missing category → 422 validation.
-- Search mirrors storefront name/description LIKE; packages must have ≥1 active product.
+- Search uses parameterized `LIKE … ESCAPE '!'`; `%`, `_`, and `\` are literal.
+- Packages must have ≥1 active product (list/home/detail).
 
 ## Images
 
-- Absolute http(s) URL or null.
-- Reject traversal, schemes, null bytes, `.svg` (no SVG placeholder URLs).
+- Absolute http(s) URL or null after bounded decode/normalize.
+- Reject traversal (literal/encoded/double-encoded), null bytes, schemes, scheme-relative, malformed `%`, SVG.
 
 ## Security
 
@@ -48,16 +50,26 @@ Allowlisted resources only. Never expose entry/supplier/API/fulfillment/rule int
 
 ## Performance
 
-Eager-load active products/categories; request-memoize identical price calls. Query-budget tests (8 packages × 1 product fixture): home ≤40, list ≤50, detail ≤25. No shared public cache (`Cache-Control: private, no-store`).
+- Eager-load active products/categories.
+- Per catalog request: fresh `PriceCalculator::warmForUser()` + `CustomerPriceService` (tier memo on that instance only); product-total memo on `MobileCatalogPricer`.
+- No shared/final-price cache; Octane-safe (no static warmed state).
+- Measured budgets (SQLite test env after warm-up): **8×1** home≈14 / list≈8 / detail≈7; **8×5** home≈10–14 / list≈8 / detail≈7. Pest enforces home≤40/45, list≤50/55, detail≤25 with 8×5 growth bounded vs 8×1 (not an unbounded raise).
+- `Cache-Control: private, no-store`.
+
+## Deferred (not M2.1)
+
+Telescope may store customer-specific catalog response bodies when enabled — pre-existing ops hardening, not a merge blocker for this PR.
 
 ## Key files
 
 - `routes/api.php`
 - `app/Actions/MobileCatalog/*`
 - `app/Support/Api/V1/*`
+- `app/Services/PriceCalculator.php` (`warmForUser`)
 - `app/Http/Controllers/Api/V1/Catalog/*`
 - `docs/api/v1/openapi.yaml`
 - `tests/Feature/Api/MobileCatalogApiTest.php`
+- `tests/Unit/SafePublicAssetUrlTest.php`
 
 ## Exclusions
 

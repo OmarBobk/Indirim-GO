@@ -67,7 +67,7 @@ final class ShowMobilePackage
             ->withCount(['products' => fn ($query) => $query->where('is_active', true)])
             ->first();
 
-        if ($package === null) {
+        if ($package === null || (int) $package->products_count < 1) {
             throw new NotFoundHttpException('package_not_found');
         }
 
@@ -84,14 +84,7 @@ final class ShowMobilePackage
                 'name' => (string) $product->name,
                 'amount_mode' => $mode->value,
                 'unit_price' => $isCustom ? null : $pricer->money($pricer->fixedUnitPrice($product)),
-                'custom_amount' => $isCustom
-                    ? [
-                        'min' => $product->custom_amount_min !== null ? (int) $product->custom_amount_min : null,
-                        'max' => $product->custom_amount_max !== null ? (int) $product->custom_amount_max : null,
-                        'step' => $product->custom_amount_step !== null ? (int) $product->custom_amount_step : null,
-                        'unit_label' => $product->amount_unit_label,
-                    ]
-                    : null,
+                'custom_amount' => $isCustom ? $pricer->customAmountMeta($product) : null,
                 'minimum_price' => $isCustom
                     ? $pricer->money($pricer->customMinimumTotal($product))
                     : null,

@@ -12,15 +12,18 @@ Mobile Commerce Shell needs a stable `/api/v1` catalog contract before Flutter M
 ## Decision
 
 - Expose three read endpoints: `/catalog/home`, `/packages`, `/packages/{id}`.
-- Reuse `GetCustomerHome` ranking/status rules for frequently ordered; featured = admin `order` then `name` (not sales-ranked).
+- Reuse `GetCustomerHome` ranking/status rules for frequently ordered; featured = admin `order` then `name` among packages that have ≥1 active product (limit applied after that filter).
 - Route packages by numeric id; return slug as informational only.
 - Exact `category_id` filter; no recursive descendants.
+- Search `q` is literal substring (`LIKE` with `ESCAPE '!'`); `%` `_` `\` are not wildcards.
 - Money envelope: USD `amount` string + server `display` via `FrontendMoney`.
-- Custom products expose metadata + `minimum_price` at `custom_amount_min`; no quote endpoint.
-- Package `from_price` uses purchasable totals (fixed qty 1 / custom min), including nonlinear rule brackets.
+- Custom products expose schema-safe metadata + `minimum_price` only when `CustomAmountValidator` accepts `custom_amount_min`; invalid configs excluded from `from_price`.
+- Active packages with zero active products are omitted from list/home and return `package_not_found` on detail.
+- Package `from_price` uses purchasable totals (fixed qty 1 / valid custom min), including nonlinear rule brackets.
 - `meta.prices_visible` on every catalog response; null money when hidden.
-- Safe absolute image URLs or null; never SVG placeholders.
+- Safe absolute image URLs or null after bounded URL decode/normalize; never SVG placeholders.
 - Named `mobile-catalog` rate limiter; private/no-store responses; no shared priced cache.
+- Catalog pricing warms global + per-user rules on a request-local `PriceCalculator` and memoizes loyalty on a request-local `CustomerPriceService` (not the container singleton).
 
 ## Alternatives considered
 
@@ -32,8 +35,9 @@ Mobile Commerce Shell needs a stable `/api/v1` catalog contract before Flutter M
 ## Consequences
 
 - Flutter may display server prices but must not calculate authoritative totals.
-- Query amplification from per-product pricing is bounded by eager loads + memoization + Pest budgets.
+- Query amplification from per-product pricing is bounded by rule/loyalty warm-up + product memo + Pest budgets (8×1 and 8×5).
 - Catalog content remains untranslated until DB i18n exists.
+- Telescope may still record priced API bodies when enabled (deferred ops hardening).
 
 ## Related
 

@@ -82,9 +82,12 @@ final class ListMobilePackages
         }
 
         if ($query !== null && $query !== '') {
-            $builder->where(function ($q) use ($query): void {
-                $q->where('name', 'like', '%'.$query.'%')
-                    ->orWhere('description', 'like', '%'.$query.'%');
+            // Literal substring search: %, _, and \ are not LIKE wildcards.
+            // ESCAPE '!' is portable across SQLite tests and MySQL production.
+            $pattern = '%'.self::escapeLikeLiterals($query).'%';
+            $builder->where(function ($q) use ($pattern): void {
+                $q->whereRaw("name LIKE ? ESCAPE '!'", [$pattern])
+                    ->orWhereRaw("description LIKE ? ESCAPE '!'", [$pattern]);
             });
         }
 
@@ -123,5 +126,17 @@ final class ListMobilePackages
                 ],
             ],
         ];
+    }
+
+    /**
+     * Escape LIKE metacharacters so user input is matched literally.
+     */
+    public static function escapeLikeLiterals(string $value): string
+    {
+        return str_replace(
+            ['!', '%', '_'],
+            ['!!', '!%', '!_'],
+            $value,
+        );
     }
 }

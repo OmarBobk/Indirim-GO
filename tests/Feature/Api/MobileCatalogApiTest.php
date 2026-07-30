@@ -17,7 +17,9 @@ use App\Models\User;
 use App\Models\UserPricingRule;
 use App\Models\WebsiteSetting;
 use App\Services\CustomerPriceService;
+use App\Support\Api\V1\MobileCatalogPricer;
 use App\Support\FrontendMoney;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Laravel\Sanctum\PersonalAccessToken;
@@ -153,6 +155,7 @@ beforeEach(function (): void {
         'app.url' => 'http://localhost',
         'filesystems.disks.public.url' => 'http://localhost/storage',
     ]);
+    Cache::flush();
     m21EnsurePricingRule();
     m21EnsureLoyaltyTiers();
     m21Website();
@@ -548,6 +551,10 @@ test('image urls are absolute hardened and never svg placeholders', function ():
         'image' => null,
         'order' => 53,
     ]);
+    $encoded = m21FixedPackage([
+        'image' => '%2e%2e/etc/passwd',
+        'order' => 54,
+    ]);
 
     $token = m21Token($user);
 
@@ -556,7 +563,7 @@ test('image urls are absolute hardened and never svg placeholders', function ():
         ->assertOk()
         ->assertJsonPath('data.image_url', 'http://localhost/images/packages/ok.webp');
 
-    foreach ([$hostile, $svg, $scheme, $missing] as $fixture) {
+    foreach ([$hostile, $svg, $scheme, $missing, $encoded] as $fixture) {
         $this->withHeaders(m21AuthHeaders($token))
             ->getJson('/api/v1/packages/'.$fixture['package']->id)
             ->assertOk()
@@ -564,10 +571,12 @@ test('image urls are absolute hardened and never svg placeholders', function ():
     }
 });
 
-test('catalog rate limiter returns stable 429 envelope', function (): void {
+test('catalog rate limiter returns stable 429 envelope for the user limit', function (): void {
     $user = m21Customer();
     m21FixedPackage();
     $token = m21Token($user);
+
+    $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.10']);
 
     for ($i = 0; $i < 60; $i++) {
         $this->withHeaders(m21AuthHeaders($token))
@@ -582,39 +591,320 @@ test('catalog rate limiter returns stable 429 envelope', function (): void {
         ->assertHeader('Retry-After');
 });
 
-test('catalog home and list stay within query budgets', function (): void {
-    $user = m21Customer();
+test('catalog IP limiter is enforced independently of the per-user limit', function (): void {
+    m21FixedPackage();
+    $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.20']);
 
-    foreach (range(1, 8) as $i) {
-        m21FixedPackage([
-            'name' => "Budget Pack {$i}",
-            'order' => 100 + $i,
-        ], [
-            'entry_price' => 10 + $i,
-            'order' => 200 + $i,
-        ]);
+    $users = collect(range(1, 3))->map(fn (int $i): User => m21Customer([
+        'username' => "ip-limit-user-{$i}-".fake()->unique()->numerify('####'),
+    ]));
+
+    // 2 users × 60 requests = 120 from the same IP, each under the user cap.
+    foreach ($users->take(2) as $user) {
+        $this->app['auth']->forgetGuards();
+        $this->flushHeaders();
+        $token = m21Token($user);
+        for ($i = 0; $i < 60; $i++) {
+            $this->withHeaders(m21AuthHeaders($token))
+                ->getJson('/api/v1/catalog/home')
+                ->assertOk();
+        }
     }
+
+    $this->app['auth']->forgetGuards();
+    $this->flushHeaders();
+    $thirdToken = m21Token($users[2]);
+    $this->withHeaders(m21AuthHeaders($thirdToken))
+        ->getJson('/api/v1/catalog/home')
+        ->assertStatus(429)
+        ->assertJsonPath('code', 'too_many_requests')
+        ->assertHeader('Retry-After');
+});
+
+test('catalog home and list stay within query budgets for 8x1 and 8x5 fixtures', function (): void {
+    $user = m21Customer();
+    $token = m21Token($user);
+
+    $measure = function (int $productsPerPackage) use ($token): array {
+        Package::query()->delete();
+        Product::query()->delete();
+        Category::query()->delete();
+
+        $order = 1000;
+        foreach (range(1, 8) as $i) {
+            $category = Category::factory()->create([
+                'is_active' => true,
+                'parent_id' => null,
+                'order' => $order++,
+            ]);
+            $package = Package::factory()->create([
+                'category_id' => $category->id,
+                'is_active' => true,
+                'order' => $order++,
+                'name' => "Budget Pack {$i}-{$productsPerPackage}",
+                'image' => 'images/packages/demo.webp',
+            ]);
+            foreach (range(1, $productsPerPackage) as $j) {
+                Product::factory()->create([
+                    'package_id' => $package->id,
+                    'is_active' => true,
+                    'entry_price' => 10 + $j,
+                    'amount_mode' => ProductAmountMode::Fixed,
+                    'order' => $order++,
+                    'name' => "Opt {$j}",
+                ]);
+            }
+        }
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+        $this->withHeaders(m21AuthHeaders($token))->getJson('/api/v1/catalog/home')->assertOk();
+        $homeQueries = count(DB::getQueryLog());
+
+        DB::flushQueryLog();
+        $this->withHeaders(m21AuthHeaders($token))->getJson('/api/v1/packages?per_page=24')->assertOk();
+        $listQueries = count(DB::getQueryLog());
+
+        DB::flushQueryLog();
+        $packageId = Package::query()->where('is_active', true)->orderBy('order')->value('id');
+        $this->withHeaders(m21AuthHeaders($token))->getJson('/api/v1/packages/'.$packageId)->assertOk();
+        $detailQueries = count(DB::getQueryLog());
+
+        return compact('homeQueries', 'listQueries', 'detailQueries');
+    };
+
+    $one = $measure(1);
+    expect($one['homeQueries'])->toBeLessThanOrEqual(40)
+        ->and($one['listQueries'])->toBeLessThanOrEqual(50)
+        ->and($one['detailQueries'])->toBeLessThanOrEqual(25);
+
+    $five = $measure(5);
+    // Request-scoped rule/loyalty warm-up keeps 8×5 near the 8×1 envelope; thresholds
+    // allow modest growth from larger eager-loaded product rows, not per-product rule queries.
+    expect($five['homeQueries'])->toBeLessThanOrEqual(45)
+        ->and($five['listQueries'])->toBeLessThanOrEqual(55)
+        ->and($five['detailQueries'])->toBeLessThanOrEqual(25)
+        ->and($five['homeQueries'])->toBeLessThan($one['homeQueries'] + 20)
+        ->and($five['listQueries'])->toBeLessThan($one['listQueries'] + 20);
+});
+
+test('catalog pricing does not leak across sequential customers', function (): void {
+    $gold = m21Customer(['loyalty_tier' => LoyaltyTier::Gold, 'username' => 'gold-customer']);
+    $bronze = m21Customer(['loyalty_tier' => LoyaltyTier::Bronze, 'username' => 'bronze-customer']);
+    $fixture = m21FixedPackage([], ['entry_price' => 100]);
+
+    PricingRule::query()->delete();
+    PricingRule::query()->create([
+        'min_price' => 0,
+        'max_price' => 999999.99,
+        'retail_percentage' => 100,
+        'wholesale_percentage' => 0,
+        'priority' => 0,
+        'is_active' => true,
+    ]);
+
+    UserPricingRule::query()->create([
+        'user_id' => $bronze->id,
+        'min_price' => 0,
+        'max_price' => 999999.99,
+        'retail_percentage' => 0,
+        'wholesale_percentage' => 0,
+        'priority' => 0,
+        'is_active' => true,
+    ]);
+
+    expect(MobileCatalogPricer::for($gold->fresh(), true)->fixedUnitPrice($fixture['product']->fresh()))->toBe(180.0)
+        ->and(MobileCatalogPricer::for($bronze->fresh(), true)->fixedUnitPrice($fixture['product']->fresh()))->toBe(100.0);
+
+    $goldDetail = $this->withHeaders(m21AuthHeaders(m21Token($gold)))
+        ->getJson('/api/v1/packages/'.$fixture['package']->id)
+        ->assertOk();
+
+    // Switching bearer tokens in one test requires clearing the resolved auth guard.
+    $this->flushHeaders();
+    $this->app['auth']->forgetGuards();
+
+    $bronzeDetail = $this->withHeaders(m21AuthHeaders(m21Token($bronze)))
+        ->getJson('/api/v1/packages/'.$fixture['package']->id)
+        ->assertOk();
+
+    expect($goldDetail->json('data.from_price.amount'))->toBe('180.00')
+        ->and($bronzeDetail->json('data.from_price.amount'))->toBe('100.00')
+        ->and($bronzeDetail->json('data.products.0.unit_price.amount'))->toBe('100.00');
+});
+
+test('search treats percent underscore and backslash as literals', function (): void {
+    $user = m21Customer();
+    $literalPercent = m21FixedPackage([
+        'name' => 'Pack %% Special',
+        'description' => 'contains %% token',
+        'order' => 70,
+    ]);
+    $literalUnderscore = m21FixedPackage([
+        'name' => 'Pack a_b Exact',
+        'description' => 'underscore a_b here',
+        'order' => 71,
+    ]);
+    $literalBackslash = m21FixedPackage([
+        'name' => 'Pack path\\safe',
+        'description' => 'backslash path\\safe',
+        'order' => 72,
+    ]);
+    m21FixedPackage([
+        'name' => 'Unrelated Pack',
+        'description' => 'no specials',
+        'order' => 73,
+    ]);
 
     $token = m21Token($user);
 
-    DB::flushQueryLog();
-    DB::enableQueryLog();
-    $this->withHeaders(m21AuthHeaders($token))->getJson('/api/v1/catalog/home')->assertOk();
-    $homeQueries = count(DB::getQueryLog());
+    $this->withHeaders(m21AuthHeaders($token))
+        ->getJson('/api/v1/packages?q='.urlencode('%%'))
+        ->assertOk()
+        ->assertJsonPath('meta.pagination.total', 1)
+        ->assertJsonPath('data.0.id', $literalPercent['package']->id);
 
-    DB::flushQueryLog();
-    $this->withHeaders(m21AuthHeaders($token))->getJson('/api/v1/packages?per_page=24')->assertOk();
-    $listQueries = count(DB::getQueryLog());
+    $this->withHeaders(m21AuthHeaders($token))
+        ->getJson('/api/v1/packages?q='.urlencode('a_b'))
+        ->assertOk()
+        ->assertJsonPath('meta.pagination.total', 1)
+        ->assertJsonPath('data.0.id', $literalUnderscore['package']->id);
 
-    DB::flushQueryLog();
-    $packageId = Package::query()->where('is_active', true)->value('id');
-    $this->withHeaders(m21AuthHeaders($token))->getJson('/api/v1/packages/'.$packageId)->assertOk();
-    $detailQueries = count(DB::getQueryLog());
+    $this->withHeaders(m21AuthHeaders($token))
+        ->getJson('/api/v1/packages?q='.urlencode('path\\safe'))
+        ->assertOk()
+        ->assertJsonPath('meta.pagination.total', 1)
+        ->assertJsonPath('data.0.id', $literalBackslash['package']->id);
 
-    // Measured for 8 packages × 1 active product (and detail of one package).
-    expect($homeQueries)->toBeLessThanOrEqual(40)
-        ->and($listQueries)->toBeLessThanOrEqual(50)
-        ->and($detailQueries)->toBeLessThanOrEqual(25);
+    $this->withHeaders(m21AuthHeaders($token))
+        ->getJson('/api/v1/packages?q=Unrelated')
+        ->assertOk()
+        ->assertJsonPath('meta.pagination.total', 1);
+});
+
+test('malformed custom products never price or skew from_price', function (): void {
+    $user = m21Customer();
+    $category = Category::factory()->create(['is_active' => true, 'parent_id' => null, 'order' => 80]);
+    $package = Package::factory()->create([
+        'category_id' => $category->id,
+        'is_active' => true,
+        'order' => 81,
+        'name' => 'Mixed Validity Pack',
+    ]);
+
+    $fixed = Product::factory()->create([
+        'package_id' => $package->id,
+        'is_active' => true,
+        'entry_price' => 10,
+        'amount_mode' => ProductAmountMode::Fixed,
+        'order' => 1,
+        'name' => 'Valid Fixed',
+    ]);
+
+    $cases = [
+        'min_gt_max' => ['custom_amount_min' => 1000, 'custom_amount_max' => 100, 'custom_amount_step' => 100, 'amount_unit_label' => 'Coins'],
+        'min_not_on_step' => ['custom_amount_min' => 100, 'custom_amount_max' => 1000, 'custom_amount_step' => 30, 'amount_unit_label' => 'Coins'],
+        'missing_min' => ['custom_amount_min' => null, 'custom_amount_max' => 1000, 'custom_amount_step' => 10, 'amount_unit_label' => 'Coins'],
+        'zero_min' => ['custom_amount_min' => 0, 'custom_amount_max' => 100, 'custom_amount_step' => 1, 'amount_unit_label' => 'Coins'],
+        'neg_min' => ['custom_amount_min' => -5, 'custom_amount_max' => 100, 'custom_amount_step' => 1, 'amount_unit_label' => 'Coins'],
+    ];
+
+    foreach ($cases as $name => $attrs) {
+        Product::factory()->create(array_merge([
+            'package_id' => $package->id,
+            'is_active' => true,
+            'entry_price' => 1,
+            'amount_mode' => ProductAmountMode::Custom,
+            'order' => fake()->unique()->numberBetween(90000, 99999),
+            'name' => $name,
+        ], $attrs));
+    }
+
+    $validCustom = Product::factory()->create([
+        'package_id' => $package->id,
+        'is_active' => true,
+        'entry_price' => 1,
+        'amount_mode' => ProductAmountMode::Custom,
+        'custom_amount_min' => 50,
+        'custom_amount_max' => 500,
+        'custom_amount_step' => 50,
+        'amount_unit_label' => 'Coins',
+        'order' => 50,
+        'name' => 'Valid Custom',
+    ]);
+
+    $service = app(CustomerPriceService::class);
+    $expectedFrom = min(
+        $service->finalPrice($fixed, $user),
+        (float) $service->finalPriceForAmount($validCustom, 50, $user)['final_price'],
+    );
+
+    $detail = $this->withHeaders(m21AuthHeaders(m21Token($user)))
+        ->getJson('/api/v1/packages/'.$package->id)
+        ->assertOk();
+
+    expect($detail->json('data.from_price.amount'))->toBe(number_format($expectedFrom, 2, '.', ''));
+
+    $products = collect($detail->json('data.products'));
+    $zeroMin = $products->firstWhere('name', 'zero_min');
+    expect($zeroMin['custom_amount']['min'])->toBeNull()
+        ->and($zeroMin['minimum_price'])->toBeNull();
+
+    foreach (array_keys($cases) as $name) {
+        $row = $products->firstWhere('name', $name);
+        expect($row['minimum_price'])->toBeNull();
+    }
+
+    $validRow = $products->firstWhere('name', 'Valid Custom');
+    expect($validRow['minimum_price'])->not->toBeNull()
+        ->and($validRow['custom_amount']['min'])->toBe(50);
+});
+
+test('featured shelf fills eight sellable packages when top ordered are empty', function (): void {
+    $user = m21Customer();
+
+    foreach (range(1, 3) as $i) {
+        m21FixedPackage([
+            'name' => "Empty Top {$i}",
+            'order' => $i,
+            'is_active' => true,
+        ], ['is_active' => false]);
+    }
+
+    $sellable = [];
+    foreach (range(1, 8) as $i) {
+        $sellable[] = m21FixedPackage([
+            'name' => "Sellable {$i}",
+            'order' => 10 + $i,
+        ]);
+    }
+
+    $response = $this->withHeaders(m21AuthHeaders(m21Token($user)))
+        ->getJson('/api/v1/catalog/home')
+        ->assertOk();
+
+    $featuredIds = collect($response->json('data.featured_packages'))->pluck('id');
+    expect($featuredIds)->toHaveCount(8)
+        ->and($featuredIds->all())->toBe(collect($sellable)->pluck('package.id')->all());
+});
+
+test('active packages without active products return package_not_found', function (): void {
+    $user = m21Customer();
+    $empty = m21FixedPackage([
+        'name' => 'Empty Active Pack',
+        'order' => 90,
+        'is_active' => true,
+    ], ['is_active' => false]);
+
+    $this->withHeaders(m21AuthHeaders(m21Token($user)))
+        ->getJson('/api/v1/packages')
+        ->assertOk()
+        ->assertJsonMissing(['id' => $empty['package']->id]);
+
+    $this->withHeaders(m21AuthHeaders(m21Token($user)))
+        ->getJson('/api/v1/packages/'.$empty['package']->id)
+        ->assertNotFound()
+        ->assertJsonPath('code', 'package_not_found');
 });
 
 test('blocked accounts lose catalog access with account_blocked', function (): void {

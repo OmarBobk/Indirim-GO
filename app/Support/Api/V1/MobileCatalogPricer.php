@@ -4,15 +4,22 @@ declare(strict_types=1);
 
 namespace App\Support\Api\V1;
 
+use App\Domain\Pricing\CustomAmountValidator;
 use App\Enums\ProductAmountMode;
 use App\Models\Product;
 use App\Models\User;
 use App\Services\CustomerPriceService;
+use App\Services\PriceCalculator;
+use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 
 /**
  * Request-scoped catalog pricing over {@see CustomerPriceService}.
- * Does not change pricing math; memoizes identical product calculations only.
+ *
+ * Creates a fresh PriceCalculator + CustomerPriceService per catalog request,
+ * warms reusable pricing rules / loyalty lookups on that instance only, and
+ * memoizes identical product totals. Never stores final customer prices in a
+ * shared cache and never reuses warmed state across users or requests.
  */
 final class MobileCatalogPricer
 {
@@ -24,15 +31,22 @@ final class MobileCatalogPricer
         private readonly User $user,
         private readonly bool $pricesVisible,
         private readonly MobileMoneyFactory $moneyFactory,
+        private readonly CustomAmountValidator $customAmountValidator,
     ) {}
 
     public static function for(User $user, bool $pricesVisible): self
     {
+        $user->loadMissing('roles');
+
+        $calculator = (new PriceCalculator)->warmForUser($user);
+        $priceService = new CustomerPriceService($calculator, memoizeTierConfig: true);
+
         return new self(
-            app(CustomerPriceService::class),
+            $priceService,
             $user,
             $pricesVisible,
             MobileMoneyFactory::forUser($user),
+            app(CustomAmountValidator::class),
         );
     }
 
@@ -74,7 +88,7 @@ final class MobileCatalogPricer
             return null;
         }
 
-        $minimum = $this->resolvedCustomMinimum($product);
+        $minimum = $this->resolvedPurchasableCustomMinimum($product);
 
         if ($minimum === null) {
             return null;
@@ -90,7 +104,24 @@ final class MobileCatalogPricer
     }
 
     /**
+     * Schema-safe custom amount metadata. Invalid numeric bounds become null
+     * so OpenAPI `minimum: 1` fields are never violated; checkout remains authoritative.
+     *
+     * @return array{min: int|null, max: int|null, step: int|null, unit_label: string|null}
+     */
+    public function customAmountMeta(Product $product): array
+    {
+        return [
+            'min' => $this->positiveOrNull($product->custom_amount_min),
+            'max' => $this->positiveOrNull($product->custom_amount_max),
+            'step' => $this->positiveOrNull($product->custom_amount_step),
+            'unit_label' => $product->amount_unit_label,
+        ];
+    }
+
+    /**
      * Minimum currently purchasable total across active products.
+     * Invalid custom configurations never contribute.
      *
      * @param  iterable<int, Product>  $products
      */
@@ -128,7 +159,10 @@ final class MobileCatalogPricer
         return $this->fixedUnitPrice($product);
     }
 
-    private function resolvedCustomMinimum(Product $product): ?int
+    /**
+     * Returns the product's configured minimum only when checkout would accept it.
+     */
+    private function resolvedPurchasableCustomMinimum(Product $product): ?int
     {
         $minimum = $product->custom_amount_min;
 
@@ -136,7 +170,22 @@ final class MobileCatalogPricer
             return null;
         }
 
-        return (int) $minimum;
+        try {
+            return $this->customAmountValidator->validate($product, (int) $minimum);
+        } catch (ValidationException) {
+            return null;
+        }
+    }
+
+    private function positiveOrNull(mixed $value): ?int
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $int = (int) $value;
+
+        return $int >= 1 ? $int : null;
     }
 
     /**
