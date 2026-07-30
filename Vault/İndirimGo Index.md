@@ -22,9 +22,14 @@ Central map for indirimGo knowledge. Use this vault with [[Ask → Plan → Agen
 
 ## Features
 
-- [[Customer Financial Centre]] — M6 Wallet → Financial Control Centre (architecture M6.0)
-- [[Customer Activity]] — M5 Activity feed
-- [[Customer Activity]] — unified activity feed (shipped; Home Needs attention deferred)
+- [[Customer Financial Centre]] — M6 closed (M6.8); Financial Control Centre shipped
+- [[Customer Activity]] — M5 Activity feed (shipped; Home Needs attention deferred)
+- [[M7 — Financial Risk and Admin Operations]] — Track B; M7.0 clawback policy/architecture (Omar decisions before M7.1)
+
+## Roadmap
+
+- [[Future Roadmap - Automation and Growth]] — Track C (automation) + Track D (growth); deferred while Track B is active
+- Active: **M7.0 Commission Clawback Policy Architecture** → then M7.1 implementation only after Omar approvals
 
 ## Mobile
 

@@ -16,8 +16,9 @@ Authoritative financial model for karman.store.
 - **Customer ledger (M6.2):** posted rows only; order by `posted_at` then `id`; public ref `WTX-*`
 - **Top-up workflow (M6.3):** `TopupRequest` + `TUP-*` public_ref; pending TX ≠ posted money; TRY→USD locked at submission; one pending per user
 - **Transaction detail / receipt (M6.5):** owned posted `WTX-*` detail; snapshot-first `meta.receipt`; printable HTML only (no server PDF)
-- **Salesperson earnings (M6.6):** Commission = earnings workflow; pending ≠ spendable; credited requires posted linked `commission_credit`; `/wallet/earnings` read model; PayoutRequest does not move money; late credited clawback still deferred
+- **Salesperson earnings (M6.6):** Commission = earnings workflow; pending ≠ spendable; credited requires posted linked `commission_credit`; `/wallet/earnings` read model; PayoutRequest does not move money; late credited clawback → [[M7 — Financial Risk and Admin Operations]]
 - **Financial realtime (M6.7):** Actions emit after-commit invalidation-only reason sets; WalletLedger is broadcast-unaware; one private user channel; client coalesces/scopes server reconciliation
+- **M7.0 (architecture):** recommended future `commission_reversal` debit via WalletLedger + clawback obligation workflow; salesperson clawback debt must **not** reuse customer credit facility; no implementation yet
 
 ## Key files
 
@@ -42,7 +43,8 @@ Authoritative financial model for karman.store.
 
 ## Features
 
-- [[Customer Financial Centre]] — through **M6.8** closure review (M6.0–M6.7 shipped)
+- [[Customer Financial Centre]] — through **M6.8** closure (M6.0–M6.7 shipped)
+- [[M7 — Financial Risk and Admin Operations]] — Track B; M7.0 clawback policy only
 - [[Customer Activity]] — projection only
 
 ## Customer surfaces

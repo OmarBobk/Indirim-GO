@@ -45,8 +45,8 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 
 ## 3. Architecture map (where to implement changes)
 
-- **Routes:** `routes/web.php`, `routes/automation.php`, `routes/channels.php`, `routes/console.php`.
-- **Domain actions:** `app/Actions/*` (Orders, Fulfillments, Topups, Refunds, Pricing, Users, Commissions, Packages, SupplierPrices, Dashboard, …).
+- **Routes:** `routes/web.php`, `routes/api.php` (mobile `/api/v1`), `routes/automation.php`, `routes/channels.php`, `routes/console.php`, `routes/settings.php`, `routes/ai.php`.
+- **Domain actions:** `app/Actions/*` (Orders, Fulfillments, Topups, Refunds, Pricing, Users, Commissions, Packages, SupplierPrices, Wallets, PaymentMethods, Dashboard, MobileAuth, MobileCatalog, Activity, Earnings, AiAssistant, …).
 - **Pricing domain:** `app/Domain/Pricing/PricingEngine.php`, `CustomAmountValidator.php`, `PriceQuoteDTO.php`.
 - **Registration security domain:** `app/Domain/Security/*` (Turnstile, honeypot, registration rate limits) — public self-register only.
 - **Financial services:** `SystemEventService`, `OperationalIntelligenceService`, `WalletSpendPolicy`, `WalletLedger`.
@@ -78,18 +78,19 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - **Fortify config reality:** `username` auth key, `lowercase_usernames=true`, `home='/'`, registration currently enabled in features array.
 - **Public registration security (self-register only):** `App\Http\Controllers\Auth\RegisteredUserController` runs `GuardRegistrationAttempt` before `CreateNewUser`. Controls: honeypot (`config('security.registration.honeypot_field')`), IP/email rate limits (`config/security.php` / `REGISTRATION_*` env), Cloudflare Turnstile (`config('services.turnstile')` / `TURNSTILE_*`). Local: set `TURNSTILE_ENABLED=false`. Admin/salesperson-created users bypass these guards.
 - **Backend gate:** `EnsureBackendAccess` checks `config('permission.backend_permissions')` and returns 404 when blocked.
-- **Backend permissions list:** `view_dashboard`, `manage_users`, `manage_sections`, `manage_products`, `manage_topups`, `adjust_wallets`, `manage_wallet_credit`, `view_referrals`, `create_orders`, `edit_orders`, `delete_orders`, `view_orders`, `view_fulfillments`, `manage_fulfillments`, `view_refunds`, `process_refunds`, `view_activities`, `manage_settlements`, `manage_bugs`, `update_product_prices`.
-- **Important nuance:** `manage_user_prices` exists for per-user price overrides but is not itself a backend-entry permission.
+- **Backend permissions list** (`config/permission.php` `backend_permissions`): `view_dashboard`, `manage_users`, `manage_sections`, `manage_products`, `manage_topups`, `adjust_wallets`, `manage_wallet_credit`, `view_referrals`, `create_orders`, `edit_orders`, `delete_orders`, `view_orders`, `view_fulfillments`, `manage_fulfillments`, `view_refunds`, `process_refunds`, `view_activities`, `manage_settlements`, `manage_bugs`, `update_product_prices`.
+- **Other permissions** (not backend-entry alone): `manage_user_prices` (per-user price overrides), `manage_loyalty_tiers`, `manage_referred_users`, `customer_profile`, `install_pwa_app`.
+- **Default role grants** (`RolesAndPermissionsSeeder`): admin = all; salesperson = `view_referrals`, `manage_referred_users`, `view_orders`, `create_orders`, `edit_orders`; supervisor = `view_dashboard`, `view_referrals`, `view_orders`, `create_orders`; customer = `customer_profile`.
 - **Roles:** admin, supervisor, salesperson, customer.
 
 ---
 
 ## 6. Role-based feature surface
 
-- **Customer:** browse catalog, cart, buy-now/custom amount, wallet + topups (balance may be negative when credit facility is active), orders/details, loyalty, referral link page when allowed by `view_referrals`, notifications, locale switch.
-- **Supervisor/operations:** fulfillment queues and claim workflow, refunds, topups, customer funds, settlements, bugs inbox; credit facility ops when granted `manage_wallet_credit`.
-- **Salesperson:** `view_referrals` dashboard, referral link, referral-driven order/commission analytics, eligible payout visibility.
-- **Admin:** all ops pages + system events + user management + commissions management + website settings + **credit facility** (`/credit-facility`, `can:manage_wallet_credit`) + **fulfillment automation admin** (`/admin/automation`) + **Ops Assistant** (`/admin/assistant`, read-only AI lookups) + **Wasim price drift** (`/price-drift`, `can:update_product_prices`).
+- **Customer:** browse catalog, cart, buy-now/custom amount, **Financial Centre** (`/wallet` overview + transactions/topups/refunds; earnings when `view_referrals`), account/profile, orders/details, loyalty, referral link when `view_referrals`, **Activity** (`/activity`; `/notifications` alias), locale switch.
+- **Supervisor/operations:** default seeder grants are narrow (dashboard + referrals + orders create/view). Ops pages (fulfillments, refunds, topups, credit facility, etc.) require explicit extra permissions — do not assume role-name shortcuts.
+- **Salesperson:** `view_referrals` dashboard, referred users (`/salesperson/users` when `manage_referred_users`), referral link, commission analytics, **`/wallet/earnings`**, payout request (workflow only).
+- **Admin:** all ops pages + system events + user management + commissions/payout-requests + website settings (incl. payment methods) + **credit facility** (`/credit-facility`, `can:manage_wallet_credit`) + **wallet adjustments** (`/wallet-adjustments`, `can:adjust_wallets`) + **fulfillment automation admin** (`/admin/automation`) + **Ops Assistant** (`/admin/assistant`) + **Wasim price drift** (`/price-drift`, `can:update_product_prices`).
 
 ---
 
@@ -110,14 +111,15 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 
 ## 8. Financial core (wallet, topup, refund, settlement, credit facility)
 
-- **Wallet ledger:** posted tx sum mirrors stored balance; reconcile command validates and fixes drift.
+- **Wallet ledger:** posted tx sum mirrors stored balance; reconcile command validates and fixes drift. Posted TX statuses: `pending` | `posted` | `rejected` (not “approved”). Directions: `credit` | `debit`. Immutable once `posted` (`public_ref` e.g. `WTX-*`, `posted_at`).
 - **Transaction types:** topup, purchase, refund, adjustment, settlement, **commission_credit**.
-- **Topup creation:** `CreateTopupRequestAction` atomically creates topup request + pending wallet tx + immutable `public_ref` (`TUP-*`).
+- **Topup creation:** `SubmitCustomerTopupRequest` → `CreateTopupRequestAction` atomically creates topup request + pending wallet tx + immutable `public_ref` (`TUP-*`). Payment method chosen from active `payment_methods` (admin-managed under website settings).
 - **Topup conversion behavior:** TRY-entered topups convert to USD **at submission** (server-authoritative; rate locked into request amount). Posted wallet currency always USD.
 - **Topup proof UI behavior:** create form gates file requirement with `attachProof`; proof optional when disabled; private storage + ownership on download.
 - **Customer top-up workspace (M6.3):** `/wallet/topups` list + `/wallet/topups/{public_ref}` detail; create remains `/wallet/topup`. Workflow truth = `TopupRequest`; posted money = `WalletTransaction` only after approval via `WalletLedger`.
 - **Refund posting:** `ApproveRefundRequest` enforces duplicate-refund protection before posting credit.
 - **Settlement:** `profit:settle` posts platform settlement transactions idempotently.
+- **Admin wallet adjustments:** `/wallet-adjustments` (`can:adjust_wallets`) via `AdjustWallet` → `WalletLedger` (`wallet.adjustment.posted`).
 
 ### Credit facility / overdraft (customer wallets)
 
@@ -127,9 +129,9 @@ Use this as the primary prompt context for AI tools that will plan or implement 
   - `credit_enabled` — facility granted (bool)
   - `credit_limit` — max overdraft ceiling (decimal)
   - `payment_terms_days` — Net N terms (nullable when not granted)
-  - `credit_status` — nullable `Active`/`Suspended` when granted; **must be `null` when not granted**
-- **Invalid combos forbidden:** disabled ⇒ `credit_status` null; enabled ⇒ `Active`|`Suspended` only. Do **not** consolidate `credit_enabled` into status.
-- **Wallet helpers:** `effectiveCreditLimit()`, `minimumAllowedBalance()`, `availableToSpend()`, `availableCredit()`, `outstandingDebt()`, `isOverdrawn()`. Effective limit requires customer type + `credit_enabled` + status `Active` (Suspended / disabled / platform ⇒ `0.00`).
+  - `credit_status` — nullable; stored enum values **`active`** / **`suspended`** (`CreditFacilityStatus`) when granted; **must be `null` when not granted**
+- **Invalid combos forbidden:** disabled ⇒ `credit_status` null; enabled ⇒ `active`|`suspended` only. Do **not** consolidate `credit_enabled` into status.
+- **Wallet helpers:** `effectiveCreditLimit()`, `minimumAllowedBalance()`, `availableToSpend()`, `availableCredit()`, `outstandingDebt()`, `isOverdrawn()`. Effective limit requires customer type + `credit_enabled` + status **`active`** (`suspended` / disabled / platform ⇒ `0.00`).
 - **Spend gate:** `WalletSpendPolicy` + `WalletSpendDecision` + `WalletSpendFailureReason` + `WalletSpendDeniedException`. `PayOrderWithWallet` calls the policy after wallet lock (`assertCanDebit` vs `availableToSpend`), then posts the debit through `WalletLedger` with `minimumAllowedBalance()` under lock (credit-facility floor).
 - **Admin UI:** `/credit-facility` (`can:manage_wallet_credit`) — ops list with filters (relevant/granted/active/suspended/overdrawn/not_granted), review-before-save confirm, `UpdateCreditFacility` action. Limit cannot be set below outstanding debt. Audit: activity + system event `wallet.credit_facility.updated` with `previous_*` / `new_*` props (limit, terms, enabled, status).
 - **Customer UX:** `CustomerWalletDisplay` — stacked header balance (green positive / red debt), Limit/Available secondary when facility Active; mobile header chip surfaces limit/available without opening wallet. Wallet timeline humanized via `CustomerSystemEventPresenter` when timeline `audience="customer"`.
@@ -181,7 +183,7 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - **User fields:** referral code + referred-by linkage (`referral_code`, `referred_by_user_id`).
 - **Commission model:** `commissions` table, `CommissionStatus` enum (`pending`, `credited`, `failed`), commission rate snapshots, optional `payout_batch_id`, and unique `wallet_transaction_id`.
 - **Creation trigger:** commissions are generated in `PayOrderWithWallet` after order payment/fulfillment creation.
-- **Failure interaction:** refund approval marks related pending commissions as failed; credited commissions are **not** reversed (Phase-1 debt; clawback deferred).
+- **Failure interaction:** refund approval marks related pending commissions as failed; credited commissions are **not** reversed until approved M7 clawback policy is implemented (see `Vault/Features/M7 — Financial Risk and Admin Operations.md`).
 - **Payout flow:** admins use `CreatePayoutBatch` through `/admin/commissions` (`can:manage_settlements`) to credit eligible completed/aged commissions to salesperson wallets. It creates `payout_batches`, posts `commission_credit` wallet transactions, records `wallet.commission.credited`, marks commissions `credited`, and notifies recipients after commit.
 - **Eligibility:** commission must be pending, not already batched/credited, order paid older than `WebsiteSetting::getCommissionPayoutWaitDays()`, and related fulfillment(s) completed; payout **batch** total must meet `WebsiteSetting::getCommissionPayoutMinAmount()` unless explicitly bypassed for a single admin credit. Salesperson **payout request** floor is separate: `RequestSalespersonPayout::MIN_ELIGIBLE_EXCLUSIVE` ($10 exclusive).
 - **Salesperson dashboard:** `/salesperson-dashboard` (`can:view_referrals`) = business KPIs via `SalespersonDashboardService`. **Earnings financial workspace (M6.6):** `/wallet/earnings` (`wallet.earnings.index`) via `GetSalespersonEarnings` + `SalespersonEarningsPresenter`; Financial Centre Earnings nav only with `view_referrals`. Frontend `/referral-link` also requires `can:view_referrals`.
@@ -191,9 +193,7 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 
 ## 11. Realtime, notifications, Activity, and bugs
 
-- **User private channel:** `private-App.Models.User.{id}` (notifications + `CustomerActivityInvalidated` + `CustomerFinancialStateChanged`).
-- **Admin channels:** fulfillments, topups, activities, system-events, bugs, **`admin.automation`** (automation run inbox).
-- **User private channel:** `private-App.Models.User.{id}` (notifications + `CustomerActivityInvalidated`).
+- **User private channel:** `private-App.Models.User.{id}` — notifications + `CustomerActivityInvalidated` + `CustomerFinancialStateChanged`.
 - **Admin channels:** fulfillments, topups, activities (`ActivityLogChanged` via `ActivityLogBroadcaster`), system-events, bugs, **`admin.automation`** (automation run inbox). Activity-log realtime is optional and must not fail originating requests (including mobile login).
 - **Customer notifications = delivery + authoritative unread truth** (`notifications` table / `unreadNotifications()`).
 - **Customer Activity = projection only** (not financial/ops truth). Canonical route `/activity` (`activity.index`); `/notifications` is a compatibility alias to the same Livewire page.
@@ -239,7 +239,8 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - For realtime changes, ensure no event is emitted before transaction commit.
 - For automation changes, preserve HMAC callback verification, idempotent run ingestion, and eligibility guards; do not move financial truth into worker callbacks.
 - Prefer Actions over new Services unless orchestration/IO warrants it; keep Livewire thin.
-- Add/update tests in `tests/Feature` for regression-prone behavior (`FulfillmentAutomationTest`, `AutomationAdminTest`, `CheckoutFlowTest`, `AiAssistant/*`, `PackagesPageTest`, `SupplierPriceScanTest`, `Auth/RegistrationTest`).
+- Add/update tests in `tests/Feature` for regression-prone behavior (`FulfillmentAutomationTest`, `AutomationAdminTest`, `CheckoutFlowTest`, `AiAssistant/*`, `PackagesPageTest`, `SupplierPriceScanTest`, `Auth/RegistrationTest`, `PaymentMethodsTest`, wallet/credit facility tests).
+- Mobile API changes: preserve Sanctum PAT + ability gates; never fall back to web session for `/api/v1`.
 
 ---
 
@@ -266,15 +267,17 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - **2026-07 (M6.5):** **Transaction details + printable receipts** — `/wallet/transactions/{WTX-*}`; `GetCustomerTransactionDetail`; snapshot-first receipt; browser print CSS only; no PDF/signing/QR.
 - **2026-07 (M6.6):** **Salesperson earnings clarity** — `/wallet/earnings`; Commission truth vs wallet spendable; `GetSalespersonEarnings`; payout request ≠ money movement; late-refund clawback still deferred; `CommissionStateChanged` invalidation.
 - **2026-07 (M6.7):** **Financial realtime synchronisation** — reason-set payload; Action-owned after-commit writers; replay/batch deduplication; scoped Livewire refresh; page-2 zero-read banners; hidden/focus/online/reconnect reconciliation; print-safe transaction detail.
-- **2026-07 (M6.8):** **Customer Financial Centre closure review** — architecture/safety/security/realtime verified; M6 closed pending manual Reverb/print/Arabic acceptance; late-refund clawback and decimal-width expansion remain deferred product/ops decisions.
+- **2026-07 (M6.8):** **Customer Financial Centre closure review** — architecture/safety/security/realtime verified; M6 closed; late-refund clawback deferred to Track B.
+- **2026-07 (M7.0):** **Commission clawback policy architecture** — Track B active; per-fulfillment clawback + obligation workflow recommended; Omar decisions required before M7.1; no reversal code yet.
 
 ---
 
 ## 15. Routes quick reference
 
-- **Public:** `/`, `/categories/{category:slug}`, `/cart`, `/contact`, `/404`, `language/{locale}`.
-- **Auth+verified (storefront):** `/profile`, `/wallet`, `/wallet/transactions`, `/wallet/transactions/{public_ref}`, `/wallet/topups`, `/wallet/topups/{public_ref}`, `/wallet/topup`, `/wallet/refunds`, `/wallet/refunds/{public_ref}`, `/wallet/earnings` (`can:view_referrals`), `/loyalty`, `/referral-link`, `/orders`, `/orders/{order_number}`, **`/activity`** (`activity.index`; **`/notifications`** alias), `/topup-proofs/{proof}`, `/bug-attachments/{attachment}`, `POST /api/pricing/buy-now-custom-amount-quote`.
-- **Backend:** `/dashboard` (`can:view_dashboard`), `/salesperson-dashboard` (`can:view_referrals`), `/categories`, `/packages`, `/products`, `/product-entry-prices` (`can:update_product_prices`), **`/price-drift`** (`can:update_product_prices`), `/pricing-rules`, `/loyalty-tiers`, `/admin/orders/*`, `/admin/users/*`, `/admin/users/{user}/audit`, `/fulfillments`, `/refunds`, `/topups`, `/customer-funds`, **`/credit-facility`** (`can:manage_wallet_credit`), `/settlements`, `/admin/commissions` (`can:manage_settlements`), `/admin/notifications`, `/admin/bugs/*`, `/admin/website-settings` (admin only), **`/admin/automation`** (admin only), **`/admin/assistant`** (admin only, throttled).
+- **Public:** `/`, `/categories/{category:slug}`, `/cart`, `/contact`, `/404`, `language/{locale}`, `GET /api/storefront/packages/search`.
+- **Auth+verified (storefront):** `/account`, `/profile`, `/profile/edit`, `/wallet`, `/wallet/transactions`, `/wallet/transactions/{transaction}` (`WTX-*`), `/wallet/topups`, `/wallet/topups/{topup}` (`TUP-*`), `/wallet/topup`, `/wallet/refunds`, `/wallet/refunds/{refund}` (`WTX-*`), `/wallet/earnings` (`can:view_referrals`), `/loyalty`, `/referral-link` (`can:view_referrals`), `/orders`, `/orders/{order_number}`, **`/activity`** (`activity.index`; **`/notifications`** alias), `/topup-proofs/{proof}`, `/bug-attachments/{attachment}`, `POST /api/pricing/buy-now-custom-amount-quote`.
+- **Backend:** `/dashboard` (`can:view_dashboard`), `/salesperson-dashboard` (`can:view_referrals`), `/salesperson/users` (`can:manage_referred_users`), `/categories`, `/packages`, `/products`, `/product-entry-prices` (`can:update_product_prices`), **`/price-drift`** (`can:update_product_prices`), `/pricing-rules`, `/loyalty-tiers`, `/admin/orders/*`, `/admin/users/*`, `/admin/users/{user}/audit`, `/fulfillments`, `/refunds`, `/topups`, `/customer-funds`, **`/wallet-adjustments`** (`can:adjust_wallets`), **`/credit-facility`** (`can:manage_wallet_credit`), `/settlements`, `/admin/commissions` + `/admin/payout-requests` (`can:manage_settlements`), `/admin/notifications`, `/admin/bugs/*`, `/admin/website-settings` (admin only; payment methods here), **`/admin/automation`** (admin only), **`/admin/assistant`** (admin only, throttled).
+- **Mobile API (`routes/api.php`):** `POST /api/v1/auth/login`, `POST /api/v1/auth/two-factor-challenge`, `POST /api/v1/auth/logout`, `GET /api/v1/me`, `GET /api/v1/catalog/home`, `GET /api/v1/packages`, `GET /api/v1/packages/{package}` (Sanctum PAT + `mobile:access`; catalog under `mobile-catalog` throttle).
 - **Automation (internal):** `POST /internal/automation/runs/{uuid}/result`, `POST /internal/automation/runs/{uuid}/artifacts`, **`POST /internal/automation/price-scans/{uuid}/result`** (HMAC-signed, CSRF exempt). Worker: `POST /v1/runs`, **`POST /v1/sessions/clear`**, **`POST /v1/price-scans`** (HMAC).
 - **AI/MCP:** `POST /mcp/ops-assistant` (admin MCP server for read-only ops tools).
 
@@ -287,6 +290,7 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - `config/permission.php`, `config/fortify.php`, `config/referral.php`, **`config/fulfillment_automation.php`** (incl. `price_scan`), **`config/billing.php`**, **`config/security.php`**, `config/services.php` (`turnstile`, `openai`)
 - `app/Actions/Orders/CheckoutFromPayload.php`, **`CheckoutResult.php`**, `CreateOrderFromCartPayload.php`, `PayOrderWithWallet.php`
 - `app/Actions/Wallets/UpdateCreditFacility.php`, `AdjustWallet.php`
+- `app/Actions/PaymentMethods/UpsertPaymentMethod.php`, `app/Models/PaymentMethod.php`
 - `app/Services/WalletSpendPolicy.php`, `WalletLedger.php`
 - `app/Models/Wallet.php` (credit helpers), `app/Enums/CreditFacilityStatus.php`, `WalletSpendFailureReason.php`
 - `app/DTOs/WalletSpendDecision.php`, `app/Exceptions/WalletSpendDeniedException.php`
