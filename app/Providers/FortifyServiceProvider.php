@@ -2,12 +2,15 @@
 
 namespace App\Providers;
 
+use App\Actions\Auth\AuthenticateUserCredentials;
 use App\Actions\Fortify\CreateNewUser;
 use App\Actions\Fortify\LoginResponse;
 use App\Actions\Fortify\ResetUserPassword;
 use App\Actions\Fortify\TwoFactorLoginResponse;
 use App\Domain\Security\Listeners\RecordSuccessfulRegistration;
+use App\Exceptions\AccountLoginDenied;
 use App\Http\Controllers\Auth\RegisteredUserController;
+use App\Models\User;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
@@ -15,6 +18,7 @@ use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Laravel\Fortify\Contracts\LoginResponse as LoginResponseContract;
 use Laravel\Fortify\Contracts\TwoFactorLoginResponse as TwoFactorLoginResponseContract;
 use Laravel\Fortify\Features;
@@ -53,28 +57,16 @@ class FortifyServiceProvider extends ServiceProvider
         $this->app->singleton(LoginResponseContract::class, LoginResponse::class);
         $this->app->singleton(TwoFactorLoginResponseContract::class, TwoFactorLoginResponse::class);
 
-        // Add custom authentication checks
-        Fortify::authenticateUsing(function (Request $request) {
-            $user = \App\Models\User::where('username', $request->username)->first();
-
-            if ($user &&
-                \Illuminate\Support\Facades\Hash::check($request->password, $user->password)) {
-                // Check if user is active and not blocked
-                if (! $user->canLogin()) {
-                    if (! $user->isActive()) {
-                        throw \Illuminate\Validation\ValidationException::withMessages([
-                            'username' => [__('messages.inactive')],
-                        ]);
-                    }
-
-                    if ($user->isBlocked()) {
-                        throw \Illuminate\Validation\ValidationException::withMessages([
-                            'username' => [__('messages.blocked')],
-                        ]);
-                    }
-                }
-
-                return $user;
+        Fortify::authenticateUsing(function (Request $request): ?User {
+            try {
+                return app(AuthenticateUserCredentials::class)->execute(
+                    (string) $request->input(Fortify::username()),
+                    (string) $request->input('password'),
+                );
+            } catch (AccountLoginDenied $exception) {
+                throw ValidationException::withMessages([
+                    Fortify::username() => [__($exception->translationKey)],
+                ]);
             }
         });
     }
@@ -108,6 +100,27 @@ class FortifyServiceProvider extends ServiceProvider
             $throttleKey = Str::transliterate(Str::lower($request->input(Fortify::username())).'|'.$request->ip());
 
             return Limit::perMinute(5)->by($throttleKey);
+        });
+
+        RateLimiter::for('mobile-login', function (Request $request): array {
+            $username = $request->input(Fortify::username());
+            $normalizedUsername = is_string($username) ? Str::lower($username) : '';
+            $throttleKey = Str::transliterate($normalizedUsername.'|'.$request->ip());
+
+            return [
+                Limit::perMinute(5)->by($throttleKey),
+                Limit::perMinute(30)->by('mobile-login-ip|'.$request->ip()),
+            ];
+        });
+
+        RateLimiter::for('mobile-two-factor', function (Request $request): array {
+            $challengeToken = $request->input('challenge_token');
+            $challengeHash = hash('sha256', is_string($challengeToken) ? $challengeToken : '');
+
+            return [
+                Limit::perMinute(10)->by($challengeHash.'|'.$request->ip()),
+                Limit::perMinute(30)->by('mobile-two-factor-ip|'.$request->ip()),
+            ];
         });
     }
 
