@@ -25,7 +25,9 @@ class TopupApprovedNotification extends BaseNotification
             messageParams: [
                 'amount_display' => $amountDisplay,
             ],
-            url: Route::has('wallet') ? route('wallet') : null
+            url: filled($topupRequest->public_ref) && Route::has('wallet.topups.show')
+                ? route('wallet.topups.show', ['topup' => $topupRequest->public_ref])
+                : (Route::has('wallet') ? route('wallet') : null)
         );
     }
 }

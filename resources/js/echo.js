@@ -7,6 +7,11 @@ import {
     handleNotificationReceived,
     initCustomerActivityInvalidation,
 } from './customer-activity-invalidation';
+import {
+    bindFinancialEchoReconnect,
+    handleFinancialStateChanged,
+    initCustomerFinancialInvalidation,
+} from './customer-financial-invalidation';
 
 window.Pusher = Pusher;
 
@@ -21,9 +26,11 @@ window.Echo = new Echo({
 });
 
 initCustomerActivityInvalidation();
+initCustomerFinancialInvalidation();
 
 if (import.meta.env.VITE_REVERB_APP_KEY && window.Laravel?.userId) {
     bindEchoReconnect(window.Echo);
+    bindFinancialEchoReconnect(window.Echo);
 
     window.Echo.private('App.Models.User.' + window.Laravel.userId)
         .notification((payload) => {
@@ -31,6 +38,9 @@ if (import.meta.env.VITE_REVERB_APP_KEY && window.Laravel?.userId) {
         })
         .listen('.CustomerActivityInvalidated', (payload) => {
             handleDomainInvalidated(payload ?? {});
+        })
+        .listen('.CustomerFinancialStateChanged', (payload) => {
+            handleFinancialStateChanged(payload ?? {});
         });
 }
 

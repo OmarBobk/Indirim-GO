@@ -51,14 +51,29 @@
             <flux:text class="text-xs text-zinc-600 dark:text-zinc-400">
                 {{ __('messages.refund_waiting_approval') }}
             </flux:text>
+            @if (! empty($unit['refundHref']))
+                <a href="{{ $unit['refundHref'] }}" wire:navigate class="inline-block text-sm font-medium text-(--color-accent) hover:underline" data-test="order-view-refund">
+                    {{ __('messages.refund_view_request') }}
+                </a>
+            @endif
         @elseif ($unit['isRefundPosted'])
             <flux:text class="text-xs text-zinc-600 dark:text-zinc-400">
                 {{ __('messages.refund_completed') }}
             </flux:text>
+            @if (! empty($unit['refundHref']))
+                <a href="{{ $unit['refundHref'] }}" wire:navigate class="inline-block text-sm font-medium text-(--color-accent) hover:underline" data-test="order-view-refund">
+                    {{ __('messages.refund_view_request') }}
+                </a>
+            @endif
         @elseif ($unit['isRefundRejected'])
             <flux:text class="text-xs text-zinc-600 dark:text-zinc-400">
                 {{ __('messages.refund_rejected') }}
             </flux:text>
+            @if (! empty($unit['refundHref']))
+                <a href="{{ $unit['refundHref'] }}" wire:navigate class="inline-block text-sm font-medium text-(--color-accent) hover:underline" data-test="order-view-refund">
+                    {{ __('messages.refund_view_request') }}
+                </a>
+            @endif
         @endif
     @endif
 </div>

@@ -10,6 +10,7 @@ enum CustomerActivityDestinationType: string
     case Orders = 'orders';
     case Wallet = 'wallet';
     case WalletTopup = 'wallet_topup';
+    case WalletRefund = 'wallet_refund';
     case Cart = 'cart';
     case Loyalty = 'loyalty';
     case Referral = 'referral';

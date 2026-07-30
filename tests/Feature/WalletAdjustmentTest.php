@@ -3,10 +3,12 @@
 declare(strict_types=1);
 
 use App\Actions\Wallets\AdjustWallet;
+use App\Enums\CustomerFinancialInvalidationReason;
 use App\Enums\WalletAdjustmentKind;
 use App\Enums\WalletTransactionDirection;
 use App\Enums\WalletTransactionType;
 use App\Enums\WalletType;
+use App\Events\CustomerFinancialStateChanged;
 use App\Exceptions\IdempotencyConflictException;
 use App\Models\SystemEvent;
 use App\Models\User;
@@ -15,6 +17,7 @@ use App\Models\WalletTransaction;
 use App\Services\WalletLedger;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
@@ -311,6 +314,7 @@ test('WalletLedger debit rejects insufficient balance', function () {
 // ─── Idempotency / concurrency ───────────────────────────────────────────────
 
 test('duplicate idempotency key with same payload credits once', function () {
+    Event::fake([CustomerFinancialStateChanged::class]);
     $admin = makeAdminWithAdjustWallets();
     $customer = User::factory()->create();
     $wallet = Wallet::forUser($customer);
@@ -325,6 +329,12 @@ test('duplicate idempotency key with same payload credits once', function () {
     expect($first->transaction->id)->toBe($second->transaction->id)
         ->and((string) $wallet->balance)->toBe('35.00')
         ->and(WalletTransaction::query()->where('idempotency_key', 'adj-same-key')->count())->toBe(1);
+    Event::assertDispatchedTimes(CustomerFinancialStateChanged::class, 1);
+    Event::assertDispatched(
+        CustomerFinancialStateChanged::class,
+        fn (CustomerFinancialStateChanged $event): bool => $event->userId === $customer->id
+            && $event->reasons === [CustomerFinancialInvalidationReason::TransactionPosted],
+    );
 });
 
 test('idempotency key with different payload throws conflict', function () {

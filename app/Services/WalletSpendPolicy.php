@@ -8,6 +8,7 @@ use App\DTOs\WalletSpendDecision;
 use App\Enums\WalletSpendFailureReason;
 use App\Exceptions\WalletSpendDeniedException;
 use App\Models\Wallet;
+use App\Support\LedgerMoney;
 
 /**
  * Decides whether a wallet debit is allowed under the current credit facility rules.
@@ -20,22 +21,23 @@ final class WalletSpendPolicy
      */
     public function evaluate(Wallet $wallet, string $amount): WalletSpendDecision
     {
-        $normalizedAmount = $this->normalizeAmount($amount);
-        $availableToSpend = $wallet->availableToSpend();
-        $remainingCredit = $wallet->availableCredit();
-        $effectiveCreditLimit = $wallet->effectiveCreditLimit();
-
-        if (bccomp($normalizedAmount, '0', 2) !== 1) {
+        try {
+            $normalizedAmount = LedgerMoney::normalizePositive($amount);
+        } catch (\InvalidArgumentException) {
             return new WalletSpendDecision(
                 allowed: false,
-                availableToSpend: $availableToSpend,
-                remainingCredit: $remainingCredit,
-                effectiveCreditLimit: $effectiveCreditLimit,
+                availableToSpend: $wallet->availableToSpend(),
+                remainingCredit: $wallet->availableCredit(),
+                effectiveCreditLimit: $wallet->effectiveCreditLimit(),
                 failureReason: WalletSpendFailureReason::InvalidAmount,
             );
         }
 
-        if (bccomp($availableToSpend, $normalizedAmount, 2) === -1) {
+        $availableToSpend = $wallet->availableToSpend();
+        $remainingCredit = $wallet->availableCredit();
+        $effectiveCreditLimit = $wallet->effectiveCreditLimit();
+
+        if (LedgerMoney::compare($availableToSpend, $normalizedAmount) === -1) {
             return new WalletSpendDecision(
                 allowed: false,
                 availableToSpend: $availableToSpend,
@@ -66,10 +68,5 @@ final class WalletSpendPolicy
         }
 
         return $decision;
-    }
-
-    private function normalizeAmount(string $amount): string
-    {
-        return bcadd($amount, '0', 2);
     }
 }

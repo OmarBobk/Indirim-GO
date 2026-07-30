@@ -18,6 +18,12 @@ Central map for indirimGo knowledge. Use this vault with [[Ask → Plan → Agen
 - [[Orders & Checkout]] — cart, buy-now, pay with wallet
 - [[Fulfillments & Automation]] — supplier worker, retries, delivered payload
 - [[Refunds & Settlements]] — refund requests, commission payouts
+- [[Customer Activity]] — unified activity feed (shipped M5)
+
+## Features
+
+- [[Customer Financial Centre]] — M6 Wallet → Financial Control Centre (architecture M6.0)
+- [[Customer Activity]] — M5 Activity feed
 - [[Customer Activity]] — unified activity feed (shipped; Home Needs attention deferred)
 
 ## Mobile

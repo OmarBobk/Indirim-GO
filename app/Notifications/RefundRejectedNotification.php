@@ -23,7 +23,11 @@ class RefundRejectedNotification extends BaseNotification
                 'amount_display' => $amountDisplay,
                 'order_number' => $orderNumber,
             ],
-            url: Route::has('orders.index') ? route('orders.index') : null
+            url: filled($transaction->public_ref) && Route::has('wallet.refunds.show')
+                ? route('wallet.refunds.show', ['refund' => $transaction->public_ref])
+                : (Route::has('wallet.refunds.index')
+                    ? route('wallet.refunds.index')
+                    : (Route::has('orders.index') ? route('orders.index') : null))
         );
     }
 }

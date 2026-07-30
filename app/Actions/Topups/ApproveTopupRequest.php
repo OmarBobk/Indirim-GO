@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 namespace App\Actions\Topups;
 
+use App\DTOs\WalletPosting;
+use App\Enums\CustomerActivityInvalidationReason;
+use App\Enums\CustomerFinancialInvalidationReason;
 use App\Enums\TopupRequestStatus;
 use App\Enums\WalletTransactionDirection;
+use App\Enums\WalletTransactionType;
 use App\Events\TopupRequestsChanged;
 use App\Models\TopupRequest;
 use App\Models\User;
@@ -14,14 +18,24 @@ use App\Models\WalletTransaction;
 use App\Notifications\TopupApprovedNotification;
 use App\Services\OperationalIntelligenceService;
 use App\Services\SystemEventService;
+use App\Services\WalletLedger;
+use App\Support\CustomerActivityBroadcaster;
+use App\Support\CustomerFinancialBroadcaster;
+use App\Support\Financial\ReceiptSnapshot;
+use App\Support\LedgerMoney;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 class ApproveTopupRequest
 {
+    public function __construct(
+        private readonly WalletLedger $ledger = new WalletLedger,
+    ) {}
+
     /**
-     * Post the ledger entry and update balance only once.
+     * Post the ledger entry and update balance only once via WalletLedger.
+     * Lock order: topup request → pending TX → wallet (kernel).
      */
     public function handle(User $actor, TopupRequest $topupRequest): TopupRequest
     {
@@ -41,6 +55,10 @@ class ApproveTopupRequest
                 return $request;
             }
 
+            if ($request->status !== TopupRequestStatus::Pending) {
+                return $request;
+            }
+
             $transaction = WalletTransaction::query()
                 ->where('reference_type', TopupRequest::class)
                 ->where('reference_id', $request->id)
@@ -48,10 +66,16 @@ class ApproveTopupRequest
                 ->firstOrFail();
 
             if ($transaction->status === WalletTransaction::STATUS_POSTED) {
+                $request->fill([
+                    'status' => TopupRequestStatus::Approved,
+                    'approved_by' => $approvedById,
+                    'approved_at' => $request->approved_at ?? now(),
+                ])->save();
+
                 return $request;
             }
 
-            if ($request->status !== TopupRequestStatus::Pending) {
+            if ($transaction->status !== WalletTransaction::STATUS_PENDING) {
                 return $request;
             }
 
@@ -70,30 +94,50 @@ class ApproveTopupRequest
                 $wallet = Wallet::forUser($user);
                 $request->wallet_id = $wallet->id;
                 $request->save();
+
+                $wallet = Wallet::query()
+                    ->whereKey($wallet->id)
+                    ->lockForUpdate()
+                    ->firstOrFail();
             }
 
             if ($transaction->direction !== WalletTransactionDirection::Credit) {
                 throw new \RuntimeException('Top-up transaction must be credit.');
             }
 
-            if ($transaction->status === WalletTransaction::STATUS_PENDING) {
-                if ((float) $transaction->amount <= 0) {
-                    throw new \RuntimeException('Top-up amount must be greater than zero.');
-                }
+            if ($wallet->currency !== $request->currency) {
+                throw new \RuntimeException('Wallet currency does not match top-up request.');
+            }
 
-                if ($wallet->currency !== $request->currency) {
-                    throw new \RuntimeException('Wallet currency does not match top-up request.');
-                }
+            $amount = LedgerMoney::normalizePositive((string) $transaction->amount);
+            $idempotencyKey = 'topup:'.$request->id;
 
-                $transaction->status = WalletTransaction::STATUS_POSTED;
-                $transaction->meta = array_merge($transaction->meta ?? [], [
+            $request->loadMissing('paymentMethod:id,name');
+
+            $result = $this->ledger->post(new WalletPosting(
+                wallet: $wallet,
+                type: WalletTransactionType::Topup,
+                direction: WalletTransactionDirection::Credit,
+                amount: $amount,
+                idempotencyKey: $idempotencyKey,
+                meta: array_merge([
                     'approved_by' => $approvedById,
                     'approved_at' => now()->toIso8601String(),
-                ]);
-                $transaction->save();
+                ], ReceiptSnapshot::wrap([
+                    'topup_public_ref' => is_string($request->public_ref) ? $request->public_ref : null,
+                    'payment_method' => $request->paymentMethod?->name
+                        ?? (is_string(data_get($transaction->meta, 'payment_method'))
+                            ? (string) data_get($transaction->meta, 'payment_method')
+                            : null),
+                    'currency' => strtoupper((string) ($request->currency ?: 'USD')),
+                ])),
+                referenceType: TopupRequest::class,
+                referenceId: (int) $request->id,
+                pendingTransaction: $transaction,
+            ));
 
-                $wallet->increment('balance', $transaction->amount);
-            }
+            $transaction = $result->transaction;
+            $wallet = $result->wallet;
 
             $request->fill([
                 'status' => TopupRequestStatus::Approved,
@@ -101,12 +145,26 @@ class ApproveTopupRequest
                 'approved_at' => now(),
             ])->save();
 
+            if (! $result->wasReplayed) {
+                CustomerFinancialBroadcaster::dispatch(
+                    (int) $request->user_id,
+                    [
+                        CustomerFinancialInvalidationReason::TransactionPosted,
+                        CustomerFinancialInvalidationReason::TopupStateChanged,
+                    ],
+                );
+                CustomerActivityBroadcaster::dispatch(
+                    (int) $request->user_id,
+                    CustomerActivityInvalidationReason::TopupStateChanged,
+                );
+            }
+
             app(SystemEventService::class)->record(
                 'wallet.topup.posted',
                 $request,
                 $actor,
                 [
-                    'amount' => (float) $request->amount,
+                    'amount' => $amount,
                     'wallet_id' => $wallet->id,
                 ],
                 'info',
@@ -123,7 +181,7 @@ class ApproveTopupRequest
                         'topup_request_id' => $request->id,
                         'wallet_id' => $request->wallet_id,
                         'user_id' => $request->user_id,
-                        'amount' => $request->amount,
+                        'amount' => $amount,
                         'currency' => $request->currency,
                         'transaction_id' => $transaction->id,
                     ])
@@ -137,7 +195,7 @@ class ApproveTopupRequest
                     ->withProperties([
                         'wallet_id' => $wallet->id,
                         'user_id' => $wallet->user_id,
-                        'amount' => $transaction->amount,
+                        'amount' => $amount,
                         'currency' => $wallet->currency,
                         'transaction_id' => $transaction->id,
                         'source' => 'topup',

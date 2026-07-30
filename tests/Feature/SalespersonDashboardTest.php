@@ -39,6 +39,8 @@ test('salesperson dashboard requires sales permission', function () {
 });
 
 test('newly registered user is linked to referrer from referral cookie', function () {
+    Role::query()->firstOrCreate(['name' => 'customer', 'guard_name' => 'web']);
+
     $referrer = User::factory()->create();
 
     $cookieName = (string) config('referral.cookie_name', 'karman_ref');
@@ -175,6 +177,10 @@ test('request payout notifies admins when eligible exceeds minimum', function ()
     Permission::query()->firstOrCreate(['name' => 'view_referrals', 'guard_name' => 'web']);
     Role::query()->firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
 
+    \App\Models\WebsiteSetting::instance()->update([
+        'commission_payout_wait_days' => 0,
+    ]);
+
     $admin = User::factory()->create();
     $admin->assignRole('admin');
 
@@ -238,6 +244,10 @@ test('request payout notifies admins when eligible exceeds minimum', function ()
 test('request payout does not duplicate pending row or re-notify admins', function () {
     Permission::query()->firstOrCreate(['name' => 'view_referrals', 'guard_name' => 'web']);
     Role::query()->firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+
+    \App\Models\WebsiteSetting::instance()->update([
+        'commission_payout_wait_days' => 0,
+    ]);
 
     $admin = User::factory()->create();
     $admin->assignRole('admin');

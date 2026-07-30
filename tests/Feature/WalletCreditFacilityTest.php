@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 use App\Actions\Wallets\UpdateCreditFacility;
 use App\Enums\CreditFacilityStatus;
+use App\Enums\CustomerFinancialInvalidationReason;
 use App\Enums\WalletType;
+use App\Events\CustomerFinancialStateChanged;
 use App\Models\User;
 use App\Models\Wallet;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 use Spatie\Activitylog\Models\Activity;
@@ -104,6 +107,33 @@ test('admin can enable credit facility with limit terms and status', function ()
     $wallet->refresh();
     expect($wallet->credit_enabled)->toBeTrue()
         ->and($wallet->payment_terms_days)->toBe(45);
+});
+
+test('credit facility changes invalidate only the target customer after commit', function () {
+    Event::fake([CustomerFinancialStateChanged::class]);
+    $admin = makeAdminWithManageWalletCredit();
+    $customer = User::factory()->create();
+    Wallet::forUser($customer);
+
+    $input = [
+        'credit_enabled' => true,
+        'credit_limit' => '250.00',
+        'payment_terms_days' => 45,
+        'credit_status' => CreditFacilityStatus::Active->value,
+    ];
+
+    app(UpdateCreditFacility::class)->handle($admin, $customer, $input);
+
+    Event::assertDispatchedTimes(CustomerFinancialStateChanged::class, 1);
+    Event::assertDispatched(
+        CustomerFinancialStateChanged::class,
+        fn (CustomerFinancialStateChanged $event): bool => $event->userId === $customer->id
+            && $event->reasons === [CustomerFinancialInvalidationReason::CreditFacilityChanged],
+    );
+
+    Event::fake([CustomerFinancialStateChanged::class]);
+    app(UpdateCreditFacility::class)->handle($admin, $customer, $input);
+    Event::assertNotDispatched(CustomerFinancialStateChanged::class);
 });
 
 test('admin can suspend credit facility without clearing limit', function () {

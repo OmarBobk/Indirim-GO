@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace App\Actions\Wallets;
 
 use App\Enums\CreditFacilityStatus;
+use App\Enums\CustomerFinancialInvalidationReason;
 use App\Enums\WalletType;
 use App\Models\User;
 use App\Models\Wallet;
 use App\Services\SystemEventService;
+use App\Support\CustomerFinancialBroadcaster;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -106,6 +108,10 @@ final class UpdateCreditFacility
                 'new_enabled' => $enabled,
                 'new_status' => $status?->value,
             ];
+            $hasChanged = $previous['previous_enabled'] !== $new['new_enabled']
+                || bccomp($previous['previous_limit'], $new['new_limit'], 2) !== 0
+                || $previous['previous_terms'] !== $new['new_terms']
+                || $previous['previous_status'] !== $new['new_status'];
 
             $this->systemEvents->record(
                 'wallet.credit_facility.updated',
@@ -150,6 +156,13 @@ final class UpdateCreditFacility
                         'ip_address' => $ipAddress,
                     ])
                     ->log($description);
+            }
+
+            if ($hasChanged) {
+                CustomerFinancialBroadcaster::dispatch(
+                    (int) $targetUser->id,
+                    CustomerFinancialInvalidationReason::CreditFacilityChanged,
+                );
             }
 
             return $wallet->fresh();

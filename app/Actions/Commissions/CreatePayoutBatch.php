@@ -4,21 +4,26 @@ declare(strict_types=1);
 
 namespace App\Actions\Commissions;
 
+use App\DTOs\WalletPosting;
 use App\Enums\CommissionStatus;
+use App\Enums\CustomerFinancialInvalidationReason;
 use App\Enums\FulfillmentStatus;
 use App\Enums\WalletTransactionDirection;
 use App\Enums\WalletTransactionType;
 use App\Models\Commission;
+use App\Models\Order;
 use App\Models\PayoutBatch;
 use App\Models\User;
 use App\Models\Wallet;
-use App\Models\WalletTransaction;
 use App\Models\WebsiteSetting;
 use App\Notifications\CommissionCreditedNotification;
 use App\Services\SystemEventService;
+use App\Services\WalletLedger;
+use App\Support\CustomerFinancialBroadcaster;
+use App\Support\Financial\ReceiptSnapshot;
+use App\Support\LedgerMoney;
 use Carbon\CarbonImmutable;
 use Illuminate\Auth\Access\AuthorizationException;
-use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
@@ -26,6 +31,10 @@ use Illuminate\Validation\ValidationException;
 
 class CreatePayoutBatch
 {
+    public function __construct(
+        private readonly WalletLedger $ledger = new WalletLedger,
+    ) {}
+
     /**
      * @param  array<int, int>  $commissionIds
      *
@@ -77,8 +86,12 @@ class CreatePayoutBatch
                 ]);
             }
 
-            $totalAmount = (float) $eligible->sum('commission_amount');
-            if ($enforceMinAmount && $totalAmount < $payoutMinAmount) {
+            $totalAmount = '0.00';
+            foreach ($eligible as $eligibleCommission) {
+                $totalAmount = LedgerMoney::add($totalAmount, (string) $eligibleCommission->commission_amount);
+            }
+
+            if ($enforceMinAmount && LedgerMoney::compare($totalAmount, number_format((float) $payoutMinAmount, 2, '.', '')) === -1) {
                 throw ValidationException::withMessages([
                     'commissions' => __('messages.payout_min_total_not_reached', [
                         'amount' => number_format($payoutMinAmount, 2, '.', ''),
@@ -89,13 +102,14 @@ class CreatePayoutBatch
             $creditedAt = now();
             $batch = PayoutBatch::query()->create([
                 'created_by' => $resolvedCreatedBy,
-                'total_amount' => number_format($totalAmount, 2, '.', ''),
+                'total_amount' => $totalAmount,
                 'commission_count' => $eligible->count(),
                 'notes' => $notes !== null && trim($notes) !== '' ? trim($notes) : null,
                 'paid_at' => $creditedAt,
             ]);
             $creditedCount = 0;
-            $creditedTotal = 0.0;
+            $creditedTotal = '0.00';
+            $affectedSalespersonIds = [];
 
             foreach ($eligible as $candidateCommission) {
                 $commission = Commission::query()
@@ -116,7 +130,9 @@ class CreatePayoutBatch
                     continue;
                 }
 
-                if ((float) $commission->commission_amount <= 0) {
+                try {
+                    $creditAmount = LedgerMoney::normalizePositive((string) $commission->commission_amount);
+                } catch (\InvalidArgumentException) {
                     continue;
                 }
 
@@ -137,66 +153,51 @@ class CreatePayoutBatch
 
                 $idempotencyKey = 'commission_credit:'.$commission->id;
 
-                $walletTransaction = WalletTransaction::query()
-                    ->where('idempotency_key', $idempotencyKey)
-                    ->lockForUpdate()
-                    ->first();
-                $createdNewTransaction = false;
-
-                if ($walletTransaction === null) {
-                    try {
-                        $walletTransaction = WalletTransaction::query()->create([
-                            'wallet_id' => $wallet->id,
-                            'type' => WalletTransactionType::CommissionCredit,
-                            'direction' => WalletTransactionDirection::Credit,
-                            'amount' => $commission->commission_amount,
-                            'status' => WalletTransaction::STATUS_POSTED,
-                            'reference_type' => Commission::class,
-                            'reference_id' => $commission->id,
-                            'idempotency_key' => $idempotencyKey,
-                            'meta' => [
-                                'commission_id' => $commission->id,
-                                'order_id' => $commission->order_id,
-                                'payout_batch_id' => $batch->id,
-                            ],
-                        ]);
-                        $createdNewTransaction = true;
-                    } catch (QueryException $exception) {
-                        if (! $this->isCommissionCreditIdempotencyConflict($exception, $idempotencyKey)) {
-                            throw $exception;
-                        }
-
-                        $walletTransaction = WalletTransaction::query()
-                            ->where('idempotency_key', $idempotencyKey)
-                            ->lockForUpdate()
-                            ->first();
-                    }
+                $orderNumber = null;
+                if ($commission->order_id !== null) {
+                    $orderNumber = Order::query()
+                        ->whereKey((int) $commission->order_id)
+                        ->value('order_number');
+                    $orderNumber = is_string($orderNumber) ? $orderNumber : null;
                 }
 
-                if ($walletTransaction === null) {
-                    continue;
-                }
-
-                if ($createdNewTransaction) {
-                    $newBalance = bcadd((string) $wallet->balance, (string) $commission->commission_amount, 2);
-                    $wallet->update(['balance' => $newBalance]);
-                    $wallet->balance = $newBalance;
-                }
-
-                app(SystemEventService::class)->record(
-                    'wallet.commission.credited',
-                    $walletTransaction,
-                    $actor,
-                    [
-                        'wallet_id' => $wallet->id,
+                $result = $this->ledger->post(new WalletPosting(
+                    wallet: $wallet,
+                    type: WalletTransactionType::CommissionCredit,
+                    direction: WalletTransactionDirection::Credit,
+                    amount: $creditAmount,
+                    idempotencyKey: $idempotencyKey,
+                    meta: array_merge([
                         'commission_id' => $commission->id,
                         'order_id' => $commission->order_id,
                         'payout_batch_id' => $batch->id,
-                        'amount' => (float) $commission->commission_amount,
-                    ],
-                    'info',
-                    true,
-                );
+                    ], ReceiptSnapshot::wrap([
+                        'order_number' => $orderNumber,
+                        'currency' => 'USD',
+                    ])),
+                    referenceType: Commission::class,
+                    referenceId: (int) $commission->id,
+                ));
+
+                $walletTransaction = $result->transaction;
+                $wallet = $result->wallet;
+
+                if (! $result->wasReplayed) {
+                    app(SystemEventService::class)->record(
+                        'wallet.commission.credited',
+                        $walletTransaction,
+                        $actor,
+                        [
+                            'wallet_id' => $wallet->id,
+                            'commission_id' => $commission->id,
+                            'order_id' => $commission->order_id,
+                            'payout_batch_id' => $batch->id,
+                            'amount' => $creditAmount,
+                        ],
+                        'info',
+                        true,
+                    );
+                }
 
                 $commission->update([
                     'status' => CommissionStatus::Credited,
@@ -206,7 +207,7 @@ class CreatePayoutBatch
                     'paid_method' => 'wallet',
                 ]);
 
-                if (Schema::hasTable('activity_log')) {
+                if (! $result->wasReplayed && Schema::hasTable('activity_log')) {
                     activity()
                         ->inLog('payments')
                         ->event('commission.credited')
@@ -216,7 +217,7 @@ class CreatePayoutBatch
                             'commission_id' => $commission->id,
                             'order_id' => $commission->order_id,
                             'salesperson_id' => $salesperson->id,
-                            'amount' => $commission->commission_amount,
+                            'amount' => $creditAmount,
                             'currency' => $wallet->currency,
                             'payout_batch_id' => $batch->id,
                             'wallet_id' => $wallet->id,
@@ -232,7 +233,7 @@ class CreatePayoutBatch
                         ->withProperties([
                             'wallet_id' => $wallet->id,
                             'user_id' => $wallet->user_id,
-                            'amount' => $walletTransaction->amount,
+                            'amount' => $creditAmount,
                             'currency' => $wallet->currency,
                             'transaction_id' => $walletTransaction->id,
                             'source' => 'commission',
@@ -242,25 +243,28 @@ class CreatePayoutBatch
                         ->log('Wallet credited');
                 }
 
-                $salespersonId = (int) $salesperson->id;
-                $commissionId = (int) $commission->id;
-                $creditAmount = (float) $commission->commission_amount;
-                $walletCurrency = (string) $wallet->currency;
-                DB::afterCommit(function () use ($salespersonId, $commissionId, $creditAmount, $walletCurrency): void {
-                    $recipient = User::query()->find($salespersonId);
-                    if ($recipient === null) {
-                        return;
-                    }
+                if (! $result->wasReplayed) {
+                    $affectedSalespersonIds[(int) $salesperson->id] = true;
 
-                    $recipient->notify(CommissionCreditedNotification::fromCredited(
-                        $commissionId,
-                        $creditAmount,
-                        $walletCurrency
-                    ));
-                });
+                    $salespersonId = (int) $salesperson->id;
+                    $commissionId = (int) $commission->id;
+                    $walletCurrency = (string) $wallet->currency;
+                    DB::afterCommit(function () use ($salespersonId, $commissionId, $creditAmount, $walletCurrency): void {
+                        $recipient = User::query()->find($salespersonId);
+                        if ($recipient === null) {
+                            return;
+                        }
+
+                        $recipient->notify(CommissionCreditedNotification::fromCredited(
+                            $commissionId,
+                            (float) $creditAmount,
+                            $walletCurrency
+                        ));
+                    });
+                }
 
                 $creditedCount++;
-                $creditedTotal += (float) $commission->commission_amount;
+                $creditedTotal = LedgerMoney::add($creditedTotal, $creditAmount);
             }
 
             if ($creditedCount === 0) {
@@ -270,9 +274,19 @@ class CreatePayoutBatch
             }
 
             $batch->update([
-                'total_amount' => number_format($creditedTotal, 2, '.', ''),
+                'total_amount' => $creditedTotal,
                 'commission_count' => $creditedCount,
             ]);
+
+            foreach (array_keys($affectedSalespersonIds) as $salespersonId) {
+                CustomerFinancialBroadcaster::dispatch(
+                    (int) $salespersonId,
+                    [
+                        CustomerFinancialInvalidationReason::TransactionPosted,
+                        CustomerFinancialInvalidationReason::CommissionStateChanged,
+                    ],
+                );
+            }
 
             Log::info('Commission payout batch created.', [
                 'batch_id' => $batch->id,
@@ -323,17 +337,5 @@ class CreatePayoutBatch
         }
 
         return true;
-    }
-
-    private function isCommissionCreditIdempotencyConflict(QueryException $exception, string $idempotencyKey): bool
-    {
-        if ((string) $exception->getCode() !== '23000') {
-            return false;
-        }
-
-        $message = $exception->getMessage();
-
-        return str_contains($message, 'idempotency_key')
-            || str_contains($message, $idempotencyKey);
     }
 }

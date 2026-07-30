@@ -120,7 +120,7 @@ test('presenter maps purchase and topup events to friendly amount rows', functio
         ->and($topup['facts'][0]['tone'])->toBe('positive');
 });
 
-test('wallet page shows friendly credit facility event and hides raw meta keys', function () {
+test('wallet page financial overview does not render raw credit facility meta', function () {
     $user = User::factory()->create(['locale' => 'en']);
     $wallet = Wallet::forUser($user);
     $money = FrontendMoney::for($user);
@@ -151,17 +151,15 @@ test('wallet page shows friendly credit facility event and hides raw meta keys',
 
     Livewire::actingAs($user)
         ->test('pages::frontend.wallet')
-        ->assertSee(__('messages.wallet_account_activity'))
-        ->assertSee(__('messages.wallet_event_credit_facility_title'))
-        ->assertSee(__('messages.wallet_event_credit_facility_granted'))
-        ->assertSee(__('messages.wallet_credit_limit_label'))
-        ->assertSee($money->format(50.50, 'USD', 2))
-        ->assertSeeHtml('data-timeline-audience="customer"')
+        ->assertSeeHtml('data-test="financial-overview"')
+        ->assertDontSee(__('messages.wallet_account_activity'))
+        ->assertDontSeeHtml('data-timeline-audience="customer"')
         ->assertDontSee('wallet.credit_facility.updated')
         ->assertDontSee('previous_limit')
         ->assertDontSee('available_credit_after')
         ->assertDontSee('View meta')
         ->assertDontSee(__('messages.view_meta'))
         ->assertDontSee('203.0.113.10')
-        ->assertDontSee('"wallet_id"');
+        ->assertDontSee('"wallet_id"')
+        ->assertDontSee($money->format(50.50, 'USD', 2));
 });

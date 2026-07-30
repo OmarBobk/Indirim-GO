@@ -23,6 +23,7 @@ class TopupRequest extends Model
         'user_id',
         'wallet_id',
         'payment_method_id',
+        'public_ref',
         'amount',
         'currency',
         'status',
@@ -46,6 +47,11 @@ class TopupRequest extends Model
             'approved_by' => 'integer',
             'approved_at' => 'datetime',
         ];
+    }
+
+    public function getRouteKeyName(): string
+    {
+        return 'public_ref';
     }
 
     protected static function booted(): void

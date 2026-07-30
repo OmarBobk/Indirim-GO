@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\DTOs\WalletPosting;
 use App\Enums\FulfillmentStatus;
 use App\Enums\WalletTransactionDirection;
 use App\Enums\WalletTransactionType;
@@ -16,6 +17,8 @@ use App\Notifications\SettlementCreatedNotification;
 use App\Services\NotificationRecipientService;
 use App\Services\SettlementProfitCalculator;
 use App\Services\SystemEventService;
+use App\Services\WalletLedger;
+use App\Support\LedgerMoney;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
@@ -101,32 +104,21 @@ class ProfitSettleCommand extends Command
                 ->firstOrFail();
 
             $idempotencyKey = 'settlement:'.$settlement->id;
+            $amount = LedgerMoney::normalizePositive(number_format((float) $totalAmount, 2, '.', ''));
 
-            $existing = WalletTransaction::query()
-                ->where('idempotency_key', $idempotencyKey)
-                ->first();
-
-            if ($existing !== null) {
-                $this->warn('Settlement already posted (idempotency).');
-
-                return self::SUCCESS;
-            }
-
-            WalletTransaction::create([
-                'wallet_id' => $platformWallet->id,
-                'type' => WalletTransactionType::Settlement,
-                'direction' => WalletTransactionDirection::Credit,
-                'amount' => $totalAmount,
-                'status' => WalletTransaction::STATUS_POSTED,
-                'reference_type' => Settlement::class,
-                'reference_id' => $settlement->id,
-                'idempotency_key' => $idempotencyKey,
-                'meta' => [
+            app(WalletLedger::class)->post(new WalletPosting(
+                wallet: $platformWallet,
+                type: WalletTransactionType::Settlement,
+                direction: WalletTransactionDirection::Credit,
+                amount: $amount,
+                idempotencyKey: $idempotencyKey,
+                meta: [
                     'fulfillment_count' => $eligible->count(),
                 ],
-            ]);
-
-            $platformWallet->increment('balance', $totalAmount);
+                referenceType: Settlement::class,
+                referenceId: (int) $settlement->id,
+                minimumAllowedBalance: LedgerMoney::ZERO,
+            ));
 
             app(SystemEventService::class)->record(
                 'platform.profit.recorded',
@@ -134,7 +126,7 @@ class ProfitSettleCommand extends Command
                 null,
                 [
                     'settlement_id' => $settlement->id,
-                    'total_amount' => $totalAmount,
+                    'total_amount' => $amount,
                     'fulfillment_count' => $eligible->count(),
                 ],
                 'info',
@@ -142,7 +134,7 @@ class ProfitSettleCommand extends Command
             );
 
             $settlementId = $settlement->id;
-            $totalAmountForEvent = $totalAmount;
+            $totalAmountForEvent = $amount;
             $fulfillmentCountForEvent = $eligible->count();
             DB::afterCommit(function () use ($settlementId, $totalAmountForEvent, $fulfillmentCountForEvent): void {
                 $settlement = Settlement::query()->find($settlementId);

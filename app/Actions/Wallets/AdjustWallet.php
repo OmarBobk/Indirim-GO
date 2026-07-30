@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Actions\Wallets;
 
 use App\DTOs\WalletAdjustmentResult;
+use App\DTOs\WalletPosting;
+use App\Enums\CustomerFinancialInvalidationReason;
 use App\Enums\WalletAdjustmentKind;
 use App\Enums\WalletTransactionDirection;
 use App\Enums\WalletTransactionType;
@@ -13,6 +15,9 @@ use App\Models\User;
 use App\Models\Wallet;
 use App\Services\SystemEventService;
 use App\Services\WalletLedger;
+use App\Support\CustomerFinancialBroadcaster;
+use App\Support\Financial\ReceiptSnapshot;
+use App\Support\LedgerMoney;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -51,13 +56,13 @@ final class AdjustWallet
             ]);
         }
 
-        $normalizedAmount = trim($amount);
-        if ($normalizedAmount === '' || ! is_numeric($normalizedAmount) || bccomp($normalizedAmount, '0', 2) !== 1) {
+        try {
+            $normalizedAmount = LedgerMoney::normalizePositive(trim($amount));
+        } catch (\InvalidArgumentException) {
             throw ValidationException::withMessages([
                 'amount' => __('messages.wallet_adjustment_amount_invalid'),
             ]);
         }
-        $normalizedAmount = bcadd($normalizedAmount, '0', 2);
 
         $reason = $reason !== null ? trim($reason) : null;
         if ($reason === '') {
@@ -81,7 +86,7 @@ final class AdjustWallet
                 ]);
             }
 
-            $meta = array_filter([
+            $meta = array_merge(array_filter([
                 'adjustment_kind' => $kind->value,
                 'actor_id' => $actor->id,
                 'actor_name' => $actor->name,
@@ -90,18 +95,28 @@ final class AdjustWallet
                 'currency' => $wallet->currency,
                 'reason' => $reason,
                 'ip_address' => $ipAddress,
-            ], fn (mixed $value): bool => $value !== null && $value !== '');
+            ], fn (mixed $value): bool => $value !== null && $value !== ''), ReceiptSnapshot::wrap([
+                'customer_safe_reason' => $reason,
+                'currency' => is_string($wallet->currency) ? strtoupper($wallet->currency) : 'USD',
+            ]));
 
-            $result = $this->ledger->post(
+            $result = $this->ledger->post(new WalletPosting(
                 wallet: $wallet,
                 type: WalletTransactionType::Adjustment,
                 direction: WalletTransactionDirection::Credit,
                 amount: $normalizedAmount,
                 idempotencyKey: $idempotencyKey,
                 meta: $meta,
-            );
+            ));
 
             $transaction = $result->transaction;
+
+            if (! $result->wasReplayed) {
+                CustomerFinancialBroadcaster::dispatch(
+                    (int) $targetUser->id,
+                    CustomerFinancialInvalidationReason::TransactionPosted,
+                );
+            }
 
             $this->systemEvents->record(
                 'wallet.adjustment.posted',
