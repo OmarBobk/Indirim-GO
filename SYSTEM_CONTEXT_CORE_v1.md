@@ -127,7 +127,7 @@ Use this as the primary prompt context for AI tools that will plan or implement 
   - `credit_status` — nullable `Active`/`Suspended` when granted; **must be `null` when not granted**
 - **Invalid combos forbidden:** disabled ⇒ `credit_status` null; enabled ⇒ `Active`|`Suspended` only. Do **not** consolidate `credit_enabled` into status.
 - **Wallet helpers:** `effectiveCreditLimit()`, `minimumAllowedBalance()`, `availableToSpend()`, `availableCredit()`, `outstandingDebt()`, `isOverdrawn()`. Effective limit requires customer type + `credit_enabled` + status `Active` (Suspended / disabled / platform ⇒ `0.00`).
-- **Spend gate:** `WalletSpendPolicy` + `WalletSpendDecision` + `WalletSpendFailureReason` + `WalletSpendDeniedException`. `PayOrderWithWallet` calls the policy after wallet lock (`assertCanDebit` vs `availableToSpend`). Purchase path still posts via direct balance decrement + `WalletTransaction` — **not** migrated onto `WalletLedger` yet. `WalletLedger` still rejects debits that would go below zero (no overdraft floor in ledger for this milestone).
+- **Spend gate:** `WalletSpendPolicy` + `WalletSpendDecision` + `WalletSpendFailureReason` + `WalletSpendDeniedException`. `PayOrderWithWallet` calls the policy after wallet lock (`assertCanDebit` vs `availableToSpend`), then posts the debit through `WalletLedger` with `minimumAllowedBalance()` under lock (credit-facility floor).
 - **Admin UI:** `/credit-facility` (`can:manage_wallet_credit`) — ops list with filters (relevant/granted/active/suspended/overdrawn/not_granted), review-before-save confirm, `UpdateCreditFacility` action. Limit cannot be set below outstanding debt. Audit: activity + system event `wallet.credit_facility.updated` with `previous_*` / `new_*` props (limit, terms, enabled, status).
 - **Customer UX:** `CustomerWalletDisplay` — stacked header balance (green positive / red debt), Limit/Available secondary when facility Active; mobile header chip surfaces limit/available without opening wallet. Wallet timeline humanized via `CustomerSystemEventPresenter` when timeline `audience="customer"`.
 - **Config:** `billing.wallet_credit_limit_max`, `billing.wallet_payment_terms_days` (`config/billing.php`).
@@ -261,6 +261,7 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - **2026-07 (M6.5):** **Transaction details + printable receipts** — `/wallet/transactions/{WTX-*}`; `GetCustomerTransactionDetail`; snapshot-first receipt; browser print CSS only; no PDF/signing/QR.
 - **2026-07 (M6.6):** **Salesperson earnings clarity** — `/wallet/earnings`; Commission truth vs wallet spendable; `GetSalespersonEarnings`; payout request ≠ money movement; late-refund clawback still deferred; `CommissionStateChanged` invalidation.
 - **2026-07 (M6.7):** **Financial realtime synchronisation** — reason-set payload; Action-owned after-commit writers; replay/batch deduplication; scoped Livewire refresh; page-2 zero-read banners; hidden/focus/online/reconnect reconciliation; print-safe transaction detail.
+- **2026-07 (M6.8):** **Customer Financial Centre closure review** — architecture/safety/security/realtime verified; M6 closed pending manual Reverb/print/Arabic acceptance; late-refund clawback and decimal-width expansion remain deferred product/ops decisions.
 
 ---
 

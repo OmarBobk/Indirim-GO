@@ -1,13 +1,45 @@
 ---
-status: shipped-realtime
+status: closed
 created: 2026-07-29
+closed: 2026-07-30
 feature: customer-financial-centre
-milestone: M6.7
+milestone: M6.8
 ---
 
 # Customer Financial Centre
 
 Canonical M6 feature record. Code is truth when docs conflict. See [[Wallet & Ledger]], [[Refunds & Settlements]], [[Orders & Checkout]], [[Customer Activity]].
+
+## M6.8 — Closure Review (closed)
+
+### Verdict
+
+- **M6 can close.** Architecture, wallet kernel, workspaces, receipts, earnings and realtime form one coherent Financial Centre.
+- **No code launch blocker** found in M6 surfaces. Manual Reverb (two-tab), Arabic mobile, and A4 print acceptance remain required before production launch.
+- Pre-M6.7 audit notes that claimed “M6.7 not started / missing writers / no focus reconcile” are **obsolete** — code and this note’s M6.7 section are truth.
+
+### Confirmed invariants (spot-checked vs code)
+
+- All product posted money through `WalletLedger`; only intentional non-ledger balance write is `wallet:reconcile --repair`.
+- Truth boundaries: balance snapshot / posted TX / TopupRequest / refund TX / Commission / commission_credit TX / PayoutRequest / Activity / notifications — no duplicate owners.
+- Realtime taxonomy matches enum + `CustomerFinancialRealtimeScope`; payload = `reasons` + `schema_version` + `event_id` only.
+- Routes: `/wallet`, transactions (+ WTX detail), topups (+ TUP detail), create top-up, refunds (+ WTX detail), earnings (`view_referrals`).
+- Late credited commission clawback **not** implemented; pending→failed only. Documented Phase-1 debt — does not block M6 close; needs policy before high commission volume.
+- Decimal `(10,2)` wallet TX vs `(12,2)` orders/commissions — overflow at extreme totals; plan expansion before those limits, not M6 close.
+- Unrelated full-suite failures (admin roles, custom-amount checkout assert, Arabic 2FA copy, settlements modal) are outside Financial Centre ownership.
+
+### Manual before launch
+
+- Two-tab Reverb: purchase, top-up, refund, commission, payout request, page-2 banners, offline/reconnect, print deferral, unread isolation.
+- Arabic RTL 320–390 px + A4 print / Save as PDF.
+
+### Not started
+
+- M7, API/Sanctum, clawback implementation, BroadcastChannel, JS test harness, Git/deploy from this review.
+
+### Shipped
+
+- **2026-07-30 M6.8** — read-only closure review; Vault/SYSTEM_CONTEXT factual corrections only.
 
 ## Goal
 
@@ -104,7 +136,7 @@ Turn Wallet into the customer’s **Financial Control Centre** so a customer can
 - Queued financial broadcasts only with explicit deduplication/observability design.
 - A small JS test harness may be added when the project adopts one; M6.7 did not install a framework solely for coalescer tests.
 - Top-up cancellation remains product workflow scope, not realtime scope.
-- API/Sanctum and M6.8 closure work were not started.
+- API/Sanctum deferred. M6.8 closure review completed 2026-07-30 (read-only).
 
 ### Shipped
 

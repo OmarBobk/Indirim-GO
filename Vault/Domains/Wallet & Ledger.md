@@ -42,7 +42,7 @@ Authoritative financial model for karman.store.
 
 ## Features
 
-- [[Customer Financial Centre]] — through **M6.7** financial realtime hardening shipped
+- [[Customer Financial Centre]] — through **M6.8** closure review (M6.0–M6.7 shipped)
 - [[Customer Activity]] — projection only
 
 ## Customer surfaces

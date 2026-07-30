@@ -67,7 +67,7 @@ Never deduct customer refunds by salesperson commission.
 
 ## Features
 
-- [[Customer Financial Centre]] — M6.4 refunds + **M6.6 earnings** shipped
+- [[Customer Financial Centre]] — M6.4 refunds + M6.6 earnings + M6.7 realtime shipped; **M6.8 closed** (clawback still deferred)
 - [[Customer Activity]] — rejected refund → refund detail destination when `public_ref` present
 
 ## Related
