@@ -13,11 +13,18 @@ use InvalidArgumentException;
  * Single source of customer-facing price including loyalty discount.
  * Uses PriceCalculator for base retail/wholesale; salesperson role gets wholesale, others get retail.
  * Applies tier discount on top.
+ *
+ * Optional instance-local loyalty memoization is for short-lived catalog pricing instances only.
+ * The container singleton keeps memoization off so Octane workers never retain cross-request state.
  */
 class CustomerPriceService
 {
+    /** @var array<string, LoyaltyTierConfig|null> */
+    private array $tierConfigMemo = [];
+
     public function __construct(
-        private readonly PriceCalculator $priceCalculator
+        private readonly PriceCalculator $priceCalculator,
+        private readonly bool $memoizeTierConfig = false,
     ) {}
 
     /**
@@ -149,8 +156,19 @@ class CustomerPriceService
             return null;
         }
         $tierName = $user->loyalty_tier?->value ?? 'bronze';
+        $memoKey = $user->id.'|'.$role.'|'.$tierName;
 
-        return LoyaltyTierConfig::query()->forRole($role)->where('name', $tierName)->first();
+        if ($this->memoizeTierConfig && array_key_exists($memoKey, $this->tierConfigMemo)) {
+            return $this->tierConfigMemo[$memoKey];
+        }
+
+        $config = LoyaltyTierConfig::query()->forRole($role)->where('name', $tierName)->first();
+
+        if ($this->memoizeTierConfig) {
+            $this->tierConfigMemo[$memoKey] = $config;
+        }
+
+        return $config;
     }
 
     private function round(float $value): float

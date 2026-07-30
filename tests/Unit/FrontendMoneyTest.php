@@ -57,6 +57,19 @@ test('TRY preference converts USD input using admin rate and formats tr-TR TRY',
         ->toBe(referenceCurrencyFormat(400, 'TRY', 2, 2));
 });
 
+test('displayForUsdAmount returns actual display currency and formatted value', function (): void {
+    $usdUser = User::factory()->create(['preferred_currency' => 'USD']);
+    $tryUser = User::factory()->create(['preferred_currency' => 'TRY']);
+
+    expect(FrontendMoney::for($usdUser)->displayForUsdAmount(12.5, 2))->toBe([
+        'currency' => 'USD',
+        'formatted' => referenceCurrencyFormat(12.5, 'USD', 2, 2),
+    ])->and(FrontendMoney::for($tryUser)->displayForUsdAmount(10, 2))->toBe([
+        'currency' => 'TRY',
+        'formatted' => referenceCurrencyFormat(400, 'TRY', 2, 2),
+    ]);
+});
+
 test('zero fraction digits match reference for tier-style thresholds', function (): void {
     $user = User::factory()->create(['preferred_currency' => 'TRY']);
     $money = FrontendMoney::for($user);

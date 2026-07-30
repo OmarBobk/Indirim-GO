@@ -1,7 +1,8 @@
 ---
-status: in-review
+status: accepted
 created: 2026-07-29
 feature: mobile-m1-3-local-integration-closeout
+pull_request: https://github.com/OmarBobk/Indirim-GO/pull/39
 ---
 
 # Mobile M1.3 — Local Integration and Closeout
@@ -10,15 +11,14 @@ Close out local Laravel ↔ Flutter authentication integration and isolate optio
 
 ## Position
 
-- Laravel M1.1 is on `staging` (`924d511` — mobile v1 authentication foundation).
+- Laravel M1.1 auth foundation + M1.3 Reverb isolation are on `staging` (`99b6427`, PR #39 merged).
 - Flutter M1.2 is on mobile `main` (`1b264786623f96936cfbf79470945f3c8a5d39d1`, PR #1 merged).
 - Local emulator integration used: `http://10.0.2.2:8000/api/v1`
 - Laravel, Reverb, and the Android emulator were run locally during verification.
 - No staging/production API URL exists in repository evidence.
 - Production promotion is deferred.
 - Laravel `staging` must **not** be merged to `main` merely to close M1.3.
-- Next product milestone after M1.3 acceptance: **Mobile Commerce Shell**.
-- Before Flutter commerce implementation: Laravel catalog/package/product APIs and OpenAPI contracts must be designed and approved.
+- Next product milestone: **Mobile Commerce Shell** ([[Mobile M2.0 — Commerce Shell Architecture]], [[Mobile M2.1 — Laravel Catalog API]]).
 
 ## Incident (local Android verification)
 
@@ -57,7 +57,7 @@ Customer Activity (`CustomerActivityBroadcaster` / `CustomerActivityInvalidated`
 - [x] Regression tests for login-with-failing-broadcaster, durable activity, safe logging, denials, 2FA challenge, authoritative failures
 - [x] M1.2 vault sync from verified mobile `main`
 - [x] M1.3 feature note + index/context updates
-- [ ] Omar review / merge (agents must not merge)
+- [x] Omar review / merge (PR #39 on `staging`)
 
 ## Gotchas
 

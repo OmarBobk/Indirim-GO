@@ -15,11 +15,14 @@ use App\Services\PriceCalculator;
 use App\Support\ActivityLogBroadcaster;
 use Carbon\CarbonImmutable;
 use Illuminate\Auth\Events\Logout;
+use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Foundation\Vite;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
@@ -45,6 +48,7 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->configureDefaults();
+        $this->configureMobileCatalogRateLimiting();
         $this->registerAuthActivityHooks();
         $this->registerActivityBroadcasting();
         $this->registerBugNotifications();
@@ -52,6 +56,18 @@ class AppServiceProvider extends ServiceProvider
         $this->registerNotificationChannels();
         $this->registerPwaInstallButtonPermission();
         $this->configureVitePreload();
+    }
+
+    protected function configureMobileCatalogRateLimiting(): void
+    {
+        RateLimiter::for('mobile-catalog', function (Request $request): array {
+            $userId = $request->user()?->getAuthIdentifier() ?? 'guest';
+
+            return [
+                Limit::perMinute(60)->by('mobile-catalog-user|'.$userId),
+                Limit::perMinute(120)->by('mobile-catalog-ip|'.$request->ip()),
+            ];
+        });
     }
 
     /**

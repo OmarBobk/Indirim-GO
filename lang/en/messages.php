@@ -1188,6 +1188,7 @@ return [
         'missing_mobile_ability' => 'This token cannot access the mobile API.',
         'too_many_requests' => 'Too many attempts. Please try again later.',
         'logged_out' => 'Logged out successfully.',
+        'package_not_found' => 'Package not found.',
     ],
 
     // Errors

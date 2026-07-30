@@ -124,6 +124,7 @@ final class GetCustomerHome
         return Package::query()
             ->select(['id', 'name', 'image', 'order'])
             ->where('is_active', true)
+            ->whereHas('products', fn ($query) => $query->where('is_active', true))
             ->withCount(['products' => fn ($query) => $query->where('is_active', true)])
             ->orderBy('order')
             ->orderBy('name')
