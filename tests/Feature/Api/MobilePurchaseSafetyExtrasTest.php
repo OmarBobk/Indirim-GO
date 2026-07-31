@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Fulfillments\CreateFulfillmentsForOrder;
 use App\Enums\FulfillmentStatus;
+use App\Enums\MobileCheckoutAttemptStatus;
 use App\Enums\OrderItemStatus;
 use App\Enums\OrderStatus;
 use App\Enums\WalletTransactionType;
@@ -17,7 +18,6 @@ use App\Models\PackageRequirement;
 use App\Models\Product;
 use App\Models\WalletTransaction;
 use App\Models\WebsiteSetting;
-use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\RateLimiter;
@@ -115,7 +115,11 @@ test('oversized requirement labels and option sets fail closed without leaking r
         ->and(json_encode($response->json()))->not->toContain('regex');
 });
 
-test('automation dispatch failure is isolated and queued fulfillment remains command-recoverable', function (): void {
+/**
+ * @return array{order: Order, fulfillment: Fulfillment}
+ */
+function m31BrowserPaidFulfillment(): array
+{
     WebsiteSetting::query()->update(['automation_enabled' => true]);
     config([
         'fulfillment_automation.enabled' => true,
@@ -155,6 +159,31 @@ test('automation dispatch failure is isolated and queued fulfillment remains com
         'status' => OrderItemStatus::Pending,
     ]);
 
+    (new CreateFulfillmentsForOrder)->handle($order->fresh(['items']));
+
+    $fulfillment = Fulfillment::query()->where('order_id', $order->id)->firstOrFail();
+
+    return compact('order', 'fulfillment');
+}
+
+test('queued browser fulfillment remains recoverable by dispatch command after lost immediate enqueue', function (): void {
+    Queue::fake();
+
+    ['fulfillment' => $fulfillment] = m31BrowserPaidFulfillment();
+    expect($fulfillment->status)->toBe(FulfillmentStatus::Queued)
+        ->and($fulfillment->provider)->toStartWith('browser:');
+
+    // Immediate enqueue succeeded under Queue::fake; clear and prove command recovery.
+    Queue::assertPushed(DispatchFulfillmentAutomationJob::class);
+    Queue::fake();
+
+    $this->artisan('fulfillment:dispatch-automation')->assertSuccessful();
+    Queue::assertPushed(DispatchFulfillmentAutomationJob::class, function (DispatchFulfillmentAutomationJob $job) use ($fulfillment): bool {
+        return $job->fulfillmentId === (int) $fulfillment->id;
+    });
+});
+
+test('immediate automation dispatch exception is swallowed with recoverable structured log', function (): void {
     Log::spy();
 
     $dispatcher = Mockery::mock(\Illuminate\Contracts\Bus\Dispatcher::class);
@@ -162,10 +191,9 @@ test('automation dispatch failure is isolated and queued fulfillment remains com
     $dispatcher->shouldReceive('dispatchSync')->andThrow(new RuntimeException('queue broker unavailable'));
     $this->app->instance(\Illuminate\Contracts\Bus\Dispatcher::class, $dispatcher);
 
-    expect(fn () => (new CreateFulfillmentsForOrder)->handle($order->fresh(['items'])))
-        ->not->toThrow(RuntimeException::class);
+    expect(fn () => m31BrowserPaidFulfillment())->not->toThrow(RuntimeException::class);
 
-    $fulfillment = Fulfillment::query()->where('order_id', $order->id)->firstOrFail();
+    $fulfillment = Fulfillment::query()->latest('id')->firstOrFail();
     expect($fulfillment->status)->toBe(FulfillmentStatus::Queued);
 
     Log::shouldHaveReceived('warning')->withArgs(function (...$args): bool {
@@ -174,19 +202,9 @@ test('automation dispatch failure is isolated and queued fulfillment remains com
 
         return str_contains($message, 'automation dispatch failed')
             && ($context['error_id'] ?? null) === 'fulfillment_automation_dispatch_failed'
-            && ($context['recoverable_via'] ?? null) === 'fulfillment:dispatch-automation';
+            && ($context['recoverable_via'] ?? null) === 'fulfillment:dispatch-automation'
+            && ! array_key_exists('exception_message', $context);
     })->atLeast()->once();
-
-    // Restore real bus/queue and prove the durable Queued row is command-dispatchable.
-    $this->app->forgetInstance(\Illuminate\Contracts\Bus\Dispatcher::class);
-    Bus::clearResolvedInstances();
-    Queue::fake();
-
-    $this->artisan('fulfillment:dispatch-automation')->assertSuccessful();
-
-    Queue::assertPushed(DispatchFulfillmentAutomationJob::class, function (DispatchFulfillmentAutomationJob $job) use ($fulfillment): bool {
-        return $job->fulfillmentId === (int) $fulfillment->id;
-    });
 });
 
 test('sqlite-compatible claim race resolves without 500 for same key', function (): void {
@@ -225,7 +243,7 @@ test('sqlite-compatible claim race resolves without 500 for same key', function 
                 'requirements' => [],
             ],
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE)),
-        'status' => \App\Enums\MobileCheckoutAttemptStatus::Processing,
+        'status' => MobileCheckoutAttemptStatus::Processing,
         'processing_started_at' => now(),
     ]);
 

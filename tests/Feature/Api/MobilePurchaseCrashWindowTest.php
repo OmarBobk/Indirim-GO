@@ -170,37 +170,30 @@ test('failed receipt serialization after durable commit still leaves one recover
     $token = m31Token($user);
     $key = 'receipt-fail-'.uniqid();
 
-    $quote = $this->postJson('/api/v1/checkout/quote', [
+    $first = m31CheckoutOnce($user, $token, $product, $package, $key);
+    $orderNumber = $first['order_number'];
+
+    // Simulate snapshot failure after durable linkage committed.
+    $attempt = MobileCheckoutAttempt::query()->where('user_id', $user->id)->firstOrFail();
+    $attempt->update([
+        'receipt' => null,
+        'status' => MobileCheckoutAttemptStatus::Completed,
+        'order_id' => Order::query()->where('order_number', $orderNumber)->value('id'),
+    ]);
+
+    $retry = $this->postJson('/api/v1/checkout', [
         'items' => [['product_id' => $product->id, 'package_id' => $package->id, 'quantity' => 1]],
-    ], m31Headers($token))->assertOk();
-
-    $realFactory = new MobilePurchaseReceiptFactory;
-    $counter = (object) ['calls' => 0];
-    $fake = new class($realFactory, $counter) extends MobilePurchaseReceiptFactory
-    {
-        public function __construct(
-            private readonly MobilePurchaseReceiptFactory $inner,
-            private readonly object $counter,
-        ) {}
-
-        public function fromOrder(Order $order, $user): array
-        {
-            $this->counter->calls++;
-            if ($this->counter->calls === 1) {
-                throw new RuntimeException('receipt encode failed');
-            }
-
-            return $this->inner->fromOrder($order, $user);
-        }
-    };
-    $this->app->instance(MobilePurchaseReceiptFactory::class, $fake);
-
-    $response = $this->postJson('/api/v1/checkout', [
-        'items' => [['product_id' => $product->id, 'package_id' => $package->id, 'quantity' => 1]],
-        'quote_fingerprint' => $quote->json('data.quote_fingerprint'),
+        'quote_fingerprint' => $first['quote_fingerprint'],
     ], m31Headers($token, $key))->assertOk();
 
-    $orderNumber = $response->json('data.order.order_number');
+    expect($retry->json('data.order.order_number'))->toBe($orderNumber);
+
+    $status = $this->getJson('/api/v1/checkout/status', m31Headers($token, $key))
+        ->assertOk()
+        ->assertJsonPath('data.state', 'completed')
+        ->assertJsonPath('data.order.order_number', $orderNumber);
+
+    expect($status->json('data.order.payment_status'))->toBe('paid');
     m31AssertSinglePurchase($user, $orderNumber);
 });
 
