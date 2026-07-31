@@ -495,7 +495,13 @@ paths:
         mismatch returns 409 `price_changed` with `details.current_quote`.
         Same customer + same key + same purchase intent replays the receipt.
         Same key + different intent returns 409 `idempotency_conflict`.
-        Retention for completed attempts is 72 hours.
+        Distinct keys are distinct purchase attempts even for the same product.
+        Paid order, wallet debit, required fulfillments, and durable attempt
+        linkage (`order_id` / completed) commit atomically; receipt JSON may be
+        reconstructed from the linked owned order. Stale processing attempts are
+        reconciled safely and never clear completed linkage. Terminal attempts
+        are retained for 72 hours, then pruned; retries after retention are not
+        guaranteed to replay.
       operationId: mobileCheckout
       security:
         - bearerAuth: []
@@ -553,6 +559,8 @@ paths:
       description: |
         Requires `Idempotency-Key` header (never in the URL). Scoped to the
         authenticated customer. Use when the checkout HTTP response was lost.
+        Reconciles linked paid orders and missing receipt snapshots so a polling
+        client is not permanently stuck when only status is retried.
       operationId: mobileCheckoutStatus
       security:
         - bearerAuth: []
@@ -660,8 +668,11 @@ components:
       required: true
       description: |
         Client-generated unique key for a purchase attempt. Laravel stores only a
-        SHA-256 hash scoped to the authenticated customer. Retention is 72 hours.
-        Never place the raw key in URLs or logs.
+        SHA-256 hash scoped to the authenticated customer. Missing/blank keys
+        return `idempotency_key_required`; oversized keys return
+        `idempotency_key_invalid` without echoing the raw key. Terminal attempts
+        are retained for 72 hours then pruned; retries after retention are not
+        guaranteed to replay. Never place the raw key in URLs or logs.
       schema:
         type: string
         minLength: 1
@@ -1136,12 +1147,17 @@ components:
       type: object
       additionalProperties: false
       required: [key, label, input_type, required, max_length, options]
-      description: Sanitized client form metadata. Never includes raw validation rule strings.
+      description: |
+        Sanitized client form metadata. Never includes raw validation rule
+        strings. Oversized or malformed labels/options fail closed and are
+        omitted or downgraded rather than leaking rule text.
       properties:
         key:
           type: string
+          maxLength: 64
         label:
           type: string
+          maxLength: 120
         input_type:
           type: string
           enum: [text, number, select]
@@ -1153,8 +1169,10 @@ components:
           maximum: 255
         options:
           type: [array, 'null']
+          maxItems: 32
           items:
             type: string
+            maxLength: 64
     PackageDetail:
       type: object
       additionalProperties: false

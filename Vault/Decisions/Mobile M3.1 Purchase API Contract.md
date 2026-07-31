@@ -27,3 +27,12 @@ Ship OpenAPI **1.2.0** single-line purchase contract under `/api/v1` with:
 - Server-persisted cart
 - Opaque authorizing quote tokens that skip checkout validation
 - Relying only on web `cart_hash` reuse for mobile timeouts
+- Broadening timeout windows instead of atomic attempt↔order linkage
+
+## Safety corrections (M3.1R)
+
+- Atomic purchase + attempt linkage; reconstructible receipts
+- Safe stale recovery + status reconciliation
+- Distinct-key intentional repurchase (mobile attempt hash in reuse context)
+- Shared Idempotency-Key validation (128 max) on checkout and status
+- Terminal attempt pruning at configured 72h retention

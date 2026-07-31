@@ -114,11 +114,26 @@ class CreateFulfillmentsForOrder
                             ]);
                         }
 
+                        // Automation dispatch is recoverable via fulfillment:dispatch-automation
+                        // while the durable row remains Queued. Never silently lose this path
+                        // inside a broad catch that also covers notifications.
                         try {
                             $fulfillment = Fulfillment::query()->find($fulfillmentId);
                             if ($fulfillment !== null && app(FulfillmentAutomationService::class)->isEligible($fulfillment)) {
                                 DispatchFulfillmentAutomationJob::dispatch($fulfillmentId);
                             }
+                        } catch (\Throwable $exception) {
+                            Log::warning('Fulfillment automation dispatch failed; queued recovery will retry', [
+                                'error_id' => 'fulfillment_automation_dispatch_failed',
+                                'fulfillment_id' => $fulfillmentId,
+                                'order_id' => $orderId,
+                                'exception_class' => $exception::class,
+                                'recoverable_via' => 'fulfillment:dispatch-automation',
+                            ]);
+                        }
+
+                        try {
+                            $fulfillment = Fulfillment::query()->find($fulfillmentId);
                             $order = Order::query()->find($orderId);
                             if ($fulfillment !== null && $order !== null) {
                                 $orderUser = User::query()->find($order->user_id);
@@ -150,8 +165,8 @@ class CreateFulfillmentsForOrder
                                 );
                             }
                         } catch (\Throwable $exception) {
-                            Log::warning('Fulfillment after-commit side effect failed', [
-                                'error_id' => 'fulfillment_after_commit_failed',
+                            Log::warning('Fulfillment after-commit notification side effect failed', [
+                                'error_id' => 'fulfillment_after_commit_notification_failed',
                                 'fulfillment_id' => $fulfillmentId,
                                 'exception_class' => $exception::class,
                             ]);

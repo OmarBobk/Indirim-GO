@@ -24,10 +24,14 @@ return [
         'quote_ttl_seconds' => 300,
         /**
          * Completed/failed mobile checkout attempts are retained for recovery.
-         * Rows older than this window are eligible for prune.
+         * Rows older than this window are pruned by mobile-checkout:prune-attempts.
+         * Retries after retention are no longer guaranteed to replay.
          */
         'idempotency_retention_hours' => 72,
-        /** Stale processing rows may be taken over after this many seconds. */
+        /**
+         * Stale processing rows with no committed order/debit may be reclaimed
+         * after this many seconds under the bounded orphan policy.
+         */
         'processing_stale_seconds' => 60,
         'idempotency_header' => 'Idempotency-Key',
         'idempotency_key_max_length' => 128,

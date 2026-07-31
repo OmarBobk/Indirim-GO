@@ -113,11 +113,11 @@ final class MobileCheckoutQuoteBuilder
             throw $exception;
         }
 
-        $lineTotal = number_format((float) $quote->finalTotal, 2, '.', '');
-        $unitPrice = number_format((float) $quote->unitPrice, 2, '.', '');
-        $fee = number_format((float) config('billing.checkout_fee_fixed', 0), 2, '.', '');
+        $lineTotal = $this->decimalFromPricingAmount($quote->finalTotal);
+        $unitPrice = $this->decimalFromPricingAmount($quote->unitPrice);
+        $fee = LedgerMoney::normalize((string) config('billing.checkout_fee_fixed', '0'));
         $subtotal = $lineTotal;
-        $total = bcadd($subtotal, $fee, 2);
+        $total = LedgerMoney::add($subtotal, $fee);
 
         $moneyFactory = MobileMoneyFactory::forUser($user);
         $wallet = Wallet::forUser($user);
@@ -154,17 +154,17 @@ final class MobileCheckoutQuoteBuilder
                 'amount_mode' => $amountMode->value,
                 'quantity' => $quantity,
                 'requested_amount' => $requestedAmount,
-                'unit_price' => $moneyFactory->fromUsdAmount((float) $unitPrice),
-                'line_total' => $moneyFactory->fromUsdAmount((float) $lineTotal),
+                'unit_price' => $moneyFactory->fromUsdDecimal($unitPrice),
+                'line_total' => $moneyFactory->fromUsdDecimal($lineTotal),
                 'requirements_schema' => $this->requirementSchemaBuilder->forRequirements(
                     $product->package->requirements
                 ),
             ],
-            'subtotal' => $moneyFactory->fromUsdAmount((float) $subtotal),
-            'fee' => $moneyFactory->fromUsdAmount((float) $fee),
-            'total' => $moneyFactory->fromUsdAmount((float) $total),
+            'subtotal' => $moneyFactory->fromUsdDecimal($subtotal),
+            'fee' => $moneyFactory->fromUsdDecimal($fee),
+            'total' => $moneyFactory->fromUsdDecimal($total),
             'wallet' => [
-                'available_to_spend' => $moneyFactory->fromUsdAmount((float) $available),
+                'available_to_spend' => $moneyFactory->fromUsdDecimal($available),
                 'can_afford' => $canAfford,
             ],
             'meta' => [
@@ -348,6 +348,19 @@ final class MobileCheckoutQuoteBuilder
                 'items.0.requirements' => [__('messages.mobile_api.invalid_requirements')],
             ]);
         }
+    }
+
+    /**
+     * Convert pricing-engine numeric totals onto the ledger decimal-string path
+     * without reintroducing binary float money envelopes.
+     */
+    private function decimalFromPricingAmount(float|int|string $amount): string
+    {
+        if (is_string($amount)) {
+            return LedgerMoney::normalize($amount);
+        }
+
+        return LedgerMoney::normalize(sprintf('%.2F', $amount));
     }
 
     private function signingKey(): string

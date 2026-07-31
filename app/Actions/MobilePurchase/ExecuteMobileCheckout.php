@@ -5,15 +5,18 @@ declare(strict_types=1);
 namespace App\Actions\MobilePurchase;
 
 use App\Actions\Orders\CheckoutFromPayload;
-use App\Enums\MobileCheckoutAttemptStatus;
 use App\Enums\OrderStatus;
 use App\Enums\WalletSpendFailureReason;
 use App\Exceptions\MobileApiException;
 use App\Exceptions\WalletSpendDeniedException;
+use App\Models\MobileCheckoutAttempt;
+use App\Models\Order;
 use App\Models\User;
 use App\Support\Api\V1\MobileCheckoutIdempotency;
 use App\Support\Api\V1\MobileCheckoutQuoteBuilder;
 use App\Support\Api\V1\MobilePurchaseReceiptFactory;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
 final class ExecuteMobileCheckout
@@ -72,6 +75,7 @@ final class ExecuteMobileCheckout
 
         $keyHash = $this->idempotency->hashKey($rawIdempotencyKey);
         $requestHash = $this->idempotency->hashRequest($canonicalRequest);
+        $receiptBuilder = fn (Order $order, User $owner): array => $this->receiptFactory->fromOrder($order, $owner);
 
         // Early replay/conflict without claiming.
         $existing = $this->idempotency->findForUser($user, $keyHash);
@@ -84,23 +88,24 @@ final class ExecuteMobileCheckout
                 );
             }
 
-            if ($existing->status === MobileCheckoutAttemptStatus::Completed && is_array($existing->receipt)) {
+            $reconciled = $this->idempotency->reconcile($existing, $user, $receiptBuilder);
+            if ($reconciled['state'] === 'completed' && is_array($reconciled['receipt'])) {
                 return [
                     'data' => [
                         'replayed' => true,
-                        'order' => $existing->receipt,
+                        'order' => $reconciled['receipt'],
                     ],
                     'status' => 200,
                 ];
             }
         }
 
-        $claim = $this->idempotency->claim($user, $keyHash, $requestHash);
-        if ($claim['replay']) {
+        $claim = $this->idempotency->claim($user, $keyHash, $requestHash, $receiptBuilder);
+        if ($claim['replay'] && is_array($claim['receipt'])) {
             return [
                 'data' => [
                     'replayed' => true,
-                    'order' => $claim['attempt']->receipt,
+                    'order' => $claim['receipt'],
                 ],
                 'status' => 200,
             ];
@@ -109,39 +114,81 @@ final class ExecuteMobileCheckout
         $attempt = $claim['attempt'];
 
         try {
-            $checkout = $this->checkoutFromPayload->handle(
+            /**
+             * Authoritative commit boundary:
+             * paid order + wallet debit + fulfillments + attempt.order_id/completed
+             * commit together, or none commit.
+             *
+             * @var array{replayed: bool, order_id: int, receipt: array<string, mixed>|null} $committed
+             */
+            $committed = DB::transaction(function () use (
                 $user,
-                [[
-                    'product_id' => $normalizedItem['product_id'],
-                    'package_id' => $normalizedItem['package_id'],
-                    'quantity' => $normalizedItem['quantity'],
-                    'requested_amount' => $normalizedItem['requested_amount'],
-                    'requirements' => $normalizedItem['requirements'],
-                ]],
-                [
-                    'source' => 'mobile_api',
-                    'ip' => request()->ip(),
-                    'user_agent' => request()->userAgent(),
-                ],
-            );
-
-            $order = $checkout->order->fresh(['items']);
-
-            if ($order === null || $order->status !== OrderStatus::Paid) {
-                $this->idempotency->release($attempt);
-                throw new MobileApiException(
-                    'messages.mobile_api.checkout_failed',
-                    'checkout_failed',
-                    500,
+                $normalizedItem,
+                $keyHash,
+                $attempt,
+                $receiptBuilder,
+            ): array {
+                $checkout = $this->checkoutFromPayload->handle(
+                    $user,
+                    [[
+                        'product_id' => $normalizedItem['product_id'],
+                        'package_id' => $normalizedItem['package_id'],
+                        'quantity' => $normalizedItem['quantity'],
+                        'requested_amount' => $normalizedItem['requested_amount'],
+                        'requirements' => $normalizedItem['requirements'],
+                    ]],
+                    [
+                        'source' => 'mobile_api',
+                        'mobile_attempt_key_hash' => $keyHash,
+                        'ip' => request()->ip(),
+                        'user_agent' => request()->userAgent(),
+                    ],
+                    false,
                 );
-            }
 
-            $receipt = $this->receiptFactory->fromOrder($order, $user);
-            $this->idempotency->markCompleted($attempt, (int) $order->id, $receipt);
+                $order = $checkout->order->fresh(['items']);
+
+                if ($order === null || ! $this->isAuthoritativePaidState($order)) {
+                    throw new MobileApiException(
+                        'messages.mobile_api.checkout_failed',
+                        'checkout_failed',
+                        500,
+                    );
+                }
+
+                $receipt = null;
+                try {
+                    $receipt = $receiptBuilder($order, $user);
+                } catch (\Throwable $exception) {
+                    // Snapshot is optional; linkage + paid order remain authoritative.
+                    Log::warning('Mobile checkout receipt snapshot failed before commit', [
+                        'error_id' => 'mobile_checkout_receipt_snapshot_failed',
+                        'attempt_id' => $attempt->id,
+                        'order_id' => $order->id,
+                        'user_id' => $user->id,
+                        'exception_class' => $exception::class,
+                    ]);
+                }
+
+                $this->idempotency->markCompleted($attempt, (int) $order->id, $receipt);
+
+                return [
+                    'replayed' => (bool) $checkout->reusedExistingOrder,
+                    'order_id' => (int) $order->id,
+                    'receipt' => $receipt,
+                ];
+            });
+
+            $receipt = $committed['receipt'];
+            if (! is_array($receipt)) {
+                $order = Order::query()->with('items')->findOrFail($committed['order_id']);
+                $receipt = $receiptBuilder($order, $user);
+                $this->idempotency->markCompleted($attempt->refresh(), (int) $order->id, $receipt);
+            }
 
             return [
                 'data' => [
-                    'replayed' => (bool) $checkout->reusedExistingOrder,
+                    'replayed' => $committed['replayed'],
                     'order' => $receipt,
                 ],
                 'status' => 200,
@@ -150,13 +197,13 @@ final class ExecuteMobileCheckout
             if ($exception->status() === 202) {
                 throw $exception;
             }
-            $this->idempotency->release($attempt);
-            throw $exception;
+
+            return $this->recoverAfterException($attempt, $user, $receiptBuilder, $exception);
         } catch (ValidationException $exception) {
-            $this->idempotency->release($attempt);
+            $this->idempotency->releaseIfSafe($attempt, $user, $receiptBuilder);
             $this->mapValidationException($exception, $freshQuote);
         } catch (WalletSpendDeniedException $exception) {
-            $this->idempotency->release($attempt);
+            $this->idempotency->releaseIfSafe($attempt, $user, $receiptBuilder);
             throw new MobileApiException(
                 'messages.mobile_api.insufficient_wallet_balance',
                 'insufficient_wallet_balance',
@@ -168,9 +215,46 @@ final class ExecuteMobileCheckout
                 ],
             );
         } catch (\Throwable $exception) {
-            $this->idempotency->release($attempt);
-            throw $exception;
+            return $this->recoverAfterException($attempt, $user, $receiptBuilder, $exception);
         }
+    }
+
+    /**
+     * @param  callable(Order, User): array<string, mixed>  $receiptBuilder
+     * @return array{data: array{replayed: bool, order: array<string, mixed>}, status: int}
+     */
+    private function recoverAfterException(
+        MobileCheckoutAttempt $attempt,
+        User $user,
+        callable $receiptBuilder,
+        \Throwable $exception,
+    ): array {
+        $this->idempotency->releaseIfSafe($attempt, $user, $receiptBuilder);
+
+        $freshAttempt = MobileCheckoutAttempt::query()->find($attempt->id);
+        if ($freshAttempt !== null) {
+            $reconciled = $this->idempotency->reconcile($freshAttempt, $user, $receiptBuilder);
+            if ($reconciled['state'] === 'completed' && is_array($reconciled['receipt'])) {
+                return [
+                    'data' => [
+                        'replayed' => true,
+                        'order' => $reconciled['receipt'],
+                    ],
+                    'status' => 200,
+                ];
+            }
+        }
+
+        throw $exception;
+    }
+
+    private function isAuthoritativePaidState(Order $order): bool
+    {
+        return in_array($order->status, [
+            OrderStatus::Paid,
+            OrderStatus::Processing,
+            OrderStatus::Fulfilled,
+        ], true);
     }
 
     /**

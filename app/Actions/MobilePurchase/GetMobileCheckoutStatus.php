@@ -4,15 +4,17 @@ declare(strict_types=1);
 
 namespace App\Actions\MobilePurchase;
 
-use App\Enums\MobileCheckoutAttemptStatus;
 use App\Exceptions\MobileApiException;
+use App\Models\Order;
 use App\Models\User;
 use App\Support\Api\V1\MobileCheckoutIdempotency;
+use App\Support\Api\V1\MobilePurchaseReceiptFactory;
 
 final class GetMobileCheckoutStatus
 {
     public function __construct(
         private readonly MobileCheckoutIdempotency $idempotency,
+        private readonly MobilePurchaseReceiptFactory $receiptFactory,
     ) {}
 
     /**
@@ -31,18 +33,21 @@ final class GetMobileCheckoutStatus
             );
         }
 
-        if ($attempt->status === MobileCheckoutAttemptStatus::Completed && is_array($attempt->receipt)) {
+        $receiptBuilder = fn (Order $order, User $owner): array => $this->receiptFactory->fromOrder($order, $owner);
+        $reconciled = $this->idempotency->reconcile($attempt, $user, $receiptBuilder);
+
+        if ($reconciled['state'] === 'completed' && is_array($reconciled['receipt'])) {
             return [
                 'data' => [
                     'state' => 'completed',
                     'replayed' => true,
-                    'order' => $attempt->receipt,
+                    'order' => $reconciled['receipt'],
                 ],
                 'status' => 200,
             ];
         }
 
-        if ($attempt->status === MobileCheckoutAttemptStatus::Processing) {
+        if ($reconciled['state'] === 'processing') {
             return [
                 'data' => [
                     'state' => 'processing',
@@ -55,7 +60,7 @@ final class GetMobileCheckoutStatus
         return [
             'data' => [
                 'state' => 'failed',
-                'code' => $attempt->failure_code,
+                'code' => $reconciled['attempt']->failure_code,
             ],
             'status' => 200,
         ];

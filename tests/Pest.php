@@ -15,6 +15,8 @@ pest()->extend(Tests\TestCase::class)
     ->use(Illuminate\Foundation\Testing\RefreshDatabase::class)
     ->in('Feature');
 
+require_once __DIR__.'/Support/mobile_purchase_helpers.php';
+
 /*
 |--------------------------------------------------------------------------
 | Expectations

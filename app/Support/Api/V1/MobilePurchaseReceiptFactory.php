@@ -8,6 +8,7 @@ use App\Enums\OrderStatus;
 use App\Enums\ProductAmountMode;
 use App\Models\Order;
 use App\Models\User;
+use App\Support\LedgerMoney;
 
 final class MobilePurchaseReceiptFactory
 {
@@ -50,7 +51,7 @@ final class MobilePurchaseReceiptFactory
                 'amount_mode' => $mode,
                 'quantity' => (int) $item->quantity,
                 'requested_amount' => $item->requested_amount !== null ? (int) $item->requested_amount : null,
-                'line_total' => $money->fromUsdAmount((float) $item->line_total),
+                'line_total' => $money->fromUsdDecimal(LedgerMoney::normalize((string) $item->line_total)),
             ];
         })->values()->all();
 
@@ -59,7 +60,7 @@ final class MobilePurchaseReceiptFactory
             'status' => $order->status->value,
             'payment_status' => $isPaid ? 'paid' : $order->status->value,
             'currency' => (string) $order->currency,
-            'total' => $money->fromUsdAmount((float) $order->total),
+            'total' => $money->fromUsdDecimal(LedgerMoney::normalize((string) $order->total)),
             'paid_at' => $order->paid_at?->toIso8601String(),
             'items' => $items,
         ];
