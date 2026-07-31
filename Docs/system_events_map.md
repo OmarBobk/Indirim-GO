@@ -19,6 +19,8 @@
 | `wallet.purchase.debited`  | Order       | User     | Wallet decrement (customer; may go negative under Active credit facility) | PayOrderWithWallet |
 | `wallet.refund.credited`   | WalletTransaction | Admin | Wallet increment (customer)       | ApproveRefundRequest |
 | `wallet.topup.posted`      | TopupRequest| Admin    | Wallet increment (customer; also reduces outstanding debt by arithmetic) | ApproveTopupRequest |
+| `wallet.adjustment.posted` | WalletTransaction | Admin | Wallet increment/decrement (customer; AdjustWallet via WalletLedger) | AdjustWallet |
+| `wallet.commission.credited` | Commission / WalletTransaction | Admin | Salesperson wallet credit (`commission_credit`) | CreatePayoutBatch |
 | `platform.profit.recorded` | Settlement  | null     | Platform wallet increment         | ProfitSettleCommand |
 | `wallet.credit_facility.updated` | Wallet | Admin | **No balance change** — facility grant/limit/terms/status audit (`previous_*` / `new_*`) | UpdateCreditFacility |
 
@@ -40,8 +42,10 @@
 | `fulfillment.created`  | Fulfillment      | User  | —                  | CreateFulfillmentsForOrder (after commit) |
 | `admin.rejected.refund`| WalletTransaction| Admin | —                  | RejectRefundRequest (after commit) |
 | `admin.rejected.topup` | TopupRequest     | Admin | —                  | RejectTopupRequest (after commit) |
-| `tier.upgraded`        | User             | null  | new_tier           | EvaluateLoyaltyForUserAction (after commit) |
+| `tier.upgraded`        | User             | null  | new_tier           | EvaluateLoyaltyForUserAction (after commit; activity event `loyalty.tier_changed`) |
 | `profit.settlement.executed` | Settlement | null | —                  | ProfitSettleCommand (after commit) |
+
+**Also logged via Spatie activity (not always mirrored as system_events):** fulfillment automation lifecycle (`fulfillment.automation.*`), `payout_request.created` / `payout_request.processed`, `refund.dismissed`, `payment.failed`. See `logging_map.md`.
 
 ---
 

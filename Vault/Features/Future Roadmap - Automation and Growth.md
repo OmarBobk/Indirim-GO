@@ -15,7 +15,7 @@ Related: [[Fulfillments & Automation]], [[Orders & Checkout]], [[Refunds & Settl
 
 | Track | Focus | Status |
 |---|---|---|
-| **B** | Financial risk + admin ops | **Active** (next: M7.0 clawback policy) |
+| **B** | Financial risk + admin ops | **Active** (M7.0 approved; M7.1 unblocked) |
 | **C** | Fulfilment / supplier automation | Backlog |
 | **D** | Growth / conversion | Backlog |
 
@@ -27,11 +27,11 @@ Suggested order inside each track below. Adjust from real ops bottlenecks and co
 
 **Active:** Track B — Financial Risk and Admin Operations
 
-**Next milestone:** [[M7 — Financial Risk and Admin Operations]] — M7.0 Commission Clawback Policy Architecture (**in progress / architecture**)
+**Next milestone:** [[M7 — Financial Risk and Admin Operations]] — M7.1 Commission Reversal Kernel and Clawback Obligations (**unblocked; not started**)
 
-- Define business + accounting policy **before** any reversal code
-- See Phase-1 debt in [[Customer Financial Centre]] / [[Refunds & Settlements]]
-- Do not start M7.1 until Omar answers required decisions in the M7 note
+- M7.0 policy was approved on 2026-07-30.
+- Debt mode B permits controlled negative salesperson wallet balance only for authorised reversals.
+- M7.2 retains waiver, dispute, and admin exception interfaces.
 
 ---
 

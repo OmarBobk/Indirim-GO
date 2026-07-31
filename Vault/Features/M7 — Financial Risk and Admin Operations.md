@@ -1,8 +1,8 @@
 ---
-status: architecture
+status: approved
 created: 2026-07-30
 feature: m7-financial-risk-admin-ops
-milestone: M7.0
+milestone: M7.1-unblocked
 owner: Omar
 type: policy-architecture
 ---
@@ -11,7 +11,7 @@ type: policy-architecture
 
 Track B. Canonical home for commission clawback policy and later admin financial-risk tooling.
 
-**M7.0 = architecture + policy only.** No code, migrations, or clawback implementation.
+**M7.0 approved 2026-07-30. M7.1 is unblocked but not started.**
 
 Related: [[Refunds & Settlements]], [[Wallet & Ledger]], [[Customer Financial Centre]], [[Orders & Checkout]], [[Future Roadmap - Automation and Growth]]
 
@@ -23,16 +23,29 @@ Related: [[Refunds & Settlements]], [[Wallet & Ledger]], [[Customer Financial Ce
 
 Late refunds after commission credit are a **documented Phase-1 financial gap**: customer refund still posts; credited commission stays; salesperson may already have spent the funds.
 
-**Recommended policy (pending Omar approval):**
+**Approved policy:**
 
 1. Keep pending → `failed` on refund approve (unchanged).
 2. After credit, refund of a fulfillment triggers **full clawback of that fulfillment’s commission** (grain-aligned; not order-wide proportional).
 3. Customer refund **must never fail** because of salesperson clawback.
 4. Use a durable **clawback obligation** workflow + immutable `commission_reversal` WalletTransaction via `WalletLedger`.
 5. Apply **prospectively** only; report historical exposure without auto-debit.
-6. **Omar must decide** negative salesperson balance vs partial-post + external debt, purchase restrictions, waiver/dispute, and any finality window.
+6. Permit a controlled negative salesperson wallet balance only for authorised commission reversals.
 
-**Do not start M7.1 until Omar answers § Required Omar decisions.**
+### Approved M7.1 policy contract
+
+- Credited commissions are reversible at full commission grain per refunded fulfillment.
+- No finality window in v1.
+- Every posted refund for the related fulfillment triggers automatic processing; anomalies become `needs_review`.
+- Customer refund completion is independent: clawback failure cannot block, reduce, or roll back it.
+- `commission_reversal` is the only authorised transaction allowed to push a salesperson wallet below zero.
+- Customer credit-facility architecture is not reused for salesperson clawback debt.
+- Purchases are allowed only when `availableToSpend()` is positive and may never push the salesperson wallet further below zero.
+- Future wallet credits, including full payout-batch commission credits, repay negative balance through ordinary wallet arithmetic.
+- Payout requests are blocked while clawback debt exists.
+- Policy is prospective-only; historical refunds are not automatically clawed back.
+- Original `commission_credit` remains immutable.
+- Waiver, dispute, and admin exception interfaces are deferred to M7.2.
 
 ### Proven current facts (code)
 
@@ -104,19 +117,11 @@ Statuses (candidate): `pending` | `posted` | `disputed` | `waived` | `failed` | 
 
 Commission status stays `pending|credited|failed`. Clawback state is **separate** (do not overload `failed` for credited rows). Derive reversed totals from posted reversals where possible.
 
-### Salesperson debt (requires Omar)
+### Salesperson debt (approved)
 
 Current code: salesperson wallet floor is `0.00` unless a **customer credit facility** is Active (must not auto-reuse for clawback).
 
-Options for insufficient balance:
-
-| Option | Meaning |
-|---|---|
-| B | Allow controlled negative balance for clawback only |
-| C | Post max available + record remaining external debt |
-| E | Admin review gate above threshold |
-
-**Architecture lean:** prefer **B or C** with payout requests blocked while debt > 0; future credits reduce debt by ordinary balance arithmetic; **no** customer credit-facility reuse. Purchases while in debt = Omar decision (availableToSpend already blocks if balance ≤ 0 under option B).
+Debt mode B is approved: post the full reversal and permit controlled negative balance. This is a clawback-specific ledger exception, not a credit facility. Future credits repay debt normally; payout requests remain blocked while negative.
 
 ### Atomicity recommendation
 
@@ -141,27 +146,12 @@ Admin report for historical late-refund exposure; **no automatic historical debi
 - Realtime: `TransactionPosted` + `CommissionStateChanged` (no new reason required for v1)
 - Admin (M7.2): queue pending/failed/disputed/waiver; explicit audited Actions only
 
-### Required Omar decisions (before M7.1)
-
-1. Reversible after credit? **Rec: Yes (B\*)**
-2. Full per-fulfillment vs proportional? **Rec: Full per-fulfillment**
-3. Finality window? **Rec: None in v1** (optional C later)
-4. Negative salesperson balance? **Must choose B vs C**
-5. Purchase while debt? **Rec: only if availableToSpend > 0**
-6. Future credits repay debt? **Rec: Yes (ordinary arithmetic)**
-7. Admin waive/reduce? **Rec: Yes in M7.2, audited**
-8. Salesperson dispute? **Rec: Optional M7.2**
-9. Prospective only? **Rec: Yes**
-10. Auto vs review threshold? **Rec: Auto for standard; review if anomaly/missing credit TX**
-11. Which refund reasons? **Rec: All posted customer refunds of the fulfillment**
-12. Block payout requests in debt? **Rec: Yes**
-
 ### Explicit non-goals (M7.0)
 
 - No production code / migrations
 - No clawback posting
 - No admin correction tools
-- No M7.1 start
+- M7.1 implementation was not part of M7.0
 - No Git/deploy
 
 ### Findings (material)

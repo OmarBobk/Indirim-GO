@@ -10,7 +10,7 @@ Customer refund requests and salesperson commission payouts / earnings.
 - Reject: `RejectRefundRequest` → `rejected` (no money moved); customer may re-request if fulfillment still Failed
 - Dismiss: `DismissPendingRefundForFulfillment` / `DismissStaleRefundRequest` → `rejected` + `meta.dismiss_reason` (Closed to customer; no self-dismiss)
 - Commission payout: `CreatePayoutBatch` → `WalletLedger` credit; key `commission_credit:{commission_id}`
-- On refund post: pending commissions for fulfillment → `failed`; **credited commissions are NOT reversed** until approved M7 clawback policy is implemented — see [[M7 — Financial Risk and Admin Operations]] (M7.0 architecture)
+- On refund post today: pending commissions for fulfillment → `failed`; credited commissions are not yet reversed. M7.0 policy is approved and M7.1 is unblocked — see [[M7 — Financial Risk and Admin Operations]].
 - Customer may request refund or retry (limited) on failed fulfillments
 - Approve/reject/request/dismiss emit Activity + Financial broadcasters after commit (M6.4)
 - M6.7 signalling: refund approve emits one owner event containing `TransactionPosted` + `RefundStateChanged`; pending→failed and credited commissions use `CommissionStateChanged`; payout-request create/process uses `PayoutRequestStateChanged`
@@ -33,7 +33,7 @@ Do **not** create a second commission feature note; keep earnings contracts here
 |---|---|---|---|---|
 | A. Refund before credit | Pending → `failed` | Expected | Show failed | Keep |
 | B. Refund while pending | Same as A on approve | Expected | Show failed | Keep |
-| C. Late refund after credit | Credited **not** reversed; customer refund still posts | **Phase-1 debt** | Show credited + order context | **M7.0:** recommended per-fulfillment clawback + obligation workflow — Omar approval before M7.1 |
+| C. Late refund after credit | Credited **not** reversed; customer refund still posts | **Phase-1 debt** | Show credited + order context | **M7.0 approved:** per-fulfillment reversal + obligation workflow; M7.1 unblocked |
 | D. Partial / multi-unit | Pending for refunded FF fails; other FFs remain | Medium | Per-commission status | Grain = per-fulfillment; free-form partial USD of one FF not supported today |
 | E. Multi-fulfillment one fails | Per-fulfillment commission rows | Medium | Per row | Keep; clawback only refunded FF’s commission |
 | F. Already in PayoutBatch | Credited path; no reverse | High if late refund | Credited + WTX link | M7 clawback after policy approval |
