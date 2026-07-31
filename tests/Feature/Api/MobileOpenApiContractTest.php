@@ -215,6 +215,7 @@ test('OpenAPI requests responses security and user fields match the implementati
         'insufficient_wallet_balance',
         'idempotency_conflict',
         'checkout_attempt_not_found',
+        'checkout_retry_required',
         'order_not_found',
     )->and($paths['/auth/login']['post']['parameters'][0]['$ref'])
         ->toBe('#/components/parameters/AcceptLanguage')

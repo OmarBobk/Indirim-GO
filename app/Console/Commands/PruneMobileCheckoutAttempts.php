@@ -66,7 +66,20 @@ class PruneMobileCheckoutAttempts extends Command
             return self::SUCCESS;
         }
 
-        $deleted = $query->delete();
+        $deleted = 0;
+
+        while (true) {
+            $ids = (clone $query)
+                ->orderBy('id')
+                ->limit(500)
+                ->pluck('id');
+
+            if ($ids->isEmpty()) {
+                break;
+            }
+
+            $deleted += MobileCheckoutAttempt::query()->whereIn('id', $ids->all())->delete();
+        }
 
         $this->info(sprintf(
             'Pruned %d terminal mobile checkout attempt(s) older than %d hour(s).',

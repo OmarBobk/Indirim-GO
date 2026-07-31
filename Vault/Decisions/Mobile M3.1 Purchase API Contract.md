@@ -33,6 +33,10 @@ Ship OpenAPI **1.2.0** single-line purchase contract under `/api/v1` with:
 
 - Atomic purchase + attempt linkage; reconstructible receipts
 - Safe stale recovery + status reconciliation
+- Status-only stale orphans → `409 checkout_retry_required` (same key resubmit)
+- Unified attempt-before-order lock order; indexed `orders.mobile_attempt_key_hash`
+- Quote fingerprint ledger decimals (no `sprintf('%.2F', float)` bridge)
 - Distinct-key intentional repurchase (mobile attempt hash in reuse context)
 - Shared Idempotency-Key validation (128 max) on checkout and status
-- Terminal attempt pruning at configured 72h retention
+- Terminal attempt pruning at configured 72h retention (batched deletes)
+- Opt-in MySQL concurrency harness under `tests/Concurrency/`

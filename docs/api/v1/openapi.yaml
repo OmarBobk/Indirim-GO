@@ -561,6 +561,13 @@ paths:
         authenticated customer. Use when the checkout HTTP response was lost.
         Reconciles linked paid orders and missing receipt snapshots so a polling
         client is not permanently stuck when only status is retried.
+
+        When a stale unlinked attempt has no recoverable paid order/debit, the
+        API transitions the attempt to a safe retryable state and returns
+        `409 checkout_retry_required`. Flutter must resubmit the identical
+        checkout payload with the same Idempotency-Key — never invent a new key
+        for an unknown result. A different payload with the same key remains
+        `409 idempotency_conflict`.
       operationId: mobileCheckoutStatus
       security:
         - bearerAuth: []
@@ -591,6 +598,14 @@ paths:
           $ref: '#/components/responses/ForbiddenToken'
         '404':
           description: No attempt for this customer and key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: |
+            Stale unlinked attempt with no paid order. Resubmit the identical
+            checkout using the same Idempotency-Key (`checkout_retry_required`).
           content:
             application/json:
               schema:
@@ -968,6 +983,7 @@ components:
             - idempotency_key_invalid
             - checkout_attempt_not_found
             - checkout_in_progress
+            - checkout_retry_required
             - checkout_failed
             - order_not_found
         details:

@@ -17,9 +17,16 @@ use Illuminate\Support\Facades\Log;
 /**
  * Customer-scoped durable checkout idempotency.
  * Stores only a hash of the raw Idempotency-Key — never the raw key.
+ *
+ * Lock order (purchase, status, reconcile, release):
+ * 1) mobile_checkout_attempts row
+ * 2) specifically targeted order row(s)
+ * 3) wallet / remaining purchase work (via CheckoutFromPayload)
  */
 final class MobileCheckoutIdempotency
 {
+    public const FAILURE_CHECKOUT_RETRY_REQUIRED = 'checkout_retry_required';
+
     public function hashKey(string $rawKey): string
     {
         return hash('sha256', $rawKey);
@@ -139,11 +146,40 @@ final class MobileCheckoutIdempotency
                 ];
             }
 
+            if ($locked->failure_code === self::FAILURE_CHECKOUT_RETRY_REQUIRED
+                && $locked->order_id === null
+                && $locked->status === MobileCheckoutAttemptStatus::Failed) {
+                return [
+                    'attempt' => $locked,
+                    'receipt' => null,
+                    'state' => 'retry_required',
+                ];
+            }
+
             if ($locked->status === MobileCheckoutAttemptStatus::Failed) {
                 return [
                     'attempt' => $locked,
                     'receipt' => null,
                     'state' => 'failed',
+                ];
+            }
+
+            if ($locked->status === MobileCheckoutAttemptStatus::Processing
+                && $locked->order_id === null
+                && $this->isStaleProcessing($locked)) {
+                // Status-only stale orphan: no linked/meta paid order → explicit retryable state.
+                $locked->fill([
+                    'status' => MobileCheckoutAttemptStatus::Failed,
+                    'failure_code' => self::FAILURE_CHECKOUT_RETRY_REQUIRED,
+                    'processing_started_at' => null,
+                    'completed_at' => null,
+                    'receipt' => null,
+                ])->save();
+
+                return [
+                    'attempt' => $locked->refresh(),
+                    'receipt' => null,
+                    'state' => 'retry_required',
                 ];
             }
 
@@ -157,7 +193,8 @@ final class MobileCheckoutIdempotency
 
     /**
      * Atomically mark an attempt completed and linked to a paid order.
-     * Must run inside the same DB transaction as the purchase commit.
+     * Must run inside the same DB transaction as the purchase commit, on an
+     * already-locked attempt row.
      *
      * @param  array<string, mixed>|null  $receipt
      */
@@ -170,6 +207,17 @@ final class MobileCheckoutIdempotency
             'failure_code' => null,
             'completed_at' => now(),
         ])->save();
+    }
+
+    /**
+     * Lock the attempt row inside the caller's authoritative transaction.
+     */
+    public function lockForUpdate(MobileCheckoutAttempt $attempt): ?MobileCheckoutAttempt
+    {
+        return MobileCheckoutAttempt::query()
+            ->whereKey($attempt->id)
+            ->lockForUpdate()
+            ->first();
     }
 
     /**
@@ -250,11 +298,7 @@ final class MobileCheckoutIdempotency
         }
 
         if ($existing->status === MobileCheckoutAttemptStatus::Processing) {
-            $staleSeconds = max(15, (int) config('mobile_api.checkout.processing_stale_seconds', 60));
-            $started = $existing->processing_started_at;
-            $isStale = $started === null || $started->lt(now()->subSeconds($staleSeconds));
-
-            if (! $isStale) {
+            if (! $this->isStaleProcessing($existing)) {
                 throw new MobileApiException(
                     'messages.mobile_api.checkout_in_progress',
                     'checkout_in_progress',
@@ -263,8 +307,8 @@ final class MobileCheckoutIdempotency
             }
         }
 
-        // Failed or stale processing orphan with same payload and no committed order → restart.
-        // Never clear order_id / completed linkage (none present here).
+        // Failed (including checkout_retry_required) or stale processing orphan with
+        // same payload and no committed order → restart. Never clear order_id linkage.
         $existing->fill([
             'status' => MobileCheckoutAttemptStatus::Processing,
             'failure_code' => null,
@@ -296,19 +340,21 @@ final class MobileCheckoutIdempotency
         }
 
         if ($order === null) {
+            // Targeted lookup by indexed attempt identity — do not lock every paid order.
             $order = Order::query()
                 ->where('user_id', $user->id)
+                ->where(function ($query) use ($attempt): void {
+                    $query->where('mobile_attempt_key_hash', $attempt->key_hash)
+                        ->orWhere('meta->mobile_attempt_key_hash', $attempt->key_hash);
+                })
                 ->whereIn('status', [
                     OrderStatus::Paid->value,
                     OrderStatus::Processing->value,
                     OrderStatus::Fulfilled->value,
                 ])
-                ->latest('id')
+                ->orderByDesc('id')
                 ->lockForUpdate()
-                ->get()
-                ->first(function (Order $candidate) use ($attempt): bool {
-                    return data_get($candidate->meta, 'mobile_attempt_key_hash') === $attempt->key_hash;
-                });
+                ->first();
         }
 
         if ($order === null || ! $this->isAuthoritativePaidState($order)) {
@@ -325,6 +371,14 @@ final class MobileCheckoutIdempotency
         return $receipt;
     }
 
+    private function isStaleProcessing(MobileCheckoutAttempt $attempt): bool
+    {
+        $staleSeconds = max(15, (int) config('mobile_api.checkout.processing_stale_seconds', 60));
+        $started = $attempt->processing_started_at;
+
+        return $started === null || $started->lt(now()->subSeconds($staleSeconds));
+    }
+
     private function isAuthoritativePaidState(Order $order): bool
     {
         return in_array($order->status, [
@@ -336,20 +390,25 @@ final class MobileCheckoutIdempotency
 
     private function isUniqueUserKeyConstraint(QueryException $exception): bool
     {
+        $sqlState = (string) ($exception->errorInfo[0] ?? $exception->getCode());
+        $driverCode = (int) ($exception->errorInfo[1] ?? 0);
         $message = $exception->getMessage();
 
-        // MySQL/MariaDB: SQLSTATE 23000 + duplicate key on the composite unique index.
-        // SQLite: UNIQUE constraint failed: mobile_checkout_attempts.user_id, ...
-        $mentionsTable = str_contains($message, 'mobile_checkout_attempts');
-        $mentionsIndex = str_contains($message, 'user_id_key_hash')
-            || (str_contains($message, 'user_id') && str_contains($message, 'key_hash'));
-
-        if (! $mentionsTable && ! $mentionsIndex) {
-            return false;
+        // MySQL/MariaDB duplicate key on mobile_checkout_attempts unique (user_id, key_hash).
+        if ($sqlState === '23000' && ($driverCode === 1062 || str_contains($message, 'Duplicate entry'))) {
+            return str_contains($message, 'mobile_checkout_attempts')
+                || str_contains($message, 'user_id_key_hash')
+                || (str_contains($message, 'user_id') && str_contains($message, 'key_hash'));
         }
 
-        return (string) $exception->getCode() === '23000'
-            || str_contains($message, 'UNIQUE constraint failed')
-            || str_contains($message, 'Duplicate entry');
+        // SQLite unique constraint on the composite index columns.
+        if (str_contains($message, 'UNIQUE constraint failed')
+            && str_contains($message, 'mobile_checkout_attempts')
+            && str_contains($message, 'user_id')
+            && str_contains($message, 'key_hash')) {
+            return true;
+        }
+
+        return false;
     }
 }

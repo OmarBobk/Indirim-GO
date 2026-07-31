@@ -240,3 +240,123 @@ test('lost http response is recovered by status polling of durable completed att
 
     m31AssertSinglePurchase($user, $first['order_number']);
 });
+
+test('status stale unlinked orphan returns checkout_retry_required and same key may retry', function (): void {
+    config(['mobile_api.checkout.processing_stale_seconds' => 15]);
+
+    $user = m31Customer();
+    m31Fund($user, 100);
+    ['package' => $package, 'product' => $product] = m31FixedProduct();
+    $token = m31Token($user);
+    $key = 'stale-orphan-status-'.uniqid();
+    $keyHash = app(MobileCheckoutIdempotency::class)->hashKey($key);
+
+    $quote = $this->postJson('/api/v1/checkout/quote', [
+        'items' => [['product_id' => $product->id, 'package_id' => $package->id, 'quantity' => 1]],
+    ], m31Headers($token))->assertOk();
+
+    MobileCheckoutAttempt::query()->create([
+        'user_id' => $user->id,
+        'key_hash' => $keyHash,
+        'request_hash' => app(MobileCheckoutIdempotency::class)->hashRequest([
+            'item' => [
+                'product_id' => (int) $product->id,
+                'package_id' => (int) $package->id,
+                'quantity' => 1,
+                'requested_amount' => null,
+                'requirements' => [],
+            ],
+        ]),
+        'status' => MobileCheckoutAttemptStatus::Processing,
+        'processing_started_at' => now()->subMinutes(10),
+        'order_id' => null,
+        'receipt' => null,
+    ]);
+
+    expect(Order::query()->where('user_id', $user->id)->count())->toBe(0)
+        ->and(WalletTransaction::query()->where('type', WalletTransactionType::Purchase)->count())->toBe(0);
+
+    $this->getJson('/api/v1/checkout/status', m31Headers($token, $key))
+        ->assertStatus(409)
+        ->assertJsonPath('code', 'checkout_retry_required')
+        ->assertJsonPath('details.action', 'resubmit_identical_checkout')
+        ->assertJsonPath('details.idempotency_key_policy', 'reuse_same_key');
+
+    $attempt = MobileCheckoutAttempt::query()->where('user_id', $user->id)->where('key_hash', $keyHash)->firstOrFail();
+    expect($attempt->status)->toBe(MobileCheckoutAttemptStatus::Failed)
+        ->and($attempt->failure_code)->toBe('checkout_retry_required')
+        ->and($attempt->order_id)->toBeNull();
+
+    $retry = $this->postJson('/api/v1/checkout', [
+        'items' => [['product_id' => $product->id, 'package_id' => $package->id, 'quantity' => 1]],
+        'quote_fingerprint' => $quote->json('data.quote_fingerprint'),
+    ], m31Headers($token, $key))->assertOk();
+
+    expect($retry->json('data.replayed'))->toBeFalse();
+    m31AssertSinglePurchase($user, (string) $retry->json('data.order.order_number'));
+});
+
+test('status stale orphan with different payload still conflicts after retry_required', function (): void {
+    config(['mobile_api.checkout.processing_stale_seconds' => 15]);
+
+    $user = m31Customer();
+    m31Fund($user, 200);
+    ['package' => $package, 'product' => $product] = m31FixedProduct();
+    $other = m31FixedProduct(['name' => 'Other Fixed '.uniqid()]);
+    $token = m31Token($user);
+    $key = 'stale-orphan-conflict-'.uniqid();
+    $keyHash = app(MobileCheckoutIdempotency::class)->hashKey($key);
+
+    MobileCheckoutAttempt::query()->create([
+        'user_id' => $user->id,
+        'key_hash' => $keyHash,
+        'request_hash' => app(MobileCheckoutIdempotency::class)->hashRequest([
+            'item' => [
+                'product_id' => (int) $product->id,
+                'package_id' => (int) $package->id,
+                'quantity' => 1,
+                'requested_amount' => null,
+                'requirements' => [],
+            ],
+        ]),
+        'status' => MobileCheckoutAttemptStatus::Processing,
+        'processing_started_at' => now()->subMinutes(10),
+        'order_id' => null,
+    ]);
+
+    $this->getJson('/api/v1/checkout/status', m31Headers($token, $key))
+        ->assertStatus(409)
+        ->assertJsonPath('code', 'checkout_retry_required');
+
+    $otherQuote = $this->postJson('/api/v1/checkout/quote', [
+        'items' => [['product_id' => $other['product']->id, 'package_id' => $other['package']->id, 'quantity' => 1]],
+    ], m31Headers($token))->assertOk();
+
+    $this->postJson('/api/v1/checkout', [
+        'items' => [['product_id' => $other['product']->id, 'package_id' => $other['package']->id, 'quantity' => 1]],
+        'quote_fingerprint' => $otherQuote->json('data.quote_fingerprint'),
+    ], m31Headers($token, $key))
+        ->assertStatus(409)
+        ->assertJsonPath('code', 'idempotency_conflict');
+
+    expect(Order::query()->where('user_id', $user->id)->count())->toBe(0);
+});
+
+test('fresh quote fingerprint uses ledger decimals without float sprintf bridge', function (): void {
+    $user = m31Customer();
+    m31Fund($user, 100);
+    ['package' => $package, 'product' => $product] = m31FixedProduct(['entry_price' => 10]);
+    $token = m31Token($user);
+
+    $quote = $this->postJson('/api/v1/checkout/quote', [
+        'items' => [['product_id' => $product->id, 'package_id' => $package->id, 'quantity' => 1]],
+    ], m31Headers($token))->assertOk();
+
+    expect($quote->json('data.total.amount'))->toBe('10.00')
+        ->and($quote->json('data.item.line_total.amount'))->toBe('10.00')
+        ->and($quote->json('data.item.unit_price.amount'))->toBe('10.00');
+
+    $dto = app(\App\Domain\Pricing\PricingEngine::class)->quote($product->fresh(), 1, null, $user);
+    expect($dto->finalTotalDecimal)->toBe('10.00')
+        ->and($dto->unitPriceDecimal)->toStartWith('10.0');
+});

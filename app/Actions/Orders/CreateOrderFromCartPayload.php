@@ -169,6 +169,8 @@ class CreateOrderFromCartPayload
             $fee = (float) config('billing.checkout_fee_fixed', 0);
             $total = round($subtotal + $fee, 2);
 
+            $mobileAttemptKeyHash = $meta['mobile_attempt_key_hash'] ?? null;
+
             $order = Order::create([
                 'user_id' => $user->id,
                 'order_number' => Order::temporaryOrderNumber(),
@@ -178,6 +180,9 @@ class CreateOrderFromCartPayload
                 'total' => $total,
                 'status' => OrderStatus::PendingPayment,
                 'meta' => $meta,
+                'mobile_attempt_key_hash' => is_string($mobileAttemptKeyHash) && $mobileAttemptKeyHash !== ''
+                    ? $mobileAttemptKeyHash
+                    : null,
             ]);
 
             $order->order_number = Order::generateOrderNumber($order->id, $order->created_at?->year);

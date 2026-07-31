@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\MobilePurchase;
 
 use App\Actions\Orders\CheckoutFromPayload;
+use App\Enums\MobileCheckoutAttemptStatus;
 use App\Enums\OrderStatus;
 use App\Enums\WalletSpendFailureReason;
 use App\Exceptions\MobileApiException;
@@ -119,6 +120,8 @@ final class ExecuteMobileCheckout
              * paid order + wallet debit + fulfillments + attempt.order_id/completed
              * commit together, or none commit.
              *
+             * Lock order: attempt → wallet/order/fulfillments → complete attempt.
+             *
              * @var array{replayed: bool, order_id: int, receipt: array<string, mixed>|null} $committed
              */
             $committed = DB::transaction(function () use (
@@ -128,6 +131,26 @@ final class ExecuteMobileCheckout
                 $attempt,
                 $receiptBuilder,
             ): array {
+                $lockedAttempt = $this->idempotency->lockForUpdate($attempt);
+
+                if ($lockedAttempt === null) {
+                    throw new MobileApiException(
+                        'messages.mobile_api.checkout_failed',
+                        'checkout_failed',
+                        500,
+                    );
+                }
+
+                if ($lockedAttempt->status === MobileCheckoutAttemptStatus::Completed
+                    && is_array($lockedAttempt->receipt)
+                    && $lockedAttempt->order_id !== null) {
+                    return [
+                        'replayed' => true,
+                        'order_id' => (int) $lockedAttempt->order_id,
+                        'receipt' => $lockedAttempt->receipt,
+                    ];
+                }
+
                 $checkout = $this->checkoutFromPayload->handle(
                     $user,
                     [[
@@ -163,14 +186,14 @@ final class ExecuteMobileCheckout
                     // Snapshot is optional; linkage + paid order remain authoritative.
                     Log::warning('Mobile checkout receipt snapshot failed before commit', [
                         'error_id' => 'mobile_checkout_receipt_snapshot_failed',
-                        'attempt_id' => $attempt->id,
+                        'attempt_id' => $lockedAttempt->id,
                         'order_id' => $order->id,
                         'user_id' => $user->id,
                         'exception_class' => $exception::class,
                     ]);
                 }
 
-                $this->idempotency->markCompleted($attempt, (int) $order->id, $receipt);
+                $this->idempotency->markCompleted($lockedAttempt, (int) $order->id, $receipt);
 
                 return [
                     'replayed' => (bool) $checkout->reusedExistingOrder,

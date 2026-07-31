@@ -20,6 +20,11 @@ final readonly class PriceQuoteDTO
         public ?int $requestedAmount,
         public ?string $tierName,
         public array $meta = [],
+        public string $basePriceDecimal = '0.00',
+        public string $discountAmountDecimal = '0.00',
+        public string $finalPriceDecimal = '0.00',
+        public string $finalTotalDecimal = '0.00',
+        public string $unitPriceDecimal = '0.00',
     ) {}
 
     /**

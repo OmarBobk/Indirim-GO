@@ -1483,6 +1483,7 @@ return [
         'idempotency_key_invalid' => 'رأس Idempotency-Key غير صالح.',
         'checkout_attempt_not_found' => 'لم يتم العثور على محاولة دفع لهذا المفتاح.',
         'checkout_in_progress' => 'عملية دفع بهذا المفتاح قيد التنفيذ بالفعل.',
+        'checkout_retry_required' => 'لم تكتمل عملية الدفع. أعد إرسال الطلب نفسه باستخدام نفس مفتاح Idempotency-Key.',
         'checkout_failed' => 'تعذّر إكمال عملية الدفع.',
         'order_not_found' => 'الطلب غير موجود.',
     ],

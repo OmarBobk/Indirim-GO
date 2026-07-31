@@ -113,8 +113,9 @@ final class MobileCheckoutQuoteBuilder
             throw $exception;
         }
 
-        $lineTotal = $this->decimalFromPricingAmount($quote->finalTotal);
-        $unitPrice = $this->decimalFromPricingAmount($quote->unitPrice);
+        // Prefer PricingEngine ledger decimals — never sprintf('%.2F', float).
+        $lineTotal = LedgerMoney::normalize($quote->finalTotalDecimal);
+        $unitPrice = LedgerMoney::normalize($quote->unitPriceDecimal);
         $fee = LedgerMoney::normalize((string) config('billing.checkout_fee_fixed', '0'));
         $subtotal = $lineTotal;
         $total = LedgerMoney::add($subtotal, $fee);
@@ -348,19 +349,6 @@ final class MobileCheckoutQuoteBuilder
                 'items.0.requirements' => [__('messages.mobile_api.invalid_requirements')],
             ]);
         }
-    }
-
-    /**
-     * Convert pricing-engine numeric totals onto the ledger decimal-string path
-     * without reintroducing binary float money envelopes.
-     */
-    private function decimalFromPricingAmount(float|int|string $amount): string
-    {
-        if (is_string($amount)) {
-            return LedgerMoney::normalize($amount);
-        }
-
-        return LedgerMoney::normalize(sprintf('%.2F', $amount));
     }
 
     private function signingKey(): string

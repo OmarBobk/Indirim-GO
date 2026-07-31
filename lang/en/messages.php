@@ -1478,6 +1478,7 @@ return [
         'idempotency_key_invalid' => 'The Idempotency-Key header is invalid.',
         'checkout_attempt_not_found' => 'No checkout attempt was found for this key.',
         'checkout_in_progress' => 'A checkout with this key is already in progress.',
+        'checkout_retry_required' => 'This checkout did not complete. Resubmit the identical request using the same Idempotency-Key.',
         'checkout_failed' => 'Checkout could not be completed.',
         'order_not_found' => 'Order not found.',
     ],

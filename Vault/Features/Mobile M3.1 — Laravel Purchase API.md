@@ -77,10 +77,14 @@ Authoritative fulfillment row creation remains inside the payment transaction.
 - Quote fingerprint is compound signed payload (not cart_hash).
 - Idempotency canonical payload is the normalized item only (excludes fingerprint).
 - Concurrent same-key in-flight returns `202 checkout_in_progress`.
+- Stale unlinked status polling returns `409 checkout_retry_required` (reuse same key).
+- Lock order is attempt → order/wallet → complete attempt (purchase and status).
+- Quote/fingerprint uses PricingEngine ledger decimal strings (no float sprintf bridge).
 - First-claim unique races re-read the winner row (no uncaught 500).
 - Exception after commit must re-read durable attempt state before release.
-- SQLite cannot prove true parallel DB races; run
-  `tests/Feature/Api/MobileCheckoutConcurrencyHarnessTest.php` on MySQL locally.
+- SQLite cannot prove true parallel DB races; opt-in MySQL harness:
+  `MOBILE_CONCURRENCY_TESTS=1` + disposable `*_concurrency` DB +
+  `tests/Concurrency/MobileCheckoutConcurrencyHarnessTest.php`.
 
 ## Related
 

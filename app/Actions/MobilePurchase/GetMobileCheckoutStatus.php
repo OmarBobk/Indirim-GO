@@ -47,6 +47,19 @@ final class GetMobileCheckoutStatus
             ];
         }
 
+        if ($reconciled['state'] === 'retry_required') {
+            // Never invent a new Idempotency-Key for an unknown result — resubmit identically.
+            throw new MobileApiException(
+                'messages.mobile_api.checkout_retry_required',
+                MobileCheckoutIdempotency::FAILURE_CHECKOUT_RETRY_REQUIRED,
+                409,
+                [
+                    'action' => 'resubmit_identical_checkout',
+                    'idempotency_key_policy' => 'reuse_same_key',
+                ],
+            );
+        }
+
         if ($reconciled['state'] === 'processing') {
             return [
                 'data' => [
