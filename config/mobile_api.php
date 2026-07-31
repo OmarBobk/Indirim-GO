@@ -16,4 +16,20 @@ return [
         'lock_seconds' => 10,
         'lock_wait_seconds' => 2,
     ],
+
+    'checkout' => [
+        /** Quote optimistic-concurrency fingerprint version. */
+        'quote_version' => 1,
+        /** Seconds until a quote fingerprint is considered expired. */
+        'quote_ttl_seconds' => 300,
+        /**
+         * Completed/failed mobile checkout attempts are retained for recovery.
+         * Rows older than this window are eligible for prune.
+         */
+        'idempotency_retention_hours' => 72,
+        /** Stale processing rows may be taken over after this many seconds. */
+        'processing_stale_seconds' => 60,
+        'idempotency_header' => 'Idempotency-Key',
+        'idempotency_key_max_length' => 128,
+    ],
 ];

@@ -377,7 +377,7 @@ test('package detail returns active products and 404 for inactive packages', fun
 
     $token = m21Token($user);
 
-    $this->withHeaders(m21AuthHeaders($token))
+    $detail = $this->withHeaders(m21AuthHeaders($token))
         ->getJson('/api/v1/packages/'.$fixture['package']->id)
         ->assertOk()
         ->assertJsonPath('data.id', $fixture['package']->id)
@@ -385,7 +385,15 @@ test('package detail returns active products and 404 for inactive packages', fun
         ->assertJsonPath('data.products.0.amount_mode', 'fixed')
         ->assertJsonPath('data.products.0.custom_amount', null)
         ->assertJsonMissingPath('data.products.0.is_available')
-        ->assertJsonCount(1, 'data.products');
+        ->assertJsonCount(1, 'data.products')
+        ->assertJsonPath('data.requirements', []);
+
+    m21AssertNoSensitiveKeys($detail->json(), [
+        'validation_rules',
+        'entry_price',
+        'fulfillment_provider',
+        'package_api',
+    ]);
 
     $this->withHeaders(m21AuthHeaders($token))
         ->getJson('/api/v1/packages/'.$inactive['package']->id)

@@ -10,6 +10,7 @@ use App\Models\Product;
 use App\Models\User;
 use App\Models\WebsiteSetting;
 use App\Support\Api\V1\MobileCatalogPricer;
+use App\Support\Api\V1\MobileRequirementSchemaBuilder;
 use App\Support\Api\V1\SafePublicAssetUrl;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
@@ -33,6 +34,14 @@ final class ShowMobilePackage
      *             unit_price: array{amount: string, currency: string, display: array{currency: string, formatted: string}}|null,
      *             custom_amount: array{min: int, max: int|null, step: int|null, unit_label: string|null}|null,
      *             minimum_price: array{amount: string, currency: string, display: array{currency: string, formatted: string}}|null
+     *         }>,
+     *         requirements: list<array{
+     *             key: string,
+     *             label: string,
+     *             input_type: string,
+     *             required: bool,
+     *             max_length: int|null,
+     *             options: list<string>|null
      *         }>
      *     },
      *     meta: array{prices_visible: bool}
@@ -46,6 +55,9 @@ final class ShowMobilePackage
             ->where('is_active', true)
             ->with([
                 'category:id,name,slug,is_active',
+                'requirements' => fn ($query) => $query
+                    ->select(['id', 'package_id', 'key', 'label', 'type', 'is_required', 'validation_rules', 'order'])
+                    ->orderBy('order'),
                 'products' => fn ($query) => $query
                     ->select([
                         'id',
@@ -108,6 +120,8 @@ final class ShowMobilePackage
                     ]
                     : null,
                 'products' => $products,
+                'requirements' => app(MobileRequirementSchemaBuilder::class)
+                    ->forRequirements($package->requirements),
             ],
             'meta' => [
                 'prices_visible' => $pricesVisible,

@@ -49,6 +49,7 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->configureDefaults();
         $this->configureMobileCatalogRateLimiting();
+        $this->configureMobilePurchaseRateLimiting();
         $this->registerAuthActivityHooks();
         $this->registerActivityBroadcasting();
         $this->registerBugNotifications();
@@ -66,6 +67,27 @@ class AppServiceProvider extends ServiceProvider
             return [
                 Limit::perMinute(60)->by('mobile-catalog-user|'.$userId),
                 Limit::perMinute(120)->by('mobile-catalog-ip|'.$request->ip()),
+            ];
+        });
+    }
+
+    protected function configureMobilePurchaseRateLimiting(): void
+    {
+        RateLimiter::for('mobile-purchase-read', function (Request $request): array {
+            $userId = $request->user()?->getAuthIdentifier() ?? 'guest';
+
+            return [
+                Limit::perMinute(60)->by('mobile-purchase-read-user|'.$userId),
+                Limit::perMinute(120)->by('mobile-purchase-read-ip|'.$request->ip()),
+            ];
+        });
+
+        RateLimiter::for('mobile-purchase-write', function (Request $request): array {
+            $userId = $request->user()?->getAuthIdentifier() ?? 'guest';
+
+            return [
+                Limit::perMinute(20)->by('mobile-purchase-write-user|'.$userId),
+                Limit::perMinute(60)->by('mobile-purchase-write-ip|'.$request->ip()),
             ];
         });
     }

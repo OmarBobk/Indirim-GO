@@ -1,12 +1,17 @@
 openapi: 3.1.0
 info:
   title: İndirimGo Mobile API
-  version: 1.1.0
+  version: 1.2.0
   description: |
     Authoritative contract for the customer-only İndirimGo Mobile API
-    (M1 authentication + M2.1 catalog read models).
+    (M1 authentication + M2.1 catalog read models + M3.1 single-line purchase).
     Laravel is authoritative for authentication, authorization, validation,
-    catalog visibility, and every trusted price calculation.
+    catalog visibility, trusted price calculation, wallet spend checks, and
+    checkout. Flutter must never compute authoritative prices or totals.
+    When `prices_visible=false`, catalog money fields are null and quote/checkout
+    return HTTP 409 `purchasing_unavailable` without ending the session.
+    Wallet summary remains available to its owner. Checkout requires an
+    `Idempotency-Key` header; only a hash of the key is stored (72-hour retention).
 
     Messages are localized from `Accept-Language`. Only `ar` and `en` are
     supported; unsupported or missing values fall back through the established
@@ -32,6 +37,9 @@ tags:
   - name: Authentication
   - name: Account
   - name: Catalog
+  - name: Wallet
+  - name: Checkout
+  - name: Orders
 paths:
   /auth/login:
     post:
@@ -298,11 +306,13 @@ paths:
         Returns one active package that has at least one active product.
         Numeric package ids are the public identifiers; `slug` is informational
         and not unique. Missing, inactive, or active-but-empty packages return
-        `package_not_found`. Package requirements are not included. Products do
-        not expose a synthetic availability flag because the domain has no stock
-        concept. Custom products with configurations checkout would reject still
-        appear with schema-safe `custom_amount` metadata, but `minimum_price` is
-        null and they never contribute to `from_price`.
+        `package_not_found`. Includes a sanitized `requirements` array for the
+        purchase form (no raw Laravel validation strings, regex, supplier or
+        automation fields). Products do not expose a synthetic availability flag
+        because the domain has no stock concept. Custom products with
+        configurations checkout would reject still appear with schema-safe
+        `custom_amount` metadata, but `minimum_price` is null and they never
+        contribute to `from_price`.
       operationId: mobileShowPackage
       security:
         - bearerAuth: []
@@ -374,6 +384,13 @@ paths:
                             display:
                               currency: USD
                               formatted: $5.00
+                      requirements:
+                        - key: id
+                          label: Player ID
+                          input_type: text
+                          required: true
+                          max_length: 64
+                          options: null
                     meta:
                       prices_visible: true
         '401':
@@ -382,6 +399,238 @@ paths:
           $ref: '#/components/responses/ForbiddenToken'
         '404':
           $ref: '#/components/responses/PackageNotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /wallet/summary:
+    get:
+      tags: [Wallet]
+      summary: Customer wallet available-to-spend summary
+      description: |
+        Returns the authenticated customer's `available_to_spend` using
+        WalletSpendPolicy semantics. Remains available when catalog prices are
+        hidden. Never exposes another customer or internal credit-rule fields.
+      operationId: mobileWalletSummary
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AcceptLanguage'
+      responses:
+        '200':
+          description: Wallet summary.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: 'private, no-store'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalletSummarySuccess'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/ForbiddenToken'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /checkout/quote:
+    post:
+      tags: [Checkout]
+      summary: Build a server-authoritative single-line purchase quote
+      description: |
+        Accepts exactly one item (`minItems=1`, `maxItems=1`). Revalidates
+        product/package, quantity or custom amount, and package requirements,
+        then returns Money totals and a tamper-resistant `quote_fingerprint`.
+        Client price fields are prohibited. When `prices_visible=false`, returns
+        409 `purchasing_unavailable` without ending the session.
+      operationId: mobileCheckoutQuote
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AcceptLanguage'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckoutQuoteRequest'
+      responses:
+        '200':
+          description: Informational quote.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: 'private, no-store'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckoutQuoteSuccess'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/ForbiddenToken'
+        '409':
+          description: Purchasing unavailable because prices are hidden.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: Validation or product/business rule failure.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ValidationError'
+                  - $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /checkout:
+    post:
+      tags: [Checkout]
+      summary: Confirm a single-line wallet purchase
+      description: |
+        Requires `Idempotency-Key` and `quote_fingerprint`. Reprices and
+        revalidates before any order creation or wallet debit. Fingerprint
+        mismatch returns 409 `price_changed` with `details.current_quote`.
+        Same customer + same key + same purchase intent replays the receipt.
+        Same key + different intent returns 409 `idempotency_conflict`.
+        Retention for completed attempts is 72 hours.
+      operationId: mobileCheckout
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckoutRequest'
+      responses:
+        '200':
+          description: Durable purchase receipt (new or replayed).
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: 'private, no-store'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckoutSuccess'
+        '202':
+          description: Matching checkout already in progress.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/ForbiddenToken'
+        '409':
+          description: Price changed, purchasing unavailable, or idempotency conflict.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: Validation or insufficient wallet balance.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ValidationError'
+                  - $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /checkout/status:
+    get:
+      tags: [Checkout]
+      summary: Recover checkout result by Idempotency-Key
+      description: |
+        Requires `Idempotency-Key` header (never in the URL). Scoped to the
+        authenticated customer. Use when the checkout HTTP response was lost.
+      operationId: mobileCheckoutStatus
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Completed or terminal failed attempt.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: 'private, no-store'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckoutStatusSuccess'
+        '202':
+          description: Attempt still processing.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckoutStatusProcessing'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/ForbiddenToken'
+        '404':
+          description: No attempt for this customer and key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /orders/{order_number}:
+    get:
+      tags: [Orders]
+      summary: Owned order purchase receipt
+      description: |
+        Returns the minimal receipt for an order owned by the authenticated
+        customer. Missing and cross-customer orders both return 404
+        `order_not_found`. Requirement values and supplier/automation fields
+        are never included.
+      operationId: mobileShowOrder
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - name: order_number
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^ORD-[A-Za-z0-9\-]+$'
+      responses:
+        '200':
+          description: Owned receipt.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: 'private, no-store'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckoutSuccess'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/ForbiddenToken'
+        '404':
+          description: Order not found for this customer.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
         '429':
           $ref: '#/components/responses/TooManyRequests'
 components:
@@ -405,6 +654,18 @@ components:
       schema:
         type: string
         examples: [en, ar, 'ar-SA,ar;q=0.9,en;q=0.8']
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: |
+        Client-generated unique key for a purchase attempt. Laravel stores only a
+        SHA-256 hash scoped to the authenticated customer. Retention is 72 hours.
+        Never place the raw key in URLs or logs.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
   responses:
     Unauthenticated:
       description: Token is missing, invalid, expired, revoked, or the account became invalid.
@@ -686,6 +947,22 @@ components:
             - missing_mobile_ability
             - too_many_requests
             - package_not_found
+            - purchasing_unavailable
+            - product_unavailable
+            - invalid_custom_amount
+            - price_changed
+            - insufficient_wallet_balance
+            - idempotency_conflict
+            - idempotency_key_required
+            - idempotency_key_invalid
+            - checkout_attempt_not_found
+            - checkout_in_progress
+            - checkout_failed
+            - order_not_found
+        details:
+          type: object
+          additionalProperties: true
+          description: Optional structured context (for example current_quote on price_changed).
     MoneyDisplay:
       type: object
       additionalProperties: false
@@ -855,6 +1132,29 @@ components:
         times_ordered:
           type: integer
           minimum: 1
+    PackageRequirementField:
+      type: object
+      additionalProperties: false
+      required: [key, label, input_type, required, max_length, options]
+      description: Sanitized client form metadata. Never includes raw validation rule strings.
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+        input_type:
+          type: string
+          enum: [text, number, select]
+        required:
+          type: boolean
+        max_length:
+          type: [integer, 'null']
+          minimum: 1
+          maximum: 255
+        options:
+          type: [array, 'null']
+          items:
+            type: string
     PackageDetail:
       type: object
       additionalProperties: false
@@ -868,6 +1168,7 @@ components:
         - from_price
         - category
         - products
+        - requirements
       properties:
         id:
           type: integer
@@ -896,6 +1197,10 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ProductOption'
+        requirements:
+          type: array
+          items:
+            $ref: '#/components/schemas/PackageRequirementField'
     CatalogHome:
       type: object
       additionalProperties: false
@@ -981,3 +1286,265 @@ components:
         last_page:
           type: integer
           minimum: 1
+    CheckoutLineItemRequest:
+      type: object
+      additionalProperties: false
+      required: [product_id]
+      properties:
+        product_id:
+          type: integer
+          minimum: 1
+        package_id:
+          type: [integer, 'null']
+          minimum: 1
+        quantity:
+          type: [integer, 'null']
+        requested_amount:
+          type: [integer, 'null']
+        requirements:
+          type: object
+          additionalProperties: true
+          description: Fulfillment input values. Sensitive; never logged or returned in receipts.
+        unit_price:
+          description: Prohibited. Client prices are never trusted.
+        line_total:
+          description: Prohibited.
+        total:
+          description: Prohibited.
+        price:
+          description: Prohibited.
+    CheckoutQuoteRequest:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          maxItems: 1
+          items:
+            $ref: '#/components/schemas/CheckoutLineItemRequest'
+        total:
+          description: Prohibited.
+        subtotal:
+          description: Prohibited.
+    CheckoutRequest:
+      type: object
+      additionalProperties: false
+      required: [items, quote_fingerprint]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          maxItems: 1
+          items:
+            $ref: '#/components/schemas/CheckoutLineItemRequest'
+        quote_fingerprint:
+          type: string
+          minLength: 16
+          maxLength: 2048
+        total:
+          description: Prohibited.
+        subtotal:
+          description: Prohibited.
+    CheckoutQuoteLine:
+      type: object
+      additionalProperties: false
+      required:
+        - product_id
+        - package_id
+        - name
+        - amount_mode
+        - quantity
+        - requested_amount
+        - unit_price
+        - line_total
+        - requirements_schema
+      properties:
+        product_id:
+          type: integer
+        package_id:
+          type: integer
+        name:
+          type: string
+        amount_mode:
+          type: string
+          enum: [fixed, custom]
+        quantity:
+          type: integer
+          minimum: 1
+        requested_amount:
+          type: [integer, 'null']
+        unit_price:
+          $ref: '#/components/schemas/Money'
+        line_total:
+          $ref: '#/components/schemas/Money'
+        requirements_schema:
+          type: array
+          items:
+            $ref: '#/components/schemas/PackageRequirementField'
+    CheckoutQuote:
+      type: object
+      additionalProperties: false
+      required:
+        - quote_fingerprint
+        - expires_at
+        - item
+        - subtotal
+        - fee
+        - total
+        - wallet
+        - meta
+      properties:
+        quote_fingerprint:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+        item:
+          $ref: '#/components/schemas/CheckoutQuoteLine'
+        subtotal:
+          $ref: '#/components/schemas/Money'
+        fee:
+          $ref: '#/components/schemas/Money'
+        total:
+          $ref: '#/components/schemas/Money'
+        wallet:
+          type: object
+          additionalProperties: false
+          required: [available_to_spend, can_afford]
+          properties:
+            available_to_spend:
+              $ref: '#/components/schemas/Money'
+            can_afford:
+              type: boolean
+        meta:
+          $ref: '#/components/schemas/CatalogMeta'
+    CheckoutQuoteSuccess:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/CheckoutQuote'
+    WalletSummarySuccess:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          additionalProperties: false
+          required: [available_to_spend]
+          properties:
+            available_to_spend:
+              $ref: '#/components/schemas/Money'
+        meta:
+          $ref: '#/components/schemas/CatalogMeta'
+    PurchaseReceiptItem:
+      type: object
+      additionalProperties: false
+      required:
+        - product_id
+        - package_id
+        - name
+        - amount_mode
+        - quantity
+        - requested_amount
+        - line_total
+      properties:
+        product_id:
+          type: [integer, 'null']
+        package_id:
+          type: [integer, 'null']
+        name:
+          type: string
+        amount_mode:
+          type: string
+          enum: [fixed, custom]
+        quantity:
+          type: integer
+        requested_amount:
+          type: [integer, 'null']
+        line_total:
+          $ref: '#/components/schemas/Money'
+    PurchaseReceipt:
+      type: object
+      additionalProperties: false
+      required:
+        - order_number
+        - status
+        - payment_status
+        - currency
+        - total
+        - paid_at
+        - items
+      properties:
+        order_number:
+          type: string
+        status:
+          type: string
+        payment_status:
+          type: string
+          enum: [paid, pending_payment, processing, fulfilled, failed, refunded, cancelled]
+        currency:
+          type: string
+          const: USD
+        total:
+          $ref: '#/components/schemas/Money'
+        paid_at:
+          type: [string, 'null']
+          format: date-time
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PurchaseReceiptItem'
+    CheckoutSuccess:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          type: object
+          additionalProperties: false
+          required: [replayed, order]
+          properties:
+            replayed:
+              type: boolean
+            order:
+              $ref: '#/components/schemas/PurchaseReceipt'
+    CheckoutStatusSuccess:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          type: object
+          additionalProperties: false
+          required: [state]
+          properties:
+            state:
+              type: string
+              enum: [completed, failed]
+            replayed:
+              type: boolean
+            order:
+              $ref: '#/components/schemas/PurchaseReceipt'
+            code:
+              type: [string, 'null']
+    CheckoutStatusProcessing:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          type: object
+          additionalProperties: false
+          required: [state, retry_after_seconds]
+          properties:
+            state:
+              type: string
+              const: processing
+            retry_after_seconds:
+              type: integer
+              minimum: 1

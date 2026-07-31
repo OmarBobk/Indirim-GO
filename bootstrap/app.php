@@ -8,6 +8,7 @@ use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Exceptions\ThrottleRequestsException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 use Laravel\Sanctum\Exceptions\MissingAbilityException;
 use Laravel\Sanctum\Http\Middleware\CheckAbilities;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
@@ -94,5 +95,16 @@ return Application::configure(basePath: dirname(__DIR__))
                 'message' => __('messages.mobile_api.package_not_found'),
                 'code' => 'package_not_found',
             ], 404);
+        });
+
+        $exceptions->render(function (ValidationException $exception, Request $request): ?JsonResponse {
+            if (! $request->is('api/v1/*')) {
+                return null;
+            }
+
+            return response()->json([
+                'message' => __('messages.mobile_api.validation_failed'),
+                'errors' => $exception->errors(),
+            ], $exception->status);
         });
     })->create();
