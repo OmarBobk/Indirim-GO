@@ -18,7 +18,11 @@ Close out local Laravel ↔ Flutter authentication integration and isolate optio
 - No staging/production API URL exists in repository evidence.
 - Production promotion is deferred.
 - Laravel `staging` must **not** be merged to `main` merely to close M1.3.
-- Next product milestone: **Mobile Commerce Shell** ([[Mobile M2.0 — Commerce Shell Architecture]], [[Mobile M2.1 — Laravel Catalog API]]).
+- Commerce Shell successors shipped and closed:
+  - [[Mobile M2.1 — Laravel Catalog API]] (`485be1befcf99f9d4a337745ec0b4390529c79e1`, PR #40)
+  - [[Mobile M2.2 — Flutter Commerce Shell]] (`c2119116239a720638c16a0b113be34f36698a78`, PR #4)
+  - [[Mobile M2.3 — Local Commerce Integration]] (Omar-accepted local Android verification)
+- Local emulator API remains: `http://10.0.2.2:8000/api/v1`
 
 ## Incident (local Android verification)
 
@@ -71,4 +75,6 @@ Customer Activity (`CustomerActivityBroadcaster` / `CustomerActivityInvalidated`
 - [[Mobile M1.1 — Laravel API Foundation and Authentication]]
 - [[Mobile M1.2 — Flutter Foundation and Authentication]]
 - [[Mobile M1.2 Flutter Authentication Architecture]]
+- [[Mobile M2.0 — Commerce Shell Architecture]]
+- [[Mobile M2.2 — Flutter Commerce Shell]]
 - [[Customer Activity]] (not the failing login path; unchanged beyond shared broadcast hygiene patterns)

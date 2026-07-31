@@ -33,10 +33,12 @@ Central map for indirimGo knowledge. Use this vault with [[Ask → Plan → Agen
 - [[Mobile M1.2 — Flutter Foundation and Authentication]] — mobile `main` Flutter auth foundation (`1b26478…`, PR #1 merged)
 - [[Mobile M1.2 Flutter Authentication Architecture]] — Riverpod/go_router/Dio/secure-storage decisions
 - [[Mobile M1.3 — Local Integration and Closeout]] — local emulator integration + auth/Reverb isolation (`99b6427`, PR #39 accepted)
-- [[Mobile M2.0 — Commerce Shell Architecture]] — accepted M2 scope and exclusions
+- [[Mobile M2.0 — Commerce Shell Architecture]] — accepted M2 scope and exclusions (**M2 closed** after M2.3)
 - [[Mobile M2.1 Catalog API Contract]] — accepted catalog/pricing/OpenAPI decisions
-- [[Mobile M2.1 — Laravel Catalog API]] — catalog read API implementation (in review)
-- After M2.1 acceptance: Flutter M2.2 Commerce Shell (do not start before merged OpenAPI on `staging`)
+- [[Mobile M2.1 — Laravel Catalog API]] — catalog read API on `staging` (`485be1befcf99f9d4a337745ec0b4390529c79e1`, PR #40)
+- [[Mobile M2.2 — Flutter Commerce Shell]] — Flutter discovery UI on mobile `main` (`c2119116239a720638c16a0b113be34f36698a78`, PR #4)
+- [[Mobile M2.3 — Local Commerce Integration]] — Omar-accepted local Android verification (`http://10.0.2.2:8000/api/v1`)
+- Next architecture candidate (not started): mobile purchasing / cart discovery — only after M2 docs closeout is accepted
 
 ## Workflow
 

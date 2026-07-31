@@ -38,8 +38,13 @@ Mobile Commerce Shell needs a stable `/api/v1` catalog contract before Flutter M
 - Query amplification from per-product pricing is bounded by rule/loyalty warm-up + product memo + Pest budgets (8×1 and 8×5).
 - Catalog content remains untranslated until DB i18n exists.
 - Telescope may still record priced API bodies when enabled (deferred ops hardening).
+- Flutter M2.2 shipped against this contract on mobile `main`
+  (`c2119116239a720638c16a0b113be34f36698a78`); local M2.3 accepted by Omar.
+- Mobile M2 Commerce Shell is closed; purchasing is a later architecture candidate.
 
 ## Related
 
 - [[Mobile M2.0 — Commerce Shell Architecture]]
 - [[Mobile M2.1 — Laravel Catalog API]]
+- [[Mobile M2.2 — Flutter Commerce Shell]]
+- [[Mobile M2.3 — Local Commerce Integration]]
