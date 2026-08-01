@@ -237,5 +237,47 @@ If anything critical is ambiguous, ask ONE question before coding.
 
 
 
+## Commission clawback tables (Track B / M7)
+
+**Branch:** `local/commission-policy` (may be absent on staging until merge).
+
+**Policy:** Clawbacks are **prospective only** (`billing.commission_clawback.effective_at`). Historical exposure is report/review only — **never** posts wallet debits or creates obligations.
+
+### `commission_clawbacks`
+
+| Concept | Notes |
+|---------|-------|
+| `public_ref` | **`CLB-*`** |
+| `status` | `pending` \| `processing` \| `posted` \| `needs_review` \| `failed` \| `waived` |
+| `commission_id` | FK → `commissions` |
+| `refund_wallet_transaction_id` | FK → customer refund WTX |
+| `amount` | Obligation amount |
+| Unique | `(commission_id, refund_wallet_transaction_id)` |
+
+### `commission_clawback_decisions`
+
+| Concept | Notes |
+|---------|-------|
+| `public_ref` | **`CLD-*`** |
+| `type` | `waiver` \| `correction` \| `dispute_opened` \| `dispute_resolved` |
+| Links | Optional related wallet TX for posted waiver/correction |
+
+### `historical_commission_exposure_reviews`
+
+| Concept | Notes |
+|---------|-------|
+| Pair | Unique `(commission_id, refund_wallet_transaction_id)` |
+| `outcome` | `platform_absorbed` \| `not_actionable` \| `insufficient_data` \| `duplicate_or_invalid` \| `deferred_review` |
+| Money | **None** — markers only |
+
+### Related wallet TX types (salesperson)
+
+| Type | Direction | Purpose |
+|------|-----------|---------|
+| `commission_reversal` | Debit | Automatic clawback after refund |
+| `commission_clawback_waiver` | Credit | Forgiveness |
+| `commission_reversal_correction` | Credit | Fix erroneous reversal |
+
+Original reversal is immutable; cumulative waiver + correction ≤ posted reversal.
 
 

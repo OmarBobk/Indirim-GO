@@ -3,9 +3,10 @@
 Copy everything below into a **ChatGPT Project** → **Project instructions**.  
 Upload or pin these files in the project:
 
-- `SYSTEM_CONTEXT_CORE_v1.md`
+- `SYSTEM_CONTEXT_CORE_v1.md` (**required** — §0 branch reality + Track B + Mobile)
 - `Docs/PROJECT_STRUCTURE.md`
-- Current feature note from `Vault/Features/*.md`
+- `Docs/roles.md` (permissions / route gates)
+- Current feature note from `Vault/Features/*.md` (e.g. M7 clawbacks or Mobile M3.1)
 
 ---
 
@@ -127,11 +128,14 @@ Output a review prompt for Cursor Ask or Bugbot-style review: regressions, auth 
 
 ### Domain glossary (use consistently)
 
-- **Topup** — customer wallet deposit request with proof image; admin approves.
+- **Topup** — customer wallet deposit request with proof image; admin approves; public ref `TUP-*`.
 - **Fulfillment** — order line delivery via admin or automation worker.
-- **Refund request** — customer-initiated after failed fulfillment.
-- **Commission payout** — wallet credit to salesperson; idempotent by commission id.
-- **Activity** — customer-facing timeline (orders, wallet, notifications merged).
+- **Refund** — posted customer wallet credit (`WTX-*`); workflow may start from failed fulfillment / refund request UI.
+- **Commission payout** — wallet credit to salesperson (`commission_credit:{id}`); idempotent.
+- **Commission clawback (Track B)** — durable `CLB-*` obligation + `commission_reversal` debit after late refund of a **credited** commission; customer refund independent; prospective-only. Admin: waive / dispute / correct / historical report (non-financial). Branch: `local/commission-policy`.
+- **Activity** — customer-facing timeline projection (not financial truth).
+- **Financial Centre** — `/wallet` family (overview, ledger, topups, refunds, receipts, earnings).
+- **Mobile API** — Sanctum `/api/v1` customer auth, catalog, purchase (M3.1).
 
 ### End of instructions
 
@@ -141,8 +145,9 @@ Output a review prompt for Cursor Ask or Bugbot-style review: regressions, auth 
 
 1. Create ChatGPT Project **"Karman Cursor"**.
 2. Paste the **Project instructions** block above.
-3. Upload `SYSTEM_CONTEXT_CORE_v1.md` + `Docs/PROJECT_STRUCTURE.md`.
+3. Upload `SYSTEM_CONTEXT_CORE_v1.md` + `Docs/PROJECT_STRUCTURE.md` + `Docs/roles.md`.
 4. For each feature: duplicate `Vault/Templates/Feature Brief.md` → `Vault/Features/<Name>.md`, fill it, upload to the project.
+5. Tell ChatGPT which **git branch** is active (`staging` vs `local/commission-policy`) so it does not invent missing clawback routes.
 5. Say: *"Feature brief attached. Generate Ask prompt."*
 6. Run Ask in Cursor → paste results → *"Generate Plan prompt."*
 7. Refine → *"Generate Agent prompt."* → run in Cursor Agent.

@@ -1,3 +1,8 @@
+# Docs backlog / scratchpad
+
+> **For ChatGPT / AI context, prefer:** `SYSTEM_CONTEXT_CORE_v1.md`, `Docs/PROJECT_STRUCTURE.md`, `Docs/roles.md`, and `Vault/Features/*`.  
+> This file is a historical bug/idea checklist — many items are marked DONE; **verify against code** before trusting.
+
 #BUG
 - ###DONE if a non-admin user hit /dashboard he will see forbidden but he should be redirected to 404 error page
 - ###DONE If user click on the logo on the main page it should redirect him to home page

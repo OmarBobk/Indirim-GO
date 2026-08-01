@@ -10,8 +10,10 @@
 | Area | Purpose |
 |------|---------|
 | **Storefront** | Categories, packages, products, cart, buy-now, orders, wallet, loyalty, referrals |
-| **Backend** | Fulfillments, topups, refunds, settlements, commissions, users, catalog admin, **credit facility**, **automation admin**, **Ops Assistant**, **price drift** |
-| **Financial core** | `wallets` + `wallet_transactions` as source of truth (`balance` may be negative under Active credit facility); `system_events` for audit |
+| **Backend** | Fulfillments, topups, refunds, settlements, commissions, **commission clawbacks (Track B branch)**, users, catalog admin, **credit facility**, **automation admin**, **Ops Assistant**, **price drift** |
+| **Financial core** | `wallets` + `wallet_transactions` as source of truth (`balance` may be negative under Active credit facility or SP clawback debt on Track B); `system_events` for audit |
+| **Customer Financial Centre (M6)** | `/wallet` overview, transactions (`WTX-*`), topups (`TUP-*`), refunds, detail/receipts, earnings (`view_referrals`) |
+| **Mobile API** | Sanctum `/api/v1` auth + catalog (M2) + purchase/checkout (M3.1 on staging) — `docs/api/v1/openapi.yaml` |
 | **Fulfillment automation** | Browser-driven supplier fulfillment via Node/Playwright worker + Laravel run orchestration |
 | **Supplier price scans** | Wasim catalog price comparison (`/price-drift`) + reactive flags from fulfillments |
 | **Realtime** | Laravel Reverb + Echo; Firebase FCM for push |
@@ -127,7 +129,12 @@ flowchart LR
 |------|-----------|------------|
 | `/profile` | `pages::frontend.profile` | `profile` |
 | `/profile/edit` | `pages::frontend.profile-edit` | `profile.edit-information` |
-| `/wallet` | `pages::frontend.wallet` | `wallet` |
+| `/wallet` | `pages::frontend.wallet` | Financial Centre overview |
+| `/wallet/transactions` | ledger | posted only; `WTX-*` |
+| `/wallet/transactions/{ref}` | detail + HTML receipt | |
+| `/wallet/topups`, `/wallet/topup`, `/wallet/topups/{ref}` | top-up workspace | `TUP-*` |
+| `/wallet/refunds`, `/wallet/refunds/{ref}` | refund workspace | refund WTX |
+| `/wallet/earnings` | salesperson earnings | `can:view_referrals` |
 | `/loyalty` | `pages::frontend.loyalty` | `loyalty` |
 | `/referral-link` | `pages::frontend.referral-link` | `referral-link` |
 | `/orders` | `pages::frontend.orders` | `orders.index` |
@@ -160,9 +167,13 @@ flowchart LR
 | `/admin/orders`, `/admin/orders/{order}` | orders admin | |
 | `/fulfillments`, `/refunds`, `/topups` | operations | |
 | `/customer-funds`, `/settlements` | finance | |
-| `/credit-facility` | credit facility / overdraft ops | `can:manage_wallet_credit` |
 | `/admin/commissions` | `CommissionsTable` | `can:manage_settlements` |
 | `/admin/payout-requests` | `PayoutRequestsTable` | `can:manage_settlements` |
+| `/admin/commission-clawbacks` | inbox (Track B) | `can:view_commission_clawbacks` — branch `local/commission-policy` |
+| `/admin/commission-clawbacks/historical-exposure` | historical report | `can:view_historical_commission_exposure` |
+| `/admin/commission-clawbacks/{CLB-*}` | clawback detail | view + action-specific permissions |
+| `/credit-facility` | credit facility / overdraft ops | `can:manage_wallet_credit` |
+| `/wallet-adjustments` | manual adjustments | `can:adjust_wallets` |
 | `/admin/users`, `/admin/users/{user}`, `/admin/users/{user}/audit` | users | `can:manage_users` |
 | `/admin/activities`, `/admin/system-events`, `/admin/notifications` | observability | |
 | `POST api/admin/push/register-token` | `PushTokenController` | FCM registration |
@@ -453,6 +464,7 @@ app/
 | `SupplierPriceScan`, `SupplierPriceScanItem` | Wasim catalog price scan runs and per-product results |
 | `SystemEvent` | Audited system/financial events |
 | `Commission`, `PayoutRequest`, `PayoutBatch` | Referral commissions and payouts |
+| `CommissionClawback`, `CommissionClawbackDecision`, `HistoricalCommissionExposureReview` | Track B clawbacks (`local/commission-policy`) |
 | `Settlement` | Profit/settlement accounting |
 | `PricingRule`, `UserProductPrice` | Default and per-user pricing |
 | `WebsiteSetting`, `PaymentMethod` | Site config (`automation_enabled`, **`wasim_automation_*`**), payment display |

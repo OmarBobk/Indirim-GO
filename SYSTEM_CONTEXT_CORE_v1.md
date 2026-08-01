@@ -19,6 +19,7 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - **Mobile purchase (M3.1, in review):** single-line wallet checkout under `/api/v1` — `GET /wallet/summary`, `POST /checkout/quote`, `POST /checkout` (+ `Idempotency-Key`), `GET /checkout/status`, `GET /orders/{order_number}`. Quotes are informational with signed fingerprints; checkout revalidates via `CheckoutFromPayload`. When `prices_visible=false`, quote/checkout return `409 purchasing_unavailable` without ending the session. No multi-line/server cart. OpenAPI version **1.2.0**.
 - **Optional realtime isolation:** authentication and other authoritative flows must not fail when optional Reverb/Pusher publication fails. Durable activity rows remain; `ActivityLogBroadcaster` isolates `ActivityLogChanged` transport errors with safe logs (no signed broadcaster URLs/secrets).
 - **Agent rules:** follow `.cursor/rules/laravel-boost.mdc` for stack versions, conventions, and karman.store financial guardrails.
+- **Branch reality (Aug 2026):** Checkout **`staging`** has M6 Customer Financial Centre + Mobile API through **M3.1** (purchase). **Track B (M7 commission clawbacks M7.0–M7.2.4)** is complete on branch **`local/commission-policy`** (tip includes `2352ba0`) — merge before assuming clawback code/routes exist in the running tree. Feature brief: `Vault/Features/M7 — Financial Risk and Admin Operations.md`. Permissions: `Docs/roles.md`.
 
 ---
 
@@ -71,6 +72,7 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 8. Backend visibility must remain permission-based (no role-only shortcuts).
 9. Commission payouts are wallet credits (`commission_credit`) and must be idempotent by `commission_credit:{commission_id}`.
 10. Customer wallet balance **may be negative** under an Active credit facility; spend checks use `WalletSpendPolicy` / `availableToSpend()`, and `WalletLedger` enforces `minimumAllowedBalance()` after lock. Platform wallets never overdraft.
+11. **(Track B / `local/commission-policy`)** Salesperson wallets may go negative **only** via authorised `commission_reversal` (`WalletLedger::postCommissionReversal` / `allowClawbackDebt`). Customer credit facility is not reused for clawback debt. Purchases and payout requests stay blocked while clawback debt remains. Clawbacks are prospective-only (`billing.commission_clawback`). Admin ops: `/admin/commission-clawbacks` + `CLB-*` detail + `/admin/commission-clawbacks/historical-exposure`. Permissions: `view_commission_clawbacks`, `process_commission_clawbacks`, `waive_commission_clawbacks`, `manage_commission_clawback_disputes`, `correct_commission_clawbacks`, `view_historical_commission_exposure`. Waiver TX `commission_clawback_waiver`; correction TX `commission_reversal_correction`; historical review markers are **non-financial**. Stale sweeper `commission-clawbacks:sweep-stale`. Track B closed after M7.2.4. Until this branch is merged into staging, treat clawback as **not present** in the running checkout.
 
 ---
 
@@ -79,18 +81,18 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - **Fortify config reality:** `username` auth key, `lowercase_usernames=true`, `home='/'`, registration currently enabled in features array.
 - **Public registration security (self-register only):** `App\Http\Controllers\Auth\RegisteredUserController` runs `GuardRegistrationAttempt` before `CreateNewUser`. Controls: honeypot (`config('security.registration.honeypot_field')`), IP/email rate limits (`config/security.php` / `REGISTRATION_*` env), Cloudflare Turnstile (`config('services.turnstile')` / `TURNSTILE_*`). Local: set `TURNSTILE_ENABLED=false`. Admin/salesperson-created users bypass these guards.
 - **Backend gate:** `EnsureBackendAccess` checks `config('permission.backend_permissions')` and returns 404 when blocked.
-- **Backend permissions list:** `view_dashboard`, `manage_users`, `manage_sections`, `manage_products`, `manage_topups`, `adjust_wallets`, `manage_wallet_credit`, `view_referrals`, `create_orders`, `edit_orders`, `delete_orders`, `view_orders`, `view_fulfillments`, `manage_fulfillments`, `view_refunds`, `process_refunds`, `view_activities`, `manage_settlements`, `manage_bugs`, `update_product_prices`.
+- **Backend permissions list:** `view_dashboard`, `manage_users`, `manage_sections`, `manage_products`, `manage_topups`, `adjust_wallets`, `manage_wallet_credit`, `view_referrals`, `create_orders`, `edit_orders`, `delete_orders`, `view_orders`, `view_fulfillments`, `manage_fulfillments`, `view_refunds`, `process_refunds`, `view_activities`, `manage_settlements`, `manage_bugs`, `update_product_prices`. **Track B adds (after merge):** `view_commission_clawbacks`, `process_commission_clawbacks`, `waive_commission_clawbacks`, `manage_commission_clawback_disputes`, `correct_commission_clawbacks`, `view_historical_commission_exposure`. Full matrix: `Docs/roles.md`.
 - **Important nuance:** `manage_user_prices` exists for per-user price overrides but is not itself a backend-entry permission.
-- **Roles:** admin, supervisor, salesperson, customer.
+- **Roles:** admin (all permissions), supervisor, salesperson, customer — defaults in `RolesAndPermissionsSeeder`.
 
 ---
 
 ## 6. Role-based feature surface
 
-- **Customer:** browse catalog, cart, buy-now/custom amount, wallet + topups (balance may be negative when credit facility is active), orders/details, loyalty, referral link page when allowed by `view_referrals`, notifications, locale switch.
-- **Supervisor/operations:** fulfillment queues and claim workflow, refunds, topups, customer funds, settlements, bugs inbox; credit facility ops when granted `manage_wallet_credit`.
-- **Salesperson:** `view_referrals` dashboard, referral link, referral-driven order/commission analytics, eligible payout visibility.
-- **Admin:** all ops pages + system events + user management + commissions management + website settings + **credit facility** (`/credit-facility`, `can:manage_wallet_credit`) + **fulfillment automation admin** (`/admin/automation`) + **Ops Assistant** (`/admin/assistant`, read-only AI lookups) + **Wasim price drift** (`/price-drift`, `can:update_product_prices`).
+- **Customer:** browse catalog, cart, buy-now/custom amount, **Financial Centre** (`/wallet` overview + `/wallet/transactions` + topups + refunds + detail/receipts; **`/wallet/earnings`** when `view_referrals`), orders/details, loyalty, referral link when allowed, Activity (`/activity`), locale switch.
+- **Supervisor/operations:** default seeder is narrow (dashboard + referrals + create/view orders). Fulfillments/refunds/topups/credit facility require **extra permissions** — do not assume role-name shortcuts. See `Docs/roles.md`.
+- **Salesperson:** `view_referrals` dashboard, referred users when `manage_referred_users`, referral link, **`/wallet/earnings`**, payout request (workflow only — not money).
+- **Admin:** all ops pages + commissions/payouts + website settings + credit facility + wallet adjustments + automation + Ops Assistant + price drift. **After Track B merge:** commission clawback inbox/detail/historical exposure.
 
 ---
 
@@ -112,7 +114,7 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 ## 8. Financial core (wallet, topup, refund, settlement, credit facility)
 
 - **Wallet ledger:** posted tx sum mirrors stored balance; reconcile command validates and fixes drift.
-- **Transaction types:** topup, purchase, refund, adjustment, settlement, **commission_credit**.
+- **Transaction types:** topup, purchase, refund, adjustment, settlement, **commission_credit**. **Track B adds:** `commission_reversal` (debit), `commission_clawback_waiver` (credit), `commission_reversal_correction` (credit).
 - **Topup creation:** `CreateTopupRequestAction` atomically creates topup request + pending wallet tx + immutable `public_ref` (`TUP-*`).
 - **Topup conversion behavior:** TRY-entered topups convert to USD **at submission** (server-authoritative; rate locked into request amount). Posted wallet currency always USD.
 - **Topup proof UI behavior:** create form gates file requirement with `attachProof`; proof optional when disabled; private storage + ownership on download.
@@ -136,7 +138,7 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - **Customer UX:** `CustomerWalletDisplay` — stacked header balance (green positive / red debt), Limit/Available secondary when facility Active; mobile header chip surfaces limit/available without opening wallet. Wallet timeline humanized via `CustomerSystemEventPresenter` when timeline `audience="customer"`.
 - **Config:** `billing.wallet_credit_limit_max`, `billing.wallet_payment_terms_days` (`config/billing.php`).
 - **Out of scope (still true):** debt forgiveness / write-off. **M6.0.1 shipped:** all product posted wallet mutations use `WalletLedger` (incl. purchase/topup/refund/commission/settlement). Debit floor uses `Wallet::minimumAllowedBalance()`. `wallet:reconcile` is audit-only by default; `--repair` is audited snapshot set (compensating TX cannot close drift). See `Vault/Features/Customer Financial Centre.md`.
-- **M6 target:** Wallet becomes customer Financial Control Centre (overview / ledger / top-ups / refunds / transaction detail / role-gated earnings); receipts are printable HTML (browser print; no server PDF in M6.5). **M6.2 shipped:** `/wallet/transactions` posted ledger with `public_ref` + `posted_at`. **M6.3 shipped:** `/wallet/topups` workspace + `TUP-*` refs. **M6.4 shipped:** `/wallet/refunds` workspace; refund workflow = owned refund `WalletTransaction` with early `WTX-*`; Financial Centre nav Overview|Transactions|Top-ups|Refunds. **M6.5 shipped:** `/wallet/transactions/{WTX-*}` detail + HTML receipt; snapshot-first `meta.receipt`; Actions stamp safe snapshots; WalletLedger does not query sources. **M6.6 shipped:** `/wallet/earnings` salesperson commission clarity; pending ≠ spendable; clawback still deferred. **M6.7 shipped:** one reason-set financial invalidation contract, scoped surface refreshes, page-2 stability and focus/online/reconnect reconciliation.
+- **M6.6 shipped:** `/wallet/earnings` salesperson commission clarity; pending ≠ spendable. **Late-refund clawback:** deferred on staging; **shipped on Track B** (`local/commission-policy`). **M6.7 shipped:** one reason-set financial invalidation contract, scoped surface refreshes, page-2 stability and focus/online/reconnect reconciliation. **M6.8 closed** Customer Financial Centre.
 
 ---
 
@@ -182,11 +184,11 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - **User fields:** referral code + referred-by linkage (`referral_code`, `referred_by_user_id`).
 - **Commission model:** `commissions` table, `CommissionStatus` enum (`pending`, `credited`, `failed`), commission rate snapshots, optional `payout_batch_id`, and unique `wallet_transaction_id`.
 - **Creation trigger:** commissions are generated in `PayOrderWithWallet` after order payment/fulfillment creation.
-- **Failure interaction:** refund approval marks related pending commissions as failed; credited commissions are **not** reversed (Phase-1 debt; clawback deferred).
-- **Payout flow:** admins use `CreatePayoutBatch` through `/admin/commissions` (`can:manage_settlements`) to credit eligible completed/aged commissions to salesperson wallets. It creates `payout_batches`, posts `commission_credit` wallet transactions, records `wallet.commission.credited`, marks commissions `credited`, and notifies recipients after commit.
-- **Eligibility:** commission must be pending, not already batched/credited, order paid older than `WebsiteSetting::getCommissionPayoutWaitDays()`, and related fulfillment(s) completed; payout **batch** total must meet `WebsiteSetting::getCommissionPayoutMinAmount()` unless explicitly bypassed for a single admin credit. Salesperson **payout request** floor is separate: `RequestSalespersonPayout::MIN_ELIGIBLE_EXCLUSIVE` ($10 exclusive).
-- **Salesperson dashboard:** `/salesperson-dashboard` (`can:view_referrals`) = business KPIs via `SalespersonDashboardService`. **Earnings financial workspace (M6.6):** `/wallet/earnings` (`wallet.earnings.index`) via `GetSalespersonEarnings` + `SalespersonEarningsPresenter`; Financial Centre Earnings nav only with `view_referrals`. Frontend `/referral-link` also requires `can:view_referrals`.
+- **Failure interaction:** refund approval marks related **pending** commissions as failed. **Credited** commissions: on staging (pre–Track B) are **not** reversed; on **`local/commission-policy`** they create durable `commission_clawbacks` (`CLB-*`) and after-commit `commission_reversal` posting. Customer refund never depends on clawback success. Prospective-only; historical auto-debit never. Payout requests blocked while clawback debt remains (Track B).
+- **Payout flow:** admins use `CreatePayoutBatch` through `/admin/commissions` (`can:manage_settlements`) to credit eligible commissions (`commission_credit:{id}`).
+- **Salesperson dashboard:** `/salesperson-dashboard` (`can:view_referrals`) = business KPIs. **Earnings workspace:** `/wallet/earnings` via `GetSalespersonEarnings` (gross/reversed/net/debt when Track B present).
 - **PayoutRequest:** workflow signal only (`pending`|`processed`); does not post wallet money.
+- **Track B admin ops (after merge):** `/admin/commission-clawbacks` inbox + detail; historical exposure report; decisions `CLD-*` (waiver/dispute/correction). Never use generic `adjustment` for clawback forgiveness/correction.
 
 ---
 
@@ -267,15 +269,18 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - **2026-07 (M6.5):** **Transaction details + printable receipts** — `/wallet/transactions/{WTX-*}`; `GetCustomerTransactionDetail`; snapshot-first receipt; browser print CSS only; no PDF/signing/QR.
 - **2026-07 (M6.6):** **Salesperson earnings clarity** — `/wallet/earnings`; Commission truth vs wallet spendable; `GetSalespersonEarnings`; payout request ≠ money movement; late-refund clawback still deferred; `CommissionStateChanged` invalidation.
 - **2026-07 (M6.7):** **Financial realtime synchronisation** — reason-set payload; Action-owned after-commit writers; replay/batch deduplication; scoped Livewire refresh; page-2 zero-read banners; hidden/focus/online/reconnect reconciliation; print-safe transaction detail.
-- **2026-07 (M6.8):** **Customer Financial Centre closure review** — architecture/safety/security/realtime verified; M6 closed pending manual Reverb/print/Arabic acceptance; late-refund clawback and decimal-width expansion remain deferred product/ops decisions.
+- **2026-07 (M6.8):** **Customer Financial Centre closure review** — architecture/safety/security/realtime verified; M6 closed; late-refund clawback deferred to Track B.
+- **2026-07–08 (Track B on `local/commission-policy`):** **M7.0–M7.2.4** commission clawback policy → kernel → admin inbox/retry → waivers → disputes/corrections → historical exposure report; Track B **closed**. See `Vault/Features/M7 — Financial Risk and Admin Operations.md`.
+- **2026-08 (Mobile M3.1 on staging):** purchase/checkout API under `/api/v1` (quote + checkout + status + wallet summary); OpenAPI **1.2.0**. See `Vault/Features/Mobile M3.1 — Laravel Purchase API.md`.
 
 ---
 
 ## 15. Routes quick reference
 
 - **Public:** `/`, `/categories/{category:slug}`, `/cart`, `/contact`, `/404`, `language/{locale}`.
-- **Auth+verified (storefront):** `/profile`, `/wallet`, `/wallet/transactions`, `/wallet/transactions/{public_ref}`, `/wallet/topups`, `/wallet/topups/{public_ref}`, `/wallet/topup`, `/wallet/refunds`, `/wallet/refunds/{public_ref}`, `/wallet/earnings` (`can:view_referrals`), `/loyalty`, `/referral-link`, `/orders`, `/orders/{order_number}`, **`/activity`** (`activity.index`; **`/notifications`** alias), `/topup-proofs/{proof}`, `/bug-attachments/{attachment}`, `POST /api/pricing/buy-now-custom-amount-quote`.
-- **Backend:** `/dashboard` (`can:view_dashboard`), `/salesperson-dashboard` (`can:view_referrals`), `/categories`, `/packages`, `/products`, `/product-entry-prices` (`can:update_product_prices`), **`/price-drift`** (`can:update_product_prices`), `/pricing-rules`, `/loyalty-tiers`, `/admin/orders/*`, `/admin/users/*`, `/admin/users/{user}/audit`, `/fulfillments`, `/refunds`, `/topups`, `/customer-funds`, **`/credit-facility`** (`can:manage_wallet_credit`), `/settlements`, `/admin/commissions` (`can:manage_settlements`), `/admin/notifications`, `/admin/bugs/*`, `/admin/website-settings` (admin only), **`/admin/automation`** (admin only), **`/admin/assistant`** (admin only, throttled).
+- **Auth+verified (storefront):** `/profile`, `/wallet`, `/wallet/transactions`, `/wallet/transactions/{public_ref}`, `/wallet/topups`, `/wallet/topups/{public_ref}`, `/wallet/topup`, `/wallet/refunds`, `/wallet/refunds/{public_ref}`, `/wallet/earnings` (`can:view_referrals`), `/loyalty`, `/referral-link`, `/orders`, `/orders/{order_number}`, **`/activity`**, `/topup-proofs/{proof}`, `/bug-attachments/{attachment}`, `POST /api/pricing/buy-now-custom-amount-quote`.
+- **Backend:** `/dashboard`, `/salesperson-dashboard`, `/categories`, `/packages`, `/products`, `/product-entry-prices`, **`/price-drift`**, `/pricing-rules`, `/loyalty-tiers`, `/admin/orders/*`, `/admin/users/*`, `/fulfillments`, `/refunds`, `/topups`, `/customer-funds`, **`/wallet-adjustments`**, **`/credit-facility`**, `/settlements`, `/admin/commissions`, `/admin/payout-requests`, **`/admin/commission-clawbacks`** + **`/historical-exposure`** + `{CLB-*}` (**Track B**), `/admin/notifications`, `/admin/bugs/*`, `/admin/website-settings`, **`/admin/automation`**, **`/admin/assistant`**.
+- **Mobile API (`routes/api.php`):** `/api/v1/auth/*`, `/api/v1/me`, catalog home/packages, **purchase** wallet summary + checkout quote/checkout/status + orders (M3.1). Contract: `docs/api/v1/openapi.yaml`.
 - **Automation (internal):** `POST /internal/automation/runs/{uuid}/result`, `POST /internal/automation/runs/{uuid}/artifacts`, **`POST /internal/automation/price-scans/{uuid}/result`** (HMAC-signed, CSRF exempt). Worker: `POST /v1/runs`, **`POST /v1/sessions/clear`**, **`POST /v1/price-scans`** (HMAC).
 - **AI/MCP:** `POST /mcp/ops-assistant` (admin MCP server for read-only ops tools).
 
@@ -293,8 +298,11 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - `app/DTOs/WalletSpendDecision.php`, `app/Exceptions/WalletSpendDeniedException.php`
 - `app/Support/CustomerWalletDisplay.php`, `CustomerSystemEventPresenter.php`
 - `Vault/Features/Customer Financial Centre.md` (M6 architecture contract)
+- `Vault/Features/M7 — Financial Risk and Admin Operations.md` (Track B clawbacks — branch `local/commission-policy`)
+- `Docs/roles.md` (permissions matrix)
 - `app/Actions/Commissions/CreatePayoutBatch.php`, `RequestSalespersonPayout.php`
 - `app/Actions/Earnings/GetSalespersonEarnings.php`, `app/Support/Commissions/SalespersonCommissionEligibility.php`
+- **Track B sources (after merge):** `app/Actions/Commissions/{Create,Process,Retry,Waive,Open,Resolve,Correct}*Clawback*`, `GetHistoricalCommissionExposure`, `ReviewHistoricalCommissionExposure`, `app/Models/CommissionClawback.php`, `CommissionClawbackDecision.php`, `HistoricalCommissionExposureReview.php`
 - `app/Actions/Refunds/ApproveRefundRequest.php`
 - `app/Actions/Fulfillments/ClaimFulfillment.php`, `CreateFulfillmentsForOrder.php`, **`DispatchFulfillmentAutomationRun.php`**, **`IngestFulfillmentAutomationResult.php`**, **`ScheduleWasimOrderReconcile.php`**, **`RetryFulfillmentAutomation.php`**
 - `app/Actions/Packages/TogglePackageFulfillment.php`, `UpsertPackage.php`
@@ -319,7 +327,8 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - `resources/js/app.js`
 - **Agent rules:** `.cursor/rules/laravel-boost.mdc` (stack versions, financial guardrails, testing/Pint/Livewire conventions)
 - **Companion map:** `Docs/PROJECT_STRUCTURE.md` (full layout); backlog scratchpad: `Docs/doc.md` (verify code — do not trust outdated “not installed” notes without checking `composer.json`)
-- **Obsidian + ChatGPT pipeline:** `Vault/Karman Index.md`, `Vault/Workflow/Ask → Plan → Agent Pipeline.md`, `Docs/CHATGPT_PROJECT_PROMPT.md`, active feature notes under `Vault/Features/`
+- **Obsidian + ChatGPT pipeline:** `Vault/İndirimGo Index.md`, `Vault/Workflow/Ask → Plan → Agent Pipeline.md`, `Docs/CHATGPT_PROJECT_PROMPT.md`, active feature notes under `Vault/Features/`
+- **Permissions companion:** `Docs/roles.md`
 - **Mobile M1.1 context:** `Vault/Features/Mobile M1.1 — Laravel API Foundation and Authentication.md`, `Vault/Decisions/Mobile M1.1 Authentication Architecture.md`
 - **Mobile M1.2/M1.3 context:** `Vault/Features/Mobile M1.2 — Flutter Foundation and Authentication.md`, `Vault/Decisions/Mobile M1.2 Flutter Authentication Architecture.md`, `Vault/Features/Mobile M1.3 — Local Integration and Closeout.md` (Flutter repo `OmarBobk/indirimGo-mobile` `main`; local emulator API `http://10.0.2.2:8000/api/v1`; no staging API URL yet; do not merge Laravel `staging`→`main` for mobile milestones)
 - **Mobile M2 commerce shell (closed):** `Vault/Features/Mobile M2.0 — Commerce Shell Architecture.md`, `Vault/Features/Mobile M2.1 — Laravel Catalog API.md`, `Vault/Decisions/Mobile M2.1 Catalog API Contract.md`, `Vault/Features/Mobile M2.2 — Flutter Commerce Shell.md`, `Vault/Features/Mobile M2.3 — Local Commerce Integration.md`. Pairing: Laravel `485be1befcf99f9d4a337745ec0b4390529c79e1` ↔ mobile `c2119116239a720638c16a0b113be34f36698a78`. Implementation under `app/Actions/MobileCatalog/*`, `app/Http/Controllers/Api/V1/Catalog/*`, `app/Support/Api/V1/*`. Contract: `docs/api/v1/openapi.yaml`.

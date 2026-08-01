@@ -1301,4 +1301,28 @@ When you tell your team about a problem **outside** the app (email, chat, ticket
 
 ---
 
+## Track B — Commission clawbacks (M7)
+
+**When to use:** Only after branch `local/commission-policy` is merged/deployed. If **Commission clawbacks** is missing from the staff sidebar, skip this section.
+
+**Who:** Admin (default has all clawback permissions). Salesperson/supervisor should **not** see these pages.
+
+**What it is:** After a salesperson already received commission credit, a later customer refund triggers a **clawback** (take commission back). Customer refund always completes even if clawback fails.
+
+### Smoke checklist
+
+- [ ] Open `/admin/commission-clawbacks` — list loads; open a **CLB-…** detail
+- [ ] **Retry** on a failed/needs_review row (needs `process_commission_clawbacks`)
+- [ ] **Waive** creates a **CLD-…** decision; status becomes waived when fully forgiven
+- [ ] **Dispute** open/resolve — opening alone does **not** move money
+- [ ] **Correction** on a posted wrong reversal credits salesperson (`commission_reversal_correction`)
+- [ ] **Historical exposure** (`/admin/commission-clawbacks/historical-exposure`) — mark reviewed; **no** new CLB and **no** wallet debit
+- [ ] Salesperson opening clawback URLs → denied/404
+
+Statuses you may see: pending, processing, posted, needs_review, failed, waived.
+
+Historical exposure outcomes (ops notes only): platform_absorbed, not_actionable, insufficient_data, duplicate_or_invalid, deferred_review.
+
+---
+
 *End of full manual testing guide.*
