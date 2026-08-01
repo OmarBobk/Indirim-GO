@@ -108,6 +108,9 @@ final class CustomerWalletTransactionPresenter
             WalletTransactionType::Refund => __('messages.wallet_transaction_type_refund'),
             WalletTransactionType::Adjustment => __('messages.financial_ledger_type_adjustment'),
             WalletTransactionType::CommissionCredit => __('messages.wallet_transaction_type_commission_credit'),
+            WalletTransactionType::CommissionReversal => __('messages.wallet_transaction_type_commission_reversal'),
+            WalletTransactionType::CommissionClawbackWaiver => __('messages.wallet_transaction_type_commission_clawback_waiver'),
+            WalletTransactionType::CommissionReversalCorrection => __('messages.wallet_transaction_type_commission_reversal_correction'),
             WalletTransactionType::Settlement => __('messages.wallet_transaction_type_settlement'),
         };
     }
@@ -142,6 +145,9 @@ final class CustomerWalletTransactionPresenter
             WalletTransactionType::Refund => 'arrow-uturn-left',
             WalletTransactionType::Adjustment => 'adjustments-horizontal',
             WalletTransactionType::CommissionCredit => 'currency-dollar',
+            WalletTransactionType::CommissionReversal => 'arrow-uturn-left',
+            WalletTransactionType::CommissionClawbackWaiver => 'plus-circle',
+            WalletTransactionType::CommissionReversalCorrection => 'plus-circle',
             default => $direction === WalletTransactionDirection::Credit ? 'plus-circle' : 'minus-circle',
         };
     }

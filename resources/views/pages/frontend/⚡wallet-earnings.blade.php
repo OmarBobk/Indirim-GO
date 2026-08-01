@@ -126,6 +126,7 @@ new #[Layout('layouts::frontend')] class extends Component
             'created' => __('messages.earnings_payout_request_created'),
             'already_pending' => __('messages.earnings_payout_request_already_pending'),
             'below_min' => __('messages.earnings_payout_request_below_min'),
+            'clawback_debt' => __('messages.earnings_payout_blocked_clawback_debt'),
             default => __('messages.earnings_payout_request_failed'),
         };
 

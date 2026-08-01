@@ -1,283 +1,149 @@
-- users
-  - name
-  - email
-  - email_verified_at
-  - password
-  - username
-  - is_active
-  - blocked_at
-  - last_login_at
-  - timezone
-  - meta
-  - profile_photo
-  - phone
-  - country_code
-- categories (subscriptions, games)
-  - id
-  - parent_id (nullable)
-  - name
-  - slug
-  - order
-  - icon
-  - is_active
-  - image
-- packages (Pubg, tiktok)
-  - id
-  - category_id
-  - name
-  - slug
-  - description
-  - is_active
-  - order
-  - icon
-- products
-  - id
-  - package_id
-  - name
-  - retail_price
-  - wholesale_price
-  - is_active
-  - order
-- package_requirements
-  - id
-  - package_id
-  - key (id, username, phone)
-  - label ("ID")
-  - type (enum: string, number, select)
-  - is_required
-  - validation_rules (string nullable) (Laravel-style: required|numeric)
-  - order
+# karman.store — Application schema (verified)
 
-Create The Wallets Model and wallet transactions model with these data:
-- wallets:
-  - user_id
-  - balance (default 0; **may be negative** for customer wallets with an Active credit facility)
-  - type (customer / platform)
-  - credit_enabled, credit_limit, payment_terms_days, credit_status (nullable Active/Suspended when granted)
-  - timestamps
-- wallet_transactions
-  - wallet_id
-  - type enum: purchase, topup, refund, adjustment.
-  - direction enum: cash, debit
-  - amount
-  - status enum: pending, approved, rejected
-  - reference_type nullable (polymorphic string: Order, TopupRequest, etc.)
-  - reference_id nullable (bigint)
-  - meta json nullable (notes, admin_id, etc.)
+> Concise reference for **application** tables used by this Laravel app.  
+> Shared MySQL may contain leftover vendor/legacy tables — **ignore those**; do not invent columns.  
+> Source of truth for money: `wallets.balance` + posted `wallet_transactions`.  
+> Last refreshed: 2026-07-30 from live schema + models/enums.
 
-Products belongs to package so create the related methods in the model
+---
 
-act like a senior designer and design the Products manager page to manage the products using Laravel, Livewire, alpinjs, Tailwind and flux best practices.
-the style and colors should match and follow the design pattern and the general colors that has been used before and don't forget to use the same colors
-pay attention for the ui / ux princeples and high performance and quality the page speed should be the light speed
+## Financial core
 
+### `wallets`
 
-the placeholder of the order field should be the higher and the smallest product order that is exist in db
+| Column | Notes |
+|--------|--------|
+| `user_id` | Unique; one customer wallet per user |
+| `type` | `customer` \| `platform` (`WalletType`) |
+| `balance` | `decimal`; **may be negative** for customer wallets with Active credit facility |
+| `currency` | Ledger currency (USD) |
+| `credit_enabled` | bool — facility granted |
+| `credit_limit` | max overdraft ceiling |
+| `payment_terms_days` | nullable Net N |
+| `credit_status` | nullable `active` \| `suspended` (`CreditFacilityStatus`); **null when not granted** |
 
+Helpers on `Wallet`: `effectiveCreditLimit()`, `minimumAllowedBalance()`, `availableToSpend()`, `availableCredit()`, `outstandingDebt()`, `isOverdrawn()`.
 
-You are a senior Laravel 12 backend engineer with strong database design experience.
+### `wallet_transactions`
 
-Goal (Step 4):
-Implement orders + order_items schema and the backend “checkout snapshot” flow that converts the Alpine/localStorage cart payload into a persistent Order.
+| Column | Notes |
+|--------|--------|
+| `wallet_id` | FK |
+| `type` | `topup`, `purchase`, `refund`, `adjustment`, `settlement`, `commission_credit` |
+| `direction` | `credit` \| `debit` (not “cash”) |
+| `amount` | decimal |
+| `status` | `pending` \| `posted` \| `rejected` |
+| `reference_type` / `reference_id` | polymorphic |
+| `idempotency_key` | unique |
+| `public_ref` | unique human ref (`WTX-*`, etc.) |
+| `meta` | JSON (incl. receipt snapshots) |
+| `posted_at` | set when posted; no `updated_at` on model |
 
-Context:
-- Cart is handled on the frontend with Alpine.js (localStorage). We will NOT add carts tables.
-- At checkout, the server must create a permanent Order + OrderItems snapshot from the cart payload.
-- Wallet system exists (wallets + wallet_transactions) and top-ups exist (topup_requests/proofs).
+Posted rows are immutable. All product money mutations go through `WalletLedger`.
 
-Scope:
-✅ Implement ONLY:
-1) orders table
-2) order_items table
-3) Eloquent models + relationships
-4) A minimal service/action: CreateOrderFromCartPayload (no payment yet)
-5) A minimal service/action: PayOrderWithWallet (wallet debit + mark order paid)
-   ❌ Do NOT implement fulfillments, supplier APIs, UI, admin panels.
+---
 
-A) orders table
-Fields:
-- id
-- user_id (FK)
-- order_number (string unique; human-friendly e.g. "ORD-2026-000042")
-- currency (string, default 'USD')
-- subtotal (decimal 12,2)
-- fee (decimal 12,2 default 0)   // e.g. your $5 margin/fee
-- total (decimal 12,2)           // subtotal + fee
-- status (enum/string: pending_payment, paid, processing, fulfilled, failed, refunded, cancelled)
-- paid_at (nullable timestamp)
-  - meta (nullable json)           // client hints: ip, user_agent, etc.
-- created_at, updated_at
+## Orders & catalog
 
-Indexes:
-- user_id, status, created_at
-- unique(order_number)
+### `orders`
 
-B) order_items table
-Purpose: immutable snapshot of what the user bought.
-Fields:
-- id
-- order_id (FK)
-- product_id (FK -> products.id) nullable if needed
-- package_id (FK -> packages.id) nullable if needed
-- name (string)                 // snapshot (don’t rely on products table later)
-- unit_price (decimal 12,2)
-- quantity (unsigned int)
-- line_total (decimal 12,2)
-- requirements_payload (json nullable)  // e.g. {"id":"...", "region":"..."}
-- status (enum/string: pending, processing, fulfilled, failed)
-- created_at, updated_at
+`user_id`, unique `order_number`, `currency`, `subtotal`, `fee`, `total`, `status` (`pending_payment` \| `paid` \| `processing` \| `fulfilled` \| `failed` \| `refunded` \| `cancelled`), `paid_at`, `meta` (incl. `cart_hash` for checkout idempotency).
 
-Indexes:
-- order_id
-- product_id, package_id
-- status
+### `order_items`
 
-C) Input contract: cart payload format
-Assume the frontend sends an array similar to:
-[
-{
-"product_id": 40,
-"package_id": 12,              // optional
-"quantity": 2,
-"unit_price": "100.00",        // or price field name; normalize
-"name": "Google Play 100$",
-"requirements": { "account_id": "12345" } // optional
-}
-]
-If current frontend payload differs, detect it by searching existing Livewire/Controllers and adapt accordingly.
+Snapshot line: `product_id`, `package_id`, `name`, `unit_price`, `unit_cost`, `quantity`, `amount_mode`, `requested_amount`, `amount_unit_label`, `pricing_meta`, `line_total`, `entry_price`, `requirements_payload`, `status`.
 
-SECURITY / PRICING (MANDATORY):
-- The cart payload coming from Alpine/localStorage is UNTRUSTED.
-- DO NOT trust unit_price, line_total, subtotal, total from the client.
-- The payload may include only identifiers + quantity + requirements.
+Custom-amount lines are quantity-1 with `requested_amount`. Server pricing is authoritative.
 
-Server must:
-1) For each item:
-    - Validate quantity is an integer >= 1.
-    - Resolve the “buyable” record from DB:
-        - If package_id exists, load Package (and its related Product if needed).
-        - Else load Product by product_id.
-    - Determine the authoritative unit_price from the database (based on current pricing rules).
-    - Compute line_total = unit_price * quantity (server-side).
-    - Snapshot name from DB (product/package name) into order_items.name.
-2) Compute subtotal = sum(line_total).
-3) Compute fee server-side:
-    - Use a config value (e.g., config('billing.checkout_fee_fixed') or percentage)
-    - Document the rule in a comment.
-4) total = subtotal + fee.
+### Catalog
 
-Validation rules:
-- Reject any item where referenced product/package does not exist.
-- Reject quantities that are 0 or negative.
-- If requirements_payload is present, validate required keys based on packages_requirements (if implemented). If not implemented yet, store payload but keep TODO note.
+- `categories` — tree via `parent_id`, slug, active, order, image/icon
+- `packages` — belongs to category; `fulfillment_provider` (`null` = manual, `browser:{supplier}` = automated)
+- `products` — belongs to package; prices + amount mode fields (see migrations/models)
+- `package_requirements` — keyed fields for checkout payload validation
+- `pricing_rules`, `user_pricing_rules` — global vs per-user pricing
+- `payment_methods` — admin-managed top-up methods (`name`, `image`, `account_text`, `is_active`, `sort_order`)
 
-Result:
-- Create Order + OrderItems using ONLY server-calculated prices/totals.
-- Return Order id + order_number + totals.
+---
 
+## Topups
 
-D) CreateOrderFromCartPayload action (server-side)
-- Validate payload strictly (quantity >0, prices >=0, ids exist).
-- Compute subtotal = sum(line_total).
-- Apply fee logic (for now: configurable fixed fee or percentage; keep it simple and documented).
-- Create Order with status = pending_payment.
-- Create OrderItems with snapshot fields (name, unit_price, quantity, line_total, requirements_payload).
-- Return created Order (id + order_number + totals).
+### `topup_requests`
 
-E) PayOrderWithWallet action (atomic + safe)
-- DB transaction
-- lock wallet row FOR UPDATE
-- ensure order.status is pending_payment
-- **Current (2026-07):** gate spend with `WalletSpendPolicy` / `availableToSpend()` (customer credit facility may allow balance to go negative). Do **not** use raw `balance >= order.total` as the sole check.
-- create wallet_transaction:
-    - type='purchase'
-    - direction='debit'
-    - amount=order.total
-    - status='posted'
-    - reference_type='Order'
-    - reference_id=order.id
-    - meta includes order_number
-- decrement wallet.balance
-- set order.status='paid', paid_at=now()
+`public_ref` (`TUP-*`), `user_id`, `wallet_id`, `payment_method_id`, `amount`, `currency`, `status`, `note`, `approved_by`, `approved_at`.
 
-Idempotency rules:
-- Paying twice must not double-debit.
-- Enforce by checking order.status or existing wallet_transaction reference.
+### `topup_proofs`
 
-Models:
-- Order belongsTo User, hasMany OrderItem
-- OrderItem belongsTo Order
-- Add casts for json fields.
+Private file metadata for a request (`file_path`, mime, size). Access gated by ownership/admin.
 
-Quality requirements:
-- Laravel 12 conventions
-- strict types
-- no debug logs
-- clean, production-ready code
-- minimal but correct indexes/constraints
-- Use enums if the repo already uses them; otherwise constants.
+---
 
-Deliverables:
-1) migrations for orders + order_items
-2) models Order + OrderItem with relations/casts
-3) service/action classes: CreateOrderFromCartPayload, PayOrderWithWallet
-4) brief comments explaining why snapshot fields exist (name/unit_price stored on items)
+## Fulfillments & automation
 
-Before coding:
-- Scan existing schema: products, packages, packages_requirements.
-- Decide whether order_item should reference product_id, package_id, or both based on current DB.
-- Follow the project naming/style patterns.
+### `fulfillments`
 
-If anything critical is ambiguous, ask ONE question before coding.
+`order_id`, `order_item_id`, `claimed_by`, `claimed_at`, `provider`, `status` (`queued` \| `processing` \| `completed` \| `failed` \| `cancelled`), `attempts`, `meta` (refund workflow keys, delivered payload, automation flags).
 
+### `fulfillment_logs`
 
+Append-only debug/audit lines per fulfillment.
 
+### `fulfillment_automation_runs`
 
+`uuid`, `fulfillment_id`, `supplier_key`, `status` (`FulfillmentAutomationRunStatus`), `idempotency_key`, `external_order_id`, result/log JSON, timestamps, `meta` (incl. `automation_phase` purchase/reconcile).
 
+### Supplier price scans
 
+`supplier_price_scans`, `supplier_price_scan_items` — Wasim catalog drift runs + per-product results.
 
+---
 
-## Commission clawback tables (Track B / M7)
+## Commissions & payouts
 
-**Branch:** `local/commission-policy` (may be absent on staging until merge).
+### `commissions`
 
-**Policy:** Clawbacks are **prospective only** (`billing.commission_clawback.effective_at`). Historical exposure is report/review only — **never** posts wallet debits or creates obligations.
+Per fulfillment/order referral commission: `salesperson_id`, `customer_id`, amounts + rate snapshot, `status` (`pending` \| `credited` \| `failed`), optional `payout_batch_id`, unique `wallet_transaction_id` when credited.
 
-### `commission_clawbacks`
+### `payout_batches`
 
-| Concept | Notes |
-|---------|-------|
-| `public_ref` | **`CLB-*`** |
-| `status` | `pending` \| `processing` \| `posted` \| `needs_review` \| `failed` \| `waived` |
-| `commission_id` | FK → `commissions` |
-| `refund_wallet_transaction_id` | FK → customer refund WTX |
-| `amount` | Obligation amount |
-| Unique | `(commission_id, refund_wallet_transaction_id)` |
+Admin batch that posts `commission_credit` wallet txs via `CreatePayoutBatch`.
 
-### `commission_clawback_decisions`
+### `payout_requests`
 
-| Concept | Notes |
-|---------|-------|
-| `public_ref` | **`CLD-*`** |
-| `type` | `waiver` \| `correction` \| `dispute_opened` \| `dispute_resolved` |
-| Links | Optional related wallet TX for posted waiver/correction |
+Salesperson workflow signal only (`pending` \| `processed`) — **does not** post wallet money.
 
-### `historical_commission_exposure_reviews`
+---
 
-| Concept | Notes |
-|---------|-------|
-| Pair | Unique `(commission_id, refund_wallet_transaction_id)` |
-| `outcome` | `platform_absorbed` \| `not_actionable` \| `insufficient_data` \| `duplicate_or_invalid` \| `deferred_review` |
-| Money | **None** — markers only |
+## Settlements
 
-### Related wallet TX types (salesperson)
+`settlements` + `settlement_fulfillments` — platform profit settle (`profit:settle`) credits platform wallet idempotently.
 
-| Type | Direction | Purpose |
-|------|-----------|---------|
-| `commission_reversal` | Debit | Automatic clawback after refund |
-| `commission_clawback_waiver` | Credit | Forgiveness |
-| `commission_reversal_correction` | Credit | Fix erroneous reversal |
+---
 
-Original reversal is immutable; cumulative waiver + correction ≤ posted reversal.
+## Observability & ops
 
+| Table | Role |
+|-------|------|
+| `system_events` | Audit/timeline mirror (`event_type`, `is_financial`, entity morph, meta). Never derive balances from this. |
+| `activity_log` | Spatie activity log |
+| `notifications` | Customer/staff notification delivery + unread truth |
+| `push_logs` | FCM telemetry |
+| `bugs`, `bug_attachments`, `bug_links`, `bug_steps` | Bug ops |
+| `website_settings` | Singleton site config (automation kill switch, Wasim credentials, commission floors, etc.) |
+| `loyalty_tiers` / related loyalty config | Tier thresholds |
+| `agent_conversations`, `agent_conversation_messages` | Ops Assistant persistence |
 
+---
+
+## Auth / ACL
+
+`users` (+ referral fields, locale, loyalty, block flags), Spatie `roles` / `permissions` / pivots, `personal_access_tokens` (Sanctum mobile PATs), `password_reset_tokens`, `sessions`.
+
+---
+
+## Invariants (do not break)
+
+1. Every balance mutation ⇒ one posted wallet TX + matching financial `system_events` row (facility update is financial audit without balance change; reconcile `--repair` is the documented snapshot exception).
+2. Spend gates use `WalletSpendPolicy` / `availableToSpend()`; debit floor uses `minimumAllowedBalance()` under lock.
+3. Cart/checkout prices are recalculated server-side; client totals are untrusted.
+4. Platform wallets never overdraft / never get a credit facility.

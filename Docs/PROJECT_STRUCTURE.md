@@ -9,11 +9,10 @@
 
 | Area | Purpose |
 |------|---------|
-| **Storefront** | Categories, packages, products, cart, buy-now, orders, wallet, loyalty, referrals |
-| **Backend** | Fulfillments, topups, refunds, settlements, commissions, **commission clawbacks (Track B branch)**, users, catalog admin, **credit facility**, **automation admin**, **Ops Assistant**, **price drift** |
-| **Financial core** | `wallets` + `wallet_transactions` as source of truth (`balance` may be negative under Active credit facility or SP clawback debt on Track B); `system_events` for audit |
-| **Customer Financial Centre (M6)** | `/wallet` overview, transactions (`WTX-*`), topups (`TUP-*`), refunds, detail/receipts, earnings (`view_referrals`) |
-| **Mobile API** | Sanctum `/api/v1` auth + catalog (M2) + purchase/checkout (M3.1 on staging) — `docs/api/v1/openapi.yaml` |
+| **Storefront** | Categories, packages, products, cart, buy-now, orders, **Financial Centre** (wallet/transactions/topups/refunds/earnings), loyalty, referrals, Activity |
+| **Backend** | Fulfillments, topups, refunds, settlements, commissions, users, catalog admin, **credit facility**, **wallet adjustments**, **automation admin**, **Ops Assistant**, **price drift**, payment methods (website settings) |
+| **Mobile API** | Customer Sanctum PAT `/api/v1` (auth + catalog read); Flutter app separate repo |
+| **Financial core** | `wallets` + `wallet_transactions` as source of truth (`balance` may be negative under Active credit facility); `system_events` for audit |
 | **Fulfillment automation** | Browser-driven supplier fulfillment via Node/Playwright worker + Laravel run orchestration |
 | **Supplier price scans** | Wasim catalog price comparison (`/price-drift`) + reactive flags from fulfillments |
 | **Realtime** | Laravel Reverb + Echo; Firebase FCM for push |
@@ -31,6 +30,7 @@ This project uses Laravel 11+ streamlined layout (no `app/Http/Kernel.php`, no `
 | `bootstrap/app.php` | Application factory: routes, middleware aliases, exceptions |
 | `bootstrap/providers.php` | Service providers (`AppServiceProvider`, `FortifyServiceProvider`, optional Telescope) |
 | `routes/web.php` | Primary HTTP + Livewire full-page routes |
+| `routes/api.php` | Mobile `/api/v1` Sanctum PAT endpoints |
 | `routes/automation.php` | Worker callbacks + admin artifact routes (loaded from `bootstrap/app.php` `then`) |
 | `routes/ai.php` | Ops Assistant MCP endpoint (`POST /mcp/ops-assistant`) |
 | `routes/settings.php` | Fortify-adjacent user settings (profile, password, 2FA, appearance) |
@@ -127,19 +127,24 @@ flowchart LR
 
 | Path | Component | Route name |
 |------|-----------|------------|
+| `/account` | `pages::frontend.account` | `account` |
 | `/profile` | `pages::frontend.profile` | `profile` |
 | `/profile/edit` | `pages::frontend.profile-edit` | `profile.edit-information` |
-| `/wallet` | `pages::frontend.wallet` | Financial Centre overview |
-| `/wallet/transactions` | ledger | posted only; `WTX-*` |
-| `/wallet/transactions/{ref}` | detail + HTML receipt | |
-| `/wallet/topups`, `/wallet/topup`, `/wallet/topups/{ref}` | top-up workspace | `TUP-*` |
-| `/wallet/refunds`, `/wallet/refunds/{ref}` | refund workspace | refund WTX |
-| `/wallet/earnings` | salesperson earnings | `can:view_referrals` |
+| `/wallet` | `pages::frontend.wallet` | `wallet` |
+| `/wallet/transactions` | `pages::frontend.wallet-transactions` | `wallet.transactions.index` |
+| `/wallet/transactions/{transaction}` | `pages::frontend.wallet-transaction-detail` | `wallet.transactions.show` |
+| `/wallet/topups` | `pages::frontend.wallet-topups` | `wallet.topups.index` |
+| `/wallet/topups/{topup}` | `pages::frontend.wallet-topup-detail` | `wallet.topups.show` |
+| `/wallet/topup` | `pages::frontend.wallet-topup` | `wallet.topup` |
+| `/wallet/refunds` | `pages::frontend.wallet-refunds` | `wallet.refunds.index` |
+| `/wallet/refunds/{refund}` | `pages::frontend.wallet-refund-detail` | `wallet.refunds.show` |
+| `/wallet/earnings` | `pages::frontend.wallet-earnings` | `wallet.earnings.index` (`can:view_referrals`) |
 | `/loyalty` | `pages::frontend.loyalty` | `loyalty` |
-| `/referral-link` | `pages::frontend.referral-link` | `referral-link` |
+| `/referral-link` | `pages::frontend.referral-link` | `referral-link` (`can:view_referrals`) |
 | `/orders` | `pages::frontend.orders` | `orders.index` |
 | `/orders/{order:order_number}` | `pages::frontend.order-details` | `orders.show` |
-| `/notifications` | `pages::frontend.notifications` | `notifications.index` |
+| `/activity` | `pages::frontend.activity` | `activity.index` |
+| `/notifications` | `pages::frontend.activity` | `notifications.index` (alias → Activity) |
 | `/topup-proofs/{proof}` | `TopupProofController@show` | `topup-proofs.show` |
 | `/bug-attachments/{attachment}` | `BugAttachmentController@show` | `bug-attachments.show` |
 | `POST /api/pricing/buy-now-custom-amount-quote` | `BuyNowCustomAmountQuoteController` | `api.pricing.buy-now-custom-amount-quote` |
@@ -159,7 +164,7 @@ flowchart LR
 |------|-------------------|--------|
 | `/dashboard` | `pages::backend.dashboard` | `can:view_dashboard` |
 | `/salesperson-dashboard` | `pages::backend.salesperson-dashboard` | `can:view_referrals` |
-| `/salesperson/users` | `pages::backend.salesperson-users.index` | referred users |
+| `/salesperson/users` | `pages::backend.salesperson-users.index` | `can:manage_referred_users` |
 | `/categories`, `/packages`, `/products` | backend index pages | catalog admin |
 | `/product-entry-prices` | entry prices | `can:update_product_prices` |
 | `/price-drift` | Wasim supplier price drift monitor | `can:update_product_prices` |
@@ -167,13 +172,10 @@ flowchart LR
 | `/admin/orders`, `/admin/orders/{order}` | orders admin | |
 | `/fulfillments`, `/refunds`, `/topups` | operations | |
 | `/customer-funds`, `/settlements` | finance | |
+| `/wallet-adjustments` | admin credit/debit adjustments | `can:adjust_wallets` |
+| `/credit-facility` | credit facility / overdraft ops | `can:manage_wallet_credit` |
 | `/admin/commissions` | `CommissionsTable` | `can:manage_settlements` |
 | `/admin/payout-requests` | `PayoutRequestsTable` | `can:manage_settlements` |
-| `/admin/commission-clawbacks` | inbox (Track B) | `can:view_commission_clawbacks` — branch `local/commission-policy` |
-| `/admin/commission-clawbacks/historical-exposure` | historical report | `can:view_historical_commission_exposure` |
-| `/admin/commission-clawbacks/{CLB-*}` | clawback detail | view + action-specific permissions |
-| `/credit-facility` | credit facility / overdraft ops | `can:manage_wallet_credit` |
-| `/wallet-adjustments` | manual adjustments | `can:adjust_wallets` |
 | `/admin/users`, `/admin/users/{user}`, `/admin/users/{user}/audit` | users | `can:manage_users` |
 | `/admin/activities`, `/admin/system-events`, `/admin/notifications` | observability | |
 | `POST api/admin/push/register-token` | `PushTokenController` | FCM registration |
@@ -216,6 +218,22 @@ flowchart LR
 Fortify handles login, register, password reset, and email verification (configured in `config/fortify.php` + `FortifyServiceProvider`).
 
 **Public registration guards** (self-register only; not admin/salesperson user creation): `RegisteredUserController` → `GuardRegistrationAttempt` — honeypot + rate limits (`config/security.php`) + Cloudflare Turnstile (`config/services.php` `turnstile`). Tests: `tests/Feature/Auth/RegistrationTest.php`.
+
+### Mobile API (`routes/api.php`)
+
+Customer-only Sanctum PAT API under `/api/v1` (no web-session fallback). Ability: `mobile:access`.
+
+| Path | Handler | Notes |
+|------|---------|--------|
+| `POST /api/v1/auth/login` | `LoginController` | `throttle:mobile-login` |
+| `POST /api/v1/auth/two-factor-challenge` | `TwoFactorChallengeController` | Fortify 2FA; `throttle:mobile-two-factor` |
+| `POST /api/v1/auth/logout` | `LogoutController` | auth:sanctum + ability |
+| `GET /api/v1/me` | `MeController` | auth:sanctum + ability |
+| `GET /api/v1/catalog/home` | `CatalogHomeController` | `throttle:mobile-catalog` |
+| `GET /api/v1/packages` | `PackageIndexController` | priced server-side |
+| `GET /api/v1/packages/{package}` | `PackageShowController` | priced server-side |
+
+Contract: `docs/api/v1/openapi.yaml`. Config: `config/mobile_api.php`.
 
 ---
 
@@ -270,7 +288,7 @@ karman.store/
 │   ├── css/             # Tailwind v4 entry
 │   ├── js/              # Vite bundle (Alpine, Echo, Firebase)
 │   └── views/           # Blade, Flux, Livewire full-page components
-├── routes/              # web.php, automation.php, settings.php, channels.php, console.php, ai.php
+├── routes/              # web.php, api.php, automation.php, settings.php, channels.php, console.php, ai.php
 ├── storage/             # Logs, framework cache, Livewire temp uploads, automation artifacts
 ├── tests/               # Pest feature + unit tests (~125 files)
 ├── .cursor/             # Agent rules (laravel-boost.mdc) and project skills
@@ -457,14 +475,13 @@ app/
 | `Category`, `Package`, `Product` | Catalog hierarchy; package `fulfillment_provider`, `package_api` |
 | `PackageRequirement` | Dynamic fields required at checkout |
 | `Order`, `OrderItem` | Purchases; custom amount via `requested_amount` |
-| `Wallet`, `WalletTransaction` | **Financial source of truth**; customer wallets may overdraft when credit facility is Active (`credit_enabled`, `credit_limit`, `payment_terms_days`, `credit_status`) |
+| `Wallet`, `WalletTransaction` | **Financial source of truth**; customer wallets may overdraft when credit facility status is **`active`** (`credit_enabled`, `credit_limit`, `payment_terms_days`, `credit_status` nullable) |
 | `TopupRequest`, `TopupProof` | Wallet funding with optional proof upload |
 | `Fulfillment`, `FulfillmentLog` | Post-payment delivery workflow |
 | `FulfillmentAutomationRun` | Browser automation attempt (status, artifacts, supplier, errors) |
 | `SupplierPriceScan`, `SupplierPriceScanItem` | Wasim catalog price scan runs and per-product results |
 | `SystemEvent` | Audited system/financial events |
 | `Commission`, `PayoutRequest`, `PayoutBatch` | Referral commissions and payouts |
-| `CommissionClawback`, `CommissionClawbackDecision`, `HistoricalCommissionExposureReview` | Track B clawbacks (`local/commission-policy`) |
 | `Settlement` | Profit/settlement accounting |
 | `PricingRule`, `UserProductPrice` | Default and per-user pricing |
 | `WebsiteSetting`, `PaymentMethod` | Site config (`automation_enabled`, **`wasim_automation_*`**), payment display |
@@ -480,7 +497,7 @@ app/
 | `CustomerPriceService` | Per-user price resolution |
 | `SystemEventService` | Financial/system event recording |
 | `WalletSpendPolicy` | Pure spend gate for overdraft / available-to-spend (used by `PayOrderWithWallet`) |
-| `WalletLedger` | Idempotent ledger posts for some wallet paths; purchase overdraft **not** on ledger yet (still rejects negative resulting balance) |
+| `WalletLedger` | Idempotent ledger posts for **all product money paths** (purchase/topup/refund/commission/settlement/adjustment); debit floor = `Wallet::minimumAllowedBalance()` under lock |
 | `SettlementProfitCalculator` | Settlement profit math |
 | `LoyaltySpendService` | Loyalty spend tracking |
 | `SalespersonDashboardService` | Referral dashboard metrics |
@@ -629,11 +646,12 @@ Dev: `composer run dev` (serve + queue + Vite) or `npm run dev` / `npm run build
 | File | Topic |
 |------|-------|
 | `PROJECT_STRUCTURE.md` | This document |
-| `DB.md` | Database notes |
-| `roles.md` | Role hierarchy |
+| `DB.md` | Application schema reference (verified; ignore shared-DB legacy tables) |
+| `roles.md` | Roles, permissions, route gates |
 | `system_events_map.md` | System events reference |
-| `doc.md` | Feature/backlog notes |
+| `doc.md` | Feature/backlog scratchpad (verify against code) |
 | `ManualTestingPlaybook.md` | Manual QA flows |
+| `CHATGPT_PROJECT_PROMPT.md` | ChatGPT Project setup pointer |
 
 Root: `README.md`, `NOTIFICATIONS.md`, **`SYSTEM_CONTEXT_CORE_v1.md`**, `CLAUDE.md`, `.cursor/rules/laravel-boost.mdc`.
 
@@ -649,7 +667,7 @@ From project rules (`.cursor/rules/laravel-boost.mdc`, `CLAUDE.md`):
 4. **Never trust client cart totals** — recompute server-side (`PriceCalculator`, `PricingEngine`).
 5. **Custom amount** lines use `requested_amount` with quantity treated as 1.
 6. Preserve referral/commission contracts on payment and refund flows.
-7. Purchase spend checks use **`WalletSpendPolicy` / `availableToSpend()`** (not raw `balance >= total`). Debt is repaid by ordinary credits/topups (no separate repayment flow). Debt forgiveness/write-off and purchase-on-`WalletLedger` remain out of scope.
+7. Purchase spend checks use **`WalletSpendPolicy` / `availableToSpend()`** (not raw `balance >= total`); posts go through **`WalletLedger`**. Debt is repaid by ordinary credits/topups (no separate repayment flow). Debt forgiveness/write-off remains out of scope.
 
 ---
 
@@ -659,10 +677,14 @@ From project rules (`.cursor/rules/laravel-boost.mdc`, `CLAUDE.md`):
 |------|----------------|
 | Browse & search | `pages/frontend/⚡main`, `SearchStorefrontCatalog`, API search controller |
 | Cart & checkout | `⚡cart`, `CheckoutFromPayload`, `CheckoutResult`, `CreateOrderFromCartPayload` |
-| Pay with wallet | `PayOrderWithWallet`, `WalletSpendPolicy` |
+| Pay with wallet | `PayOrderWithWallet`, `WalletSpendPolicy`, `WalletLedger` |
 | Credit facility (admin) | `/credit-facility`, `UpdateCreditFacility`, `pages/backend/credit-facility/⚡index` |
+| Wallet adjustments (admin) | `/wallet-adjustments`, `AdjustWallet` |
+| Customer Financial Centre | `/wallet` overview + `/wallet/transactions|topups|refunds|earnings`, presenters under `app/Support/Customer*` |
 | Customer wallet display | `CustomerWalletDisplay`, header/mobile chip, `CustomerSystemEventPresenter` (`audience=customer`) |
-| Topup wallet | `⚡wallet`, `CreateTopupRequestAction`, `TopupProofController` |
+| Customer Activity | `/activity` (`GetCustomerActivity`, presenters, Echo invalidation) |
+| Topup wallet | `SubmitCustomerTopupRequest` → `CreateTopupRequestAction`, `/wallet/topup`, `TopupProofController` |
+| Mobile API | `routes/api.php`, `Actions/MobileAuth/*`, `Actions/MobileCatalog/*`, `docs/api/v1/openapi.yaml` |
 | Fulfillment ops | `pages/backend/fulfillments`, `Actions/Fulfillments/*` |
 | **Browser automation** | `AutomationMonitor` (`/admin/automation`), `FulfillmentAutomationService`, `automation-worker/` |
 | **Wasim reconcile** | `ScheduleWasimOrderReconcile`, `DispatchWasimReconcileJob`, `reconcileOrder.ts` |

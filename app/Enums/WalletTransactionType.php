@@ -10,6 +10,9 @@ enum WalletTransactionType: string
     case Adjustment = 'adjustment';
     case Settlement = 'settlement';
     case CommissionCredit = 'commission_credit';
+    case CommissionReversal = 'commission_reversal';
+    case CommissionClawbackWaiver = 'commission_clawback_waiver';
+    case CommissionReversalCorrection = 'commission_reversal_correction';
 
     /**
      * Get all enum values as an array.

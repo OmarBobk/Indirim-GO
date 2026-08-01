@@ -1,8 +1,8 @@
 ---
-status: track-b-closed
+status: shipped-m7.2.3
 created: 2026-07-30
 feature: m7-financial-risk-admin-ops
-milestone: M7.2.4-historical-exposure
+milestone: M7.2.3-disputes-corrections
 owner: Omar
 type: policy-architecture
 ---

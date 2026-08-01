@@ -6,9 +6,8 @@ Central map for indirimGo knowledge. Use this vault with [[Ask → Plan → Agen
 
 | File | Purpose |
 |------|---------|
-| `SYSTEM_CONTEXT_CORE_v1.md` | Invariants, stack, routes, primary source files (**upload to ChatGPT**) |
+| `SYSTEM_CONTEXT_CORE_v1.md` | Invariants, stack, routes, primary source files |
 | `Docs/PROJECT_STRUCTURE.md` | Full project map |
-| `Docs/roles.md` | Permissions / roles / route gates |
 | `.cursor/rules/laravel-boost.mdc` | Stack versions + conventions (auto-loaded in Cursor) |
 | `Docs/CHATGPT_PROJECT_PROMPT.md` | ChatGPT Project instructions (copy-paste) |
 | `.cursor/rules/050-vault-sync.mdc` | Cursor agents: sync work to vault after each task |
@@ -25,8 +24,12 @@ Central map for indirimGo knowledge. Use this vault with [[Ask → Plan → Agen
 
 - [[Customer Financial Centre]] — M6 closed (M6.8); Financial Control Centre shipped
 - [[Customer Activity]] — M5 Activity feed (shipped; Home Needs attention deferred)
-- [[M7 — Financial Risk and Admin Operations]] — Track B closed (M7.0–M7.2.4) on branch `local/commission-policy`
-- [[Future Roadmap - Automation and Growth]] — Track C / D next after Track B
+- [[M7 — Financial Risk and Admin Operations]] — Track B closed (M7.0–M7.2.4)
+
+## Roadmap
+
+- [[Future Roadmap - Automation and Growth]] — Track C (automation) + Track D (growth); Track B closed — Omar chooses next
+- Track B complete through **M7.2.4 Historical Commission Exposure**
 
 ## Mobile
 

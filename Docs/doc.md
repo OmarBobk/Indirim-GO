@@ -88,9 +88,10 @@
       - Include an optional reason/note for each credit adjustment.
       - Log the action for auditing purposes.
     - ###DONE: Customer wallet Credit Facility / overdraft (`/credit-facility`, `manage_wallet_credit`).
-      - Grant facility: `credit_enabled` + `credit_limit` + `payment_terms_days` + `credit_status` (Active/Suspended; null when not granted).
+      - Grant facility: `credit_enabled` + `credit_limit` + `payment_terms_days` + `credit_status` (`active`/`suspended`; null when not granted).
       - Spend via `WalletSpendPolicy`; topups repay debt by arithmetic (no separate repay flow).
-      - Out of scope: debt write-off; purchase path still not on `WalletLedger`.
+      - **M6.0.1 shipped:** all product posted wallet mutations (incl. purchase) use `WalletLedger`; debit floor = `Wallet::minimumAllowedBalance()`.
+      - Out of scope: debt write-off / forgiveness.
 
 - Frontend:
   - ###DONE wallet transaction in /wallets should be more described

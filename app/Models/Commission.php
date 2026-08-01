@@ -80,4 +80,9 @@ class Commission extends Model
     {
         return $this->belongsTo(WalletTransaction::class);
     }
+
+    public function clawbacks(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(CommissionClawback::class);
+    }
 }

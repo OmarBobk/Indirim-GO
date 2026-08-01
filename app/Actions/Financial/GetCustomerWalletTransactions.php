@@ -40,6 +40,9 @@ final class GetCustomerWalletTransactions
         WalletTransactionType::Refund,
         WalletTransactionType::Adjustment,
         WalletTransactionType::CommissionCredit,
+        WalletTransactionType::CommissionReversal,
+        WalletTransactionType::CommissionClawbackWaiver,
+        WalletTransactionType::CommissionReversalCorrection,
     ];
 
     public function handle(User $user, ?WalletTransactionFilters $filters = null): WalletTransactionPageDTO
@@ -275,6 +278,9 @@ final class GetCustomerWalletTransactions
                 : new FinancialDestinationDTO(FinancialDestinationType::Orders),
             WalletTransactionType::Topup => $this->topupDestination($meta),
             WalletTransactionType::CommissionCredit => new FinancialDestinationDTO(FinancialDestinationType::WalletEarnings),
+            WalletTransactionType::CommissionReversal => new FinancialDestinationDTO(FinancialDestinationType::WalletEarnings),
+            WalletTransactionType::CommissionClawbackWaiver => new FinancialDestinationDTO(FinancialDestinationType::WalletEarnings),
+            WalletTransactionType::CommissionReversalCorrection => new FinancialDestinationDTO(FinancialDestinationType::WalletEarnings),
             WalletTransactionType::Adjustment => null,
             default => null,
         };
@@ -335,6 +341,9 @@ final class GetCustomerWalletTransactions
             WalletTransactionType::Refund => 'refund',
             WalletTransactionType::Adjustment => 'adjustment',
             WalletTransactionType::CommissionCredit => 'commission',
+            WalletTransactionType::CommissionReversal => 'commission_reversal',
+            WalletTransactionType::CommissionClawbackWaiver => 'commission_clawback_waiver',
+            WalletTransactionType::CommissionReversalCorrection => 'commission_reversal_correction',
             default => null,
         };
     }

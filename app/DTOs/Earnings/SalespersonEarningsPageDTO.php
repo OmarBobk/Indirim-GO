@@ -46,5 +46,11 @@ final readonly class SalespersonEarningsPageDTO
         public FinancialDestinationDTO $walletDestination,
         public FinancialDestinationDTO $transactionsDestination,
         public ?FinancialDestinationDTO $dashboardDestination,
+        public string $reversedTotal = '0.00',
+        public string $waivedBackTotal = '0.00',
+        public string $correctedBackTotal = '0.00',
+        public string $netCreditedTotal = '0.00',
+        public string $outstandingClawbackDebt = '0.00',
+        public bool $hasClawbackDebt = false,
     ) {}
 }

@@ -30,6 +30,14 @@ final class SalespersonEarningsPresenter
                 'pending' => $this->money($page->pendingTotal, $page->walletCurrency, $money, $pricesVisible),
                 'eligible' => $this->money($page->eligibleTotal, $page->walletCurrency, $money, $pricesVisible),
                 'credited' => $this->money($page->creditedTotal, $page->walletCurrency, $money, $pricesVisible),
+                'reversed' => $this->money($page->reversedTotal, $page->walletCurrency, $money, $pricesVisible),
+                'waived_back' => $this->money($page->waivedBackTotal, $page->walletCurrency, $money, $pricesVisible),
+                'corrected_back' => $this->money($page->correctedBackTotal, $page->walletCurrency, $money, $pricesVisible),
+                'net_credited' => $this->money($page->netCreditedTotal, $page->walletCurrency, $money, $pricesVisible),
+                'clawback_debt' => $page->hasClawbackDebt
+                    ? $this->money($page->outstandingClawbackDebt, $page->walletCurrency, $money, $pricesVisible)
+                    : null,
+                'has_clawback_debt' => $page->hasClawbackDebt,
                 'credited_this_month' => $this->money($page->creditedThisMonth, $page->walletCurrency, $money, $pricesVisible),
                 'failed' => $this->money($page->failedTotal, $page->walletCurrency, $money, $pricesVisible),
                 'generated' => $this->money($page->generatedTotal, $page->walletCurrency, $money, $pricesVisible),
@@ -40,11 +48,18 @@ final class SalespersonEarningsPresenter
                 'wallet_label' => __('messages.earnings_wallet_available'),
                 'pending_not_spendable' => __('messages.earnings_pending_not_spendable'),
                 'credited_in_wallet' => __('messages.earnings_credited_in_wallet'),
+                'reversed_label' => __('messages.earnings_reversed_total'),
+                'waived_back_label' => __('messages.earnings_waived_back_total'),
+                'corrected_back_label' => __('messages.earnings_corrected_back_total'),
+                'net_credited_label' => __('messages.earnings_net_credited'),
+                'clawback_debt_label' => __('messages.earnings_clawback_debt'),
+                'clawback_debt_hint' => __('messages.earnings_clawback_debt_hint'),
             ],
             'payout' => [
                 'threshold' => $this->money($page->payoutThreshold, $page->walletCurrency, $money, $pricesVisible),
                 'wait_days' => $page->waitDays,
                 'can_request' => $page->canRequestPayout,
+                'blocked_by_debt' => $page->hasClawbackDebt,
                 'status' => $page->payoutRequestStatus?->value,
                 'status_label' => $this->payoutStatusLabel($page->payoutRequestStatus),
                 'request_amount' => $page->payoutRequestEligibleAmount !== null
@@ -54,7 +69,9 @@ final class SalespersonEarningsPresenter
                 'request_created_display' => $page->payoutRequestCreatedAt !== null
                     ? Carbon::parse($page->payoutRequestCreatedAt)->timezone(config('app.timezone'))->format('M d, Y H:i')
                     : null,
-                'hint' => __('messages.earnings_payout_request_hint'),
+                'hint' => $page->hasClawbackDebt
+                    ? __('messages.earnings_payout_blocked_clawback_debt')
+                    : __('messages.earnings_payout_request_hint'),
                 'confirm' => __('messages.earnings_payout_request_confirm'),
             ],
             'items' => array_map(
@@ -130,6 +147,38 @@ final class SalespersonEarningsPresenter
             'is_anomaly' => $item->isIntegrityAnomaly,
             'anomaly_label' => $item->isIntegrityAnomaly ? __('messages.earnings_review_needed') : null,
             'wallet_transaction_public_ref' => $item->walletTransactionPublicRef,
+            'is_fully_reversed' => $item->isFullyReversed,
+            'is_fully_waived' => $item->isFullyWaived,
+            'is_partially_waived' => $item->isPartiallyWaived,
+            'is_partially_corrected' => $item->isPartiallyCorrected,
+            'is_fully_corrected' => $item->isFullyCorrected,
+            'is_under_dispute_review' => $item->isUnderDisputeReview,
+            'clawback_public_ref' => $item->clawbackPublicRef,
+            'reversal_wallet_transaction_public_ref' => $item->reversalWalletTransactionPublicRef,
+            'reversed_amount' => $item->reversedAmount !== null
+                ? $this->money($item->reversedAmount, $item->currency, $money, $pricesVisible)
+                : null,
+            'waived_amount' => $item->waivedAmount !== null
+                ? $this->money($item->waivedAmount, $item->currency, $money, $pricesVisible)
+                : null,
+            'corrected_amount' => $item->correctedAmount !== null
+                ? $this->money($item->correctedAmount, $item->currency, $money, $pricesVisible)
+                : null,
+            'waiver_wallet_transaction_public_ref' => $item->waiverWalletTransactionPublicRef,
+            'correction_wallet_transaction_public_ref' => $item->correctionWalletTransactionPublicRef,
+            'waiver_href' => $item->waiverTransactionDestination !== null
+                ? FinancialDestinationResolver::href($item->waiverTransactionDestination)
+                : null,
+            'correction_href' => $item->correctionTransactionDestination !== null
+                ? FinancialDestinationResolver::href($item->correctionTransactionDestination)
+                : null,
+            'net_commission_effect' => $item->netCommissionEffect !== null
+                ? $this->money($item->netCommissionEffect, $item->currency, $money, $pricesVisible)
+                : null,
+            'reversal_href' => $item->reversalTransactionDestination !== null
+                ? FinancialDestinationResolver::href($item->reversalTransactionDestination)
+                : null,
+            'clawback_needs_review' => $item->clawbackNeedsReview,
             'actor_next' => $item->actorNextKey !== null ? __($item->actorNextKey) : null,
             'transaction_href' => $item->transactionDestination !== null
                 ? FinancialDestinationResolver::href($item->transactionDestination)
@@ -143,6 +192,34 @@ final class SalespersonEarningsPresenter
 
     private function statusLabel(CommissionDTO $item): string
     {
+        if ($item->isUnderDisputeReview) {
+            return __('messages.earnings_status_under_review');
+        }
+
+        if ($item->clawbackNeedsReview) {
+            return __('messages.earnings_status_review');
+        }
+
+        if ($item->isFullyWaived) {
+            return __('messages.earnings_status_fully_waived');
+        }
+
+        if ($item->isFullyCorrected) {
+            return __('messages.earnings_status_fully_corrected');
+        }
+
+        if ($item->isPartiallyCorrected) {
+            return __('messages.earnings_status_partially_corrected');
+        }
+
+        if ($item->isPartiallyWaived) {
+            return __('messages.earnings_status_partially_waived');
+        }
+
+        if ($item->isFullyReversed) {
+            return __('messages.earnings_status_fully_reversed');
+        }
+
         if ($item->isIntegrityAnomaly && $item->status === CommissionStatus::Credited) {
             return __('messages.earnings_status_review');
         }

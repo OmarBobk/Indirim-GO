@@ -167,6 +167,9 @@ final class CustomerTransactionDetailPresenter
             WalletTransactionType::Refund => __('messages.wallet_transaction_type_refund'),
             WalletTransactionType::Adjustment => __('messages.financial_ledger_type_adjustment'),
             WalletTransactionType::CommissionCredit => __('messages.wallet_transaction_type_commission_credit'),
+            WalletTransactionType::CommissionReversal => __('messages.wallet_transaction_type_commission_reversal'),
+            WalletTransactionType::CommissionClawbackWaiver => __('messages.wallet_transaction_type_commission_clawback_waiver'),
+            WalletTransactionType::CommissionReversalCorrection => __('messages.wallet_transaction_type_commission_reversal_correction'),
             WalletTransactionType::Settlement => __('messages.wallet_transaction_type_settlement'),
         };
     }

@@ -19,3 +19,4 @@ Order line fulfillment: admin manual flow + Node/Playwright automation worker.
 
 - [[Orders & Checkout]]
 - [[Refunds & Settlements]]
+- [[Future Roadmap - Automation and Growth]] — Track C (Wasim harden → 2nd driver → routing → price updates)

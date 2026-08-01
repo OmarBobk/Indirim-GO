@@ -20,7 +20,7 @@ enum AdminDashboardVariant: string
     public function visibleExceptionKeys(): ?array
     {
         return match ($this) {
-            self::Finance => ['pending_refunds', 'pending_topups', 'pending_payouts'],
+            self::Finance => ['pending_refunds', 'pending_topups', 'pending_payouts', 'clawback_action_required_total'],
             self::Fulfillment => ['fulfillment_queue', 'failed_fulfillments', 'automation_needs_review'],
             self::Orders => ['orders_with_failures'],
             self::Full => null,

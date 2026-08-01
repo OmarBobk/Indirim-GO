@@ -32,5 +32,10 @@ final class WalletPosting
          * Credits ignore this value.
          */
         public readonly ?string $minimumAllowedBalance = null,
+        /**
+         * Narrow M7.1 override: only CommissionReversal may authorise balance below the wallet floor.
+         * Must never be set from browser input or generic adjustment/purchase paths.
+         */
+        public readonly bool $allowClawbackDebt = false,
     ) {}
 }

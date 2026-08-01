@@ -166,18 +166,20 @@ The system has four **roles**. Your menus depend on **permissions** your company
 
 **Who is acting:** Customer (logged in; email verified if your rules say so)
 
-**Goal:** See wallet balance and history.
+**Goal:** See Financial Centre overview (available to spend / balance) and navigate wallet sections.
 
 **Steps:**
 
 1. Go to the homepage.
 2. Click **Add sufficient** in the top bar **or** open the user menu → **Wallet**.
-3. Read the **balance**.
-4. Scroll to **transaction history** (if shown).
+3. Read the **balance** / **available to spend** hero.
+4. Confirm Financial Centre nav links: **Overview**, **Transactions**, **Top-ups**, **Refunds** (and **Earnings** if the account has referral permission).
+5. Open **Transactions** and confirm posted rows with refs (e.g. `WTX-*`).
 
 **Expected Result:**
 
-- Balance matches what your test team expects.
+- Balance / available-to-spend matches what your test team expects.
+- With an Active credit facility, Limit / Available may show; overdrawn balance can appear red/negative.
 - No error page.
 
 **Note:** If the store **hides prices** in settings, the header may not show money — still open **Wallet** to test.
@@ -188,15 +190,16 @@ The system has four **roles**. Your menus depend on **permissions** your company
 
 **Who is acting:** Customer
 
-**Goal:** Submit a top-up with amount, payment method, and receipt file.
+**Goal:** Submit a top-up with amount, payment method, and optional receipt file.
 
 **Steps:**
 
-1. Open **Wallet**.
+1. Open **Wallet** → **Top-ups** (or **Add funds** / `/wallet/topup`).
 2. Enter an amount (must be a **number greater than zero**, e.g. `10` or `25.50`).
 3. Choose a **payment method** (e.g. Sham Cash, bank transfer — whatever appears).
-4. Attach a **receipt file**: **JPG, PNG, WEBP, or PDF**.
+4. Optionally toggle **attach proof** and upload **JPG, PNG, WEBP, or PDF** when required by the form.
 5. Submit the form.
+6. Confirm the new request appears under **Top-ups** with a `TUP-*` reference.
 
 **Expected Result:**
 
@@ -207,6 +210,26 @@ The system has four **roles**. Your menus depend on **permissions** your company
 
 - **Admin** should get an **in-app notification** about a new top-up.
 - **Admin** **Topups** page should list the new row (immediately or after refresh — see Part F).
+
+---
+
+### Scenario Name: Customer Activity feed
+
+**Who is acting:** Customer
+
+**Goal:** Open Activity (not a second financial ledger) and see unread / action-required items.
+
+**Steps:**
+
+1. Open **Activity** from the menu (or `/activity`; `/notifications` should open the same page).
+2. Switch filters if available (**All** / **Unread** / **Action required**).
+3. Open an item and confirm it links to the right destination (order, top-up, refund — not a raw stored URL).
+
+**Expected Result:**
+
+- Feed loads without error.
+- Unread badge/count stays consistent with the bell.
+- Activity is **not** used as wallet balance truth.
 
 ---
 
@@ -529,7 +552,7 @@ The system has four **roles**. Your menus depend on **permissions** your company
 
 ## Part B — Admin
 
-**Default:** Full sidebar — **Dashboard**, catalog (categories, packages, products, pricing rules, loyalty tiers), **Operations** (notifications, fulfillments, orders, refunds), **Financials** (topups, customer funds, settlements), **Audit** (activities, system events, users), **Bug reports** + **Website settings** (same sidebar group; **Website settings** is Admin-role only).
+**Default:** Full sidebar — **Dashboard**, catalog (categories, packages, products, pricing rules, loyalty tiers, **price drift** when permitted), **Operations** (notifications, fulfillments, orders, refunds), **Financials** (topups, customer funds, **wallet adjustments**, **credit facility**, settlements, commissions, payout requests), **Audit** (activities, system events, users), **Bug reports** + **Website settings** / **Automation** / **Ops Assistant** (Admin-role group; **Website settings** includes payment methods).
 
 ---
 
@@ -1272,16 +1295,18 @@ Quick **must-pass** list:
 - [ ] **Login** (customer + staff) and **logout**
 - [ ] **Homepage** and **Cart**
 - [ ] **Checkout** (success **or** clear insufficient-funds message)
-- [ ] **Wallet** + **top-up request** + **Admin** sees it
+- [ ] **Wallet** Financial Centre (overview + transactions + top-up request) + **Admin** sees top-up
+- [ ] **Activity** (`/activity`) loads; `/notifications` alias works
 - [ ] **Credit facility** (`/credit-facility`) grant/update when testing overdraft (permission `manage_wallet_credit`)
+- [ ] **Wallet adjustments** (`/wallet-adjustments`) when testing admin credits (permission `adjust_wallets`)
 - [ ] **Orders** (customer list + staff list)
 - [ ] **Pricing system**: custom amount min/max/step validation works, and totals are consistent
 - [ ] **Pricing precision**: decimal-heavy prices still match between checkout, order details, and wallet
-- [ ] **Notifications** (customer + staff)
+- [ ] **Notifications / Activity** (customer + staff)
 - [ ] **Admin dashboard** + **Users** list
 - [ ] **Fulfillment claim flow**: claim task works, non-admin 5-task cap enforced, admin intervention works
 - [ ] **Bug Inbox** opens; **Report Bug** submits a test row (if your Admin has bug access)
-- [ ] **Website settings** save (Admin only) — optional if time is short
+- [ ] **Website settings** save (Admin only) — optional if time is short; payment methods visible when configured
 
 If **any** fails, **stop** and report before release.
 
