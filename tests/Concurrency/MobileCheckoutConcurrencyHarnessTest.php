@@ -19,7 +19,9 @@ declare(strict_types=1);
  */
 
 use App\Enums\OrderStatus;
+use App\Enums\ProductAmountMode;
 use App\Enums\WalletTransactionType;
+use App\Models\Category;
 use App\Models\Fulfillment;
 use App\Models\MobileCheckoutAttempt;
 use App\Models\Order;
@@ -236,17 +238,75 @@ function m31ConcurrencyAssertEnvironmentIdentity(array $fx): void
 }
 
 /**
+ * Deterministic unique sort order for uniquely constrained category/package/product.order.
+ * Never uses Factory random order values — those collide under committed MySQL fixtures.
+ */
+function m31ConcurrencyNextOrder(): int
+{
+    static $seq = null;
+
+    if ($seq === null) {
+        $seq = max(
+            (int) (Category::query()->max('order') ?? 0),
+            (int) (Package::query()->max('order') ?? 0),
+            (int) (Product::query()->max('order') ?? 0),
+            0,
+        );
+    }
+
+    $seq++;
+
+    return $seq;
+}
+
+/**
+ * @return array{category: Category, package: Package, product: Product}
+ */
+function m31ConcurrencyCatalog(string $label, string|float $entryPrice = 10): array
+{
+    $suffix = Str::lower(Str::random(8));
+
+    $category = Category::factory()->create([
+        'name' => $label.' category',
+        'slug' => Str::slug($label.'-category-'.$suffix),
+        'order' => m31ConcurrencyNextOrder(),
+        'is_active' => true,
+    ]);
+
+    $package = Package::factory()->create([
+        'category_id' => $category->id,
+        'name' => $label.' package',
+        'slug' => Str::slug($label.'-package-'.$suffix),
+        'order' => m31ConcurrencyNextOrder(),
+        'is_active' => true,
+    ]);
+
+    $product = Product::factory()->create([
+        'package_id' => $package->id,
+        'name' => $label.' product',
+        'entry_price' => $entryPrice,
+        'amount_mode' => ProductAmountMode::Fixed,
+        'order' => m31ConcurrencyNextOrder(),
+        'is_active' => true,
+    ]);
+
+    return compact('category', 'package', 'product');
+}
+
+/**
+ * @param  array{category?: Category, package: Package, product: Product}|null  $catalog
  * @return array{
  *     runId: string,
  *     user: User,
  *     token: string,
+ *     category: Category|null,
  *     package: Package,
  *     product: Product,
  *     baseUrl: string,
  *     openingBalance: string
  * }
  */
-function m31ConcurrencyFixtures(string $runId, string $baseUrl, string $balance = '500.00'): array
+function m31ConcurrencyFixtures(string $runId, string $baseUrl, string $balance = '500.00', ?array $catalog = null): array
 {
     if (! WebsiteSetting::query()->exists()) {
         m31Website();
@@ -276,16 +336,16 @@ function m31ConcurrencyFixtures(string $runId, string $baseUrl, string $balance 
         'name' => $runId,
     ]);
     m31Fund($user, $balance);
-    ['package' => $package, 'product' => $product] = m31FixedProduct([
-        'name' => $runId.' product',
-        'entry_price' => 10,
-    ]);
-    $package->update(['name' => $runId.' package']);
+
+    $catalog ??= m31ConcurrencyCatalog($runId);
+    $package = $catalog['package'];
+    $product = $catalog['product'];
 
     $fx = [
         'runId' => $runId,
         'user' => $user,
         'token' => m31Token($user),
+        'category' => $catalog['category'] ?? null,
         'package' => $package,
         'product' => $product,
         'baseUrl' => $baseUrl,
@@ -324,7 +384,13 @@ function m31ConcurrencyCleanupCatalog(Product ...$products): void
         $packageIds[] = $product->package_id;
         $product->delete();
     }
-    Package::query()->whereIn('id', array_filter($packageIds))->delete();
+
+    $packages = Package::query()->whereIn('id', array_filter($packageIds))->get();
+    $categoryIds = $packages->pluck('category_id')->filter()->unique()->all();
+    Package::query()->whereIn('id', $packages->pluck('id'))->delete();
+    if ($categoryIds !== []) {
+        Category::query()->whereIn('id', $categoryIds)->delete();
+    }
 }
 
 /**
@@ -439,7 +505,7 @@ test('same customer same key same payload concurrent checkout yields one purchas
 test('same customer same key different payload concurrent yields conflict and one purchase', function (): void {
     $ctx = m31ConcurrencyContext();
     $fx = m31ConcurrencyFixtures($ctx['runId'].'_s2', $ctx['baseUrl'], '500.00');
-    $other = m31FixedProduct(['name' => $ctx['runId'].'_s2 other', 'entry_price' => 10]);
+    $other = m31ConcurrencyCatalog($ctx['runId'].'_s2_other', 10);
     $key = $ctx['runId'].'-diff-payload';
 
     try {
@@ -569,27 +635,32 @@ test('same wallet different keys with funds for only one yields one success and 
 
 test('two customers using the same raw key remain isolated and may both succeed', function (): void {
     $ctx = m31ConcurrencyContext();
-    $fxA = m31ConcurrencyFixtures($ctx['runId'].'_s5a', $ctx['baseUrl'], '100.00');
-    $fxB = m31ConcurrencyFixtures($ctx['runId'].'_s5b', $ctx['baseUrl'], '100.00');
+    // Shared catalog + independent customers/wallets/PATs proves customer-scoped idempotency.
+    $catalog = m31ConcurrencyCatalog($ctx['runId'].'_shared', 10);
+    $fxA = m31ConcurrencyFixtures($ctx['runId'].'_s5a', $ctx['baseUrl'], '100.00', $catalog);
+    $fxB = m31ConcurrencyFixtures($ctx['runId'].'_s5b', $ctx['baseUrl'], '100.00', $catalog);
     $sharedKey = $ctx['runId'].'-shared-raw-key';
 
     try {
+        expect($fxA['product']->id)->toBe($fxB['product']->id)
+            ->and($fxA['package']->id)->toBe($fxB['package']->id);
+
         $quoteA = Http::withHeaders(m31Headers($fxA['token']))
             ->post($fxA['baseUrl'].'/api/v1/checkout/quote', [
-                'items' => [['product_id' => $fxA['product']->id, 'package_id' => $fxA['package']->id, 'quantity' => 1]],
+                'items' => [['product_id' => $catalog['product']->id, 'package_id' => $catalog['package']->id, 'quantity' => 1]],
             ]);
         $quoteB = Http::withHeaders(m31Headers($fxB['token']))
             ->post($fxB['baseUrl'].'/api/v1/checkout/quote', [
-                'items' => [['product_id' => $fxB['product']->id, 'package_id' => $fxB['package']->id, 'quantity' => 1]],
+                'items' => [['product_id' => $catalog['product']->id, 'package_id' => $catalog['package']->id, 'quantity' => 1]],
             ]);
 
         $responses = Http::pool(fn ($pool) => [
             $pool->as('a')->withHeaders(m31Headers($fxA['token'], $sharedKey))->post($fxA['baseUrl'].'/api/v1/checkout', [
-                'items' => [['product_id' => $fxA['product']->id, 'package_id' => $fxA['package']->id, 'quantity' => 1]],
+                'items' => [['product_id' => $catalog['product']->id, 'package_id' => $catalog['package']->id, 'quantity' => 1]],
                 'quote_fingerprint' => $quoteA->json('data.quote_fingerprint'),
             ]),
             $pool->as('b')->withHeaders(m31Headers($fxB['token'], $sharedKey))->post($fxB['baseUrl'].'/api/v1/checkout', [
-                'items' => [['product_id' => $fxB['product']->id, 'package_id' => $fxB['package']->id, 'quantity' => 1]],
+                'items' => [['product_id' => $catalog['product']->id, 'package_id' => $catalog['package']->id, 'quantity' => 1]],
                 'quote_fingerprint' => $quoteB->json('data.quote_fingerprint'),
             ]),
         ]);
@@ -606,7 +677,7 @@ test('two customers using the same raw key remain isolated and may both succeed'
         m31ConcurrencyAssertFloor($fxB['user']);
     } finally {
         m31ConcurrencyCleanup($fxA['user'], $fxB['user']);
-        m31ConcurrencyCleanupCatalog($fxA['product'], $fxB['product']);
+        m31ConcurrencyCleanupCatalog($catalog['product']);
     }
 });
 
