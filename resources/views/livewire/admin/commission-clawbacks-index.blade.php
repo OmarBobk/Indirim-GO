@@ -8,6 +8,22 @@
         </div>
     </div>
 
+    <nav class="flex flex-wrap gap-2 text-sm" aria-label="{{ __('messages.commission_clawbacks') }}">
+        <span class="rounded-lg bg-zinc-100 px-3 py-1.5 font-medium text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100" aria-current="page">
+            {{ __('messages.commission_clawbacks') }}
+        </span>
+        @can('view_historical_commission_exposure')
+            <a
+                href="{{ route('admin.commission-clawbacks.historical-exposure') }}"
+                wire:navigate
+                class="rounded-lg px-3 py-1.5 text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                data-test="historical-exposure-nav"
+            >
+                {{ __('messages.historical_exposure_title') }}
+            </a>
+        @endcan
+    </nav>
+
     <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
         <div class="sm:w-56">
             <flux:select wire:model.live="filter" :label="__('messages.clawback_filter_label')">

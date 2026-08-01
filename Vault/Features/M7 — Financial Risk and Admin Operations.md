@@ -11,7 +11,7 @@ type: policy-architecture
 
 Track B. Canonical home for commission clawback policy and later admin financial-risk tooling.
 
-**M7.0 approved 2026-07-30. M7.1 kernel shipped 2026-07-31. M7.2.0 architecture drafted 2026-08-01. M7.2.1 admin inbox/retry shipped 2026-08-01. M7.2.2 waiver shipped 2026-08-01. M7.2.3 disputes + corrections shipped 2026-08-01. Historical remains deferred (M7.2.4).**
+**M7.0 approved 2026-07-30. M7.1 kernel shipped 2026-07-31. M7.2.0 architecture drafted 2026-08-01. M7.2.1–M7.2.4 shipped 2026-08-01. Track B closed.**
 
 Related: [[Refunds & Settlements]], [[Wallet & Ledger]], [[Customer Financial Centre]], [[Orders & Checkout]], [[Future Roadmap - Automation and Growth]]
 
@@ -129,9 +129,21 @@ remaining_to_post (unposted) = obligation_amount − waived_before_post   # v1: 
 
 LedgerMoney / BCMath scale 2; server-derived remaining only.
 
-### Historical exposure (M7.2.4)
+### Historical exposure (M7.2.4) — shipped
 
-Read-only report: credited + posted refund + no clawback, pre-policy. **No browse-time mutation.** Markers: reviewed / platform_absorbed / no_action. Manual historical debit **deferred / case-by-case later — not in M7.2.4**.
+Read-only report: credited commission + proven posted refund + no clawback + no posted `commission_reversal` + outside automatic policy (`refund.posted_at` < `billing.commission_clawback.effective_at`, or all such gaps when `effective_at` unset).
+
+**Confidence:** `confirmed` (valid credit link + join-proven refund↔fulfillment) | `incomplete` (missing/invalid credit).
+
+**Exposure amount:** full credited commission amount (one commission per fulfillment; LedgerMoney; no proportional math).
+
+**Review markers:** table `historical_commission_exposure_reviews` (unique commission+refund). Outcomes: `platform_absorbed`, `not_actionable`, `insufficient_data`, `duplicate_or_invalid`, `deferred_review`. **Not financial truth** — no WalletLedger, no clawback, no Commission/refund mutation.
+
+**Permission:** `view_historical_commission_exposure` (view + mark review). Admin by seeder. Not via `adjust_wallets` / process / settlements.
+
+**Route:** `/admin/commission-clawbacks/historical-exposure` (static before `{clawback}`). Page-local summary only; no global sidebar historical count. CSV export **deferred**.
+
+Manual historical collection remains **intentionally rejected/deferred** — not available.
 
 ### Permissions (recommended)
 
@@ -252,7 +264,7 @@ Authorized admins can see clawback obligations, prioritize action-required cases
 
 - **M7.2.2** ~~waiver~~ → **shipped** (see below)
 - **M7.2.3** dispute + erroneous-reversal correction
-- **M7.2.4** historical exposure report-only
+- **M7.2.4** ~~historical exposure report-only~~ → **shipped** (see below)
 
 ---
 
@@ -304,7 +316,7 @@ Authorized admins can forgive valid clawbacks immutably: unposted full waiver (n
 ### Deferred
 
 - **M7.2.3** ~~dispute + correction~~ → **shipped** (see below)
-- **M7.2.4** historical exposure report-only
+- **M7.2.4** ~~historical exposure report-only~~ → **shipped** (see below)
 
 ---
 
@@ -353,7 +365,73 @@ Admin-only dispute lifecycle (no money on open) plus dedicated erroneous-reversa
 
 ### Deferred
 
-- **M7.2.4** historical exposure report-only (no auto/manual historical debit)
+- *(none for Track B milestones)* — see **M7.2.4** + Track B closure below
+
+---
+
+## M7.2.4 — Historical Commission Exposure + Track B Closure (shipped)
+
+### Goal
+
+Read-only historical exposure report for credited commissions with posted refunds outside automatic M7.1 clawback, plus non-financial review markers — then close Track B. No historical collection.
+
+### Shipped — 2026-08-01
+
+- **Permission:** `view_historical_commission_exposure` (admin by seeder; view + review; not via adjust_wallets / process / settlements)
+- **Route:** `GET /admin/commission-clawbacks/historical-exposure` (`admin.commission-clawbacks.historical-exposure`) — registered **before** `{clawback}` binding
+- **Nav:** tab/link from clawback inbox (permission-gated); no new top-level nav; no sidebar historical badge count
+- **Read Action:** `GetHistoricalCommissionExposure` → `HistoricalCommissionExposureItemDTO` → `AdminHistoricalCommissionExposurePresenter`
+- **Classifier:** `HistoricalCommissionExposureClassifier` — confirmed vs incomplete; outside-policy via `effective_at`
+- **Query grain:** credited Commission ↔ fulfillment ↔ posted refund (Fulfillment or OrderItem reference) ↔ optional credit WTX; exclude clawbacks + posted `commission_reversal` idempotency keys
+- **Default window:** 24 months refund lookback; pagination 20; confirmed unreviewed first, newest refund, ID tie-break
+- **Filters:** unreviewed / reviewed / confirmed / incomplete / all; search commission id, order #, credit/refund WTX; salesperson_id supported on Action
+- **Review model:** `historical_commission_exposure_reviews` + `HistoricalCommissionExposureReview`
+- **Review Action:** `ReviewHistoricalCommissionExposure` — revalidate pair, upsert marker, activity_log; idempotent same-outcome replay; **never** WalletLedger / clawback / Commission / refund mutation
+- **Outcomes:** `platform_absorbed`, `not_actionable`, `insufficient_data`, `duplicate_or_invalid`, `deferred_review`
+- **UI:** Livewire `HistoricalCommissionExposureIndex` + warning “no financial action will occur”; EN/AR strings; money LTR; status not color-only
+- **Performance:** page-local summary only; EXPLAIN uses existing indexes + review unique; no new materialization; no global historical count on every request
+- **CSV export:** **deferred** (no safe existing admin export pattern adopted)
+- **Tests:** `HistoricalCommissionExposureTest` + M7.1–M7.2.3 regression green
+
+### Exposure definition (strict)
+
+| Class | Rule |
+|---|---|
+| Confirmed | Credited + valid original credit + proven refund↔fulfillment + no clawback + no posted reversal + outside policy |
+| Incomplete | Candidate join exists but credit link missing/invalid |
+| Not in report | Pending/failed commission; no proven refund; posted reversal; any clawback row (post-policy inbox); inside `effective_at` window |
+
+### Gotchas
+
+- Review marker ≠ money movement and ≠ CommissionClawback
+- Incomplete rows must not be presented as confirmed financial loss
+- Post-policy `needs_review` stays in clawback inbox — not this report
+- Meta-only `fulfillment_id` refunds without morph match are **not** joined (incomplete source → excluded rather than inventing exposure)
+- Waiver/correction without reversal is inconsistent → classify incomplete at pair revalidation if ever surfaced
+
+### Track B closure review (2026-08-01)
+
+| Slice | Status |
+|---|---|
+| M7.0 policy | Shipped (prospective clawback; customer refund independent) |
+| M7.1 reversal kernel | Shipped |
+| M7.2.1 admin retry ops | Shipped |
+| M7.2.2 waivers | Shipped |
+| M7.2.3 disputes/corrections | Shipped |
+| M7.2.4 historical exposure | Shipped (report + review only) |
+
+**Durable truths confirmed:** customer refund independent; original credits/reversals immutable; all money through WalletLedger; typed debit/credit corrections; admin actions permissioned; retries do not alter financial facts; historical reporting does not collect money; SP debt reconciles via wallet arithmetic; Earnings/wallet surfaces reconcile; no generic wallet adjustment for clawbacks.
+
+**Remaining deferred (real, not new Track B milestones):** MySQL concurrency stress tests; browser Arabic/Reverb/manual acceptance; full-suite memory grouping; decimal-width hardening; unified Financial Exceptions Centre; salesperson self-service dispute; **historical manual collection (intentionally rejected/deferred)**; CSV export.
+
+**Track B verdict:** **Closed.** Recommended next: **Track C automation** (ops cost) or **Track D growth** (conversion) — Omar chooses; do not invent M7.2.5 for deferred items.
+
+### Deferred after Track B
+
+- Historical manual collection (rejected as product default)
+- CSV export of historical exposure
+- Unified Financial Exceptions Centre
+- SP self-service dispute
 
 ---
 

@@ -22,7 +22,7 @@ Authoritative financial model for karman.store.
 - **M7.2.1 (shipped):** dedicated admin clawback inbox/detail (`CLB-*`), retry Action (re-dispatch Process only), stale sweeper, permission-aware counts
 - **M7.2.2 (shipped):** `commission_clawback_decisions` (`CLD-*`); `waive_commission_clawbacks`; unposted full → status `waived` (no WTX); posted full/partial → credit `commission_clawback_waiver`; original reversal immutable; never use generic adjustment for forgiveness
 - **M7.2.3 (shipped):** disputes (`dispute_opened`/`dispute_resolved`) pause unposted processing; corrections via `commission_reversal_correction` credit; shared cumulative cap with waivers; permissions `manage_commission_clawback_disputes` / `correct_commission_clawbacks`
-- **M7.2.4 (deferred):** historical exposure report-only
+- **M7.2.4 (shipped):** read-only historical exposure report + non-financial review markers (`historical_commission_exposure_reviews`); permission `view_historical_commission_exposure`; **never** creates clawbacks or wallet posts; historical collection not available
 
 ## Key files
 
@@ -48,7 +48,7 @@ Authoritative financial model for karman.store.
 ## Features
 
 - [[Customer Financial Centre]] — through **M6.8** closure (M6.0–M6.7 shipped)
-- [[M7 — Financial Risk and Admin Operations]] — Track B; **M7.1 + M7.2.1–M7.2.3 shipped**; historical deferred (M7.2.4)
+- [[M7 — Financial Risk and Admin Operations]] — Track B; **M7.1 + M7.2.1–M7.2.4 shipped; Track B closed**
 - [[Customer Activity]] — projection only
 
 ## Customer surfaces

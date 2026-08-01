@@ -73,7 +73,7 @@ Never deduct customer refunds by salesperson commission.
 ## Features
 
 - [[Customer Financial Centre]] — M6 closed
-- [[M7 — Financial Risk and Admin Operations]] — M7.1–M7.2.3 shipped (inbox/retry/waiver/dispute/correction); historical deferred (M7.2.4)
+- [[M7 — Financial Risk and Admin Operations]] — M7.1–M7.2.4 shipped (inbox/retry/waiver/dispute/correction/historical report); Track B closed; historical collection not available
 - [[Customer Activity]] — rejected refund → refund detail destination when `public_ref` present
 
 ## Related

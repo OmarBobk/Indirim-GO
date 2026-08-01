@@ -43,6 +43,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'waive_commission_clawbacks',
             'manage_commission_clawback_disputes',
             'correct_commission_clawbacks',
+            'view_historical_commission_exposure',
             'manage_bugs',
             'install_pwa_app',
             'manage_user_prices',

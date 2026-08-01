@@ -7,30 +7,30 @@ type: roadmap
 
 # Future Roadmap — Automation and Growth
 
-Deferred tracks while **Track B — Financial Risk and Admin Operations** is active. Do not start C or D until Track B is closed or deliberately paused.
+Deferred tracks after **Track B — Financial Risk and Admin Operations** closed (M7.2.4). Choose Track C or D from real ops/conversion pressure.
 
-Related: [[Fulfillments & Automation]], [[Orders & Checkout]], [[Refunds & Settlements]], [[Customer Financial Centre]], [[Wallet & Ledger]]
+Related: [[Fulfillments & Automation]], [[Orders & Checkout]], [[Refunds & Settlements]], [[Customer Financial Centre]], [[Wallet & Ledger]], [[M7 — Financial Risk and Admin Operations]]
 
 ## Track map
 
 | Track | Focus | Status |
 |---|---|---|
-| **B** | Financial risk + admin ops | **Active** (M7.1 + M7.2.1 shipped; M7.2.2 waiver next) |
-| **C** | Fulfilment / supplier automation | Backlog |
-| **D** | Growth / conversion | Backlog |
+| **B** | Financial risk + admin ops | **Closed** (M7.0–M7.2.4) |
+| **C** | Fulfilment / supplier automation | Backlog — recommended next if ops cost dominates |
+| **D** | Growth / conversion | Backlog — recommended next if conversion dominates |
 
 Suggested order inside each track below. Adjust from real ops bottlenecks and conversion data.
 
 ---
 
-## Current decision (Track B)
+## Current decision (post Track B)
 
-**Active:** Track B — Financial Risk and Admin Operations
+**Closed:** Track B — Financial Risk and Admin Operations (through M7.2.4 historical exposure report-only)
 
-**Next milestone:** [[M7 — Financial Risk and Admin Operations]] — **M7.2.2 Waiver** (after M7.2.1 ops surface)
+**Recommended next:** Track C (automation) **or** Track D (growth) — Omar chooses.
 
-- M7.0 policy approved 2026-07-30; M7.1 kernel shipped 2026-07-31; M7.2.1 inbox/retry shipped 2026-08-01.
-- Do not start waiver/dispute/correction/historical until Omar opens that milestone.
+- Historical manual collection remains intentionally deferred/rejected.
+- Do not invent M7.2.5 for deferred stress/UI/export items.
 
 ---
 

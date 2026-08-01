@@ -228,6 +228,7 @@ return [
         'waive_commission_clawbacks',
         'manage_commission_clawback_disputes',
         'correct_commission_clawbacks',
+        'view_historical_commission_exposure',
         'manage_bugs',
         'update_product_prices',
     ],

@@ -227,7 +227,7 @@ Shared eligibility: `SalespersonCommissionEligibility` (mirrors CreatePayoutBatc
 
 ### Deferred
 
-- Commission clawback **historical exposure** — M7.2.4 report-only (no SP self-service dispute; dispute/correction shipped in M7.2.3)
+- Commission clawback **historical exposure** — M7.2.4 shipped (report + review markers only; no SP self-service dispute; no historical collection)
 - `COM-*` / `PAY-*` public refs if product needs them
 - Dedicated salesperson order detail (order # is reference-only from earnings)
 - Dedicated salesperson CLB detail route (optional)
