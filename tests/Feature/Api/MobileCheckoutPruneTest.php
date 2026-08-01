@@ -90,6 +90,78 @@ test('prune dry-run does not delete rows', function (): void {
     expect(MobileCheckoutAttempt::query()->count())->toBe(1);
 });
 
+test('prune deletes more than one batch of eligible terminal attempts', function (): void {
+    config(['mobile_api.checkout.idempotency_retention_hours' => 72]);
+
+    $user = m31Customer();
+    $recent = MobileCheckoutAttempt::query()->create([
+        'user_id' => $user->id,
+        'key_hash' => hash('sha256', 'prune-batch-recent'),
+        'request_hash' => hash('sha256', 'recent-batch'),
+        'status' => MobileCheckoutAttemptStatus::Completed,
+        'completed_at' => now()->subHours(1),
+        'receipt' => ['order_number' => 'IG-RECENT'],
+    ]);
+
+    $processing = MobileCheckoutAttempt::query()->create([
+        'user_id' => $user->id,
+        'key_hash' => hash('sha256', 'prune-batch-processing'),
+        'request_hash' => hash('sha256', 'processing-batch'),
+        'status' => MobileCheckoutAttemptStatus::Processing,
+        'processing_started_at' => now()->subHours(100),
+        'created_at' => now()->subHours(100),
+    ]);
+
+    $retryable = MobileCheckoutAttempt::query()->create([
+        'user_id' => $user->id,
+        'key_hash' => hash('sha256', 'prune-batch-retryable'),
+        'request_hash' => hash('sha256', 'retryable-batch'),
+        'status' => MobileCheckoutAttemptStatus::Failed,
+        'failure_code' => 'checkout_retry_required',
+        'created_at' => now()->subHours(1),
+        'completed_at' => null,
+    ]);
+
+    $rows = [];
+    for ($i = 0; $i < 501; $i++) {
+        $rows[] = [
+            'user_id' => $user->id,
+            'key_hash' => hash('sha256', 'prune-batch-old-'.$i),
+            'request_hash' => hash('sha256', 'old-batch-'.$i),
+            'status' => MobileCheckoutAttemptStatus::Completed->value,
+            'order_id' => null,
+            'receipt' => json_encode(['order_number' => 'IG-OLD-'.$i], JSON_THROW_ON_ERROR),
+            'failure_code' => null,
+            'processing_started_at' => null,
+            'completed_at' => now()->subHours(100),
+            'created_at' => now()->subHours(101),
+            'updated_at' => now()->subHours(100),
+        ];
+    }
+
+    foreach (array_chunk($rows, 100) as $chunk) {
+        MobileCheckoutAttempt::query()->insert($chunk);
+    }
+
+    expect(MobileCheckoutAttempt::query()->count())->toBe(504);
+
+    Artisan::call('mobile-checkout:prune-attempts');
+    $output = Artisan::output();
+    expect($output)->toContain('Pruned 501 terminal mobile checkout attempt(s)');
+
+    expect(MobileCheckoutAttempt::query()->count())->toBe(3)
+        ->and(MobileCheckoutAttempt::query()->whereKey($recent->id)->exists())->toBeTrue()
+        ->and(MobileCheckoutAttempt::query()->whereKey($processing->id)->exists())->toBeTrue()
+        ->and(MobileCheckoutAttempt::query()->whereKey($retryable->id)->exists())->toBeTrue()
+        ->and(MobileCheckoutAttempt::query()->where('status', MobileCheckoutAttemptStatus::Completed)->where('completed_at', '<=', now()->subHours(72))->count())->toBe(0);
+
+    Artisan::call('mobile-checkout:prune-attempts');
+    expect(Artisan::output())->toContain('Pruned 0 terminal mobile checkout attempt(s)')
+        ->and(MobileCheckoutAttempt::query()->whereKey($recent->id)->exists())->toBeTrue()
+        ->and(MobileCheckoutAttempt::query()->whereKey($processing->id)->exists())->toBeTrue()
+        ->and(MobileCheckoutAttempt::query()->whereKey($retryable->id)->exists())->toBeTrue();
+});
+
 test('scheduler registers mobile checkout prune command', function (): void {
     $events = collect(app(\Illuminate\Console\Scheduling\Schedule::class)->events());
     $matched = $events->first(

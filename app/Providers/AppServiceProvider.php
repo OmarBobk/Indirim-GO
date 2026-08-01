@@ -13,6 +13,8 @@ use App\Listeners\SendBugRecordedAdminNotifications;
 use App\Services\CustomerPriceService;
 use App\Services\PriceCalculator;
 use App\Support\ActivityLogBroadcaster;
+use App\Support\Api\V1\MobileCheckoutCommitGate;
+use App\Support\Api\V1\NullMobileCheckoutCommitGate;
 use Carbon\CarbonImmutable;
 use Illuminate\Auth\Events\Logout;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -40,6 +42,7 @@ class AppServiceProvider extends ServiceProvider
         });
 
         $this->app->bind(HumanVerifier::class, TurnstileVerifier::class);
+        $this->app->singleton(MobileCheckoutCommitGate::class, NullMobileCheckoutCommitGate::class);
     }
 
     /**

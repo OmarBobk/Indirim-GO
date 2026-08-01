@@ -12,21 +12,13 @@ declare(strict_types=1);
  * - database name ends with `_concurrency`
  *
  * Never uses SQLite fallback. Never calls migrate:fresh.
- * Fixtures are committed (no RefreshDatabase) so an external HTTP server can see them.
- * The HTTP server and Pest runner must share the same disposable DB and APP_KEY.
- *
- * Local Windows example:
- *   $env:APP_ENV="testing"
- *   $env:DB_CONNECTION="mysql"
- *   $env:DB_DATABASE="indirimgo_m31_concurrency"
- *   $env:MOBILE_CONCURRENCY_TESTS="1"
- *   php artisan migrate --force
- *   php artisan serve --port=8088
- *   # other shell with the same env:
- *   $env:MOBILE_CONCURRENCY_BASE_URL="http://127.0.0.1:8088"
- *   php artisan test --compact tests/Concurrency/MobileCheckoutConcurrencyHarnessTest.php
+ * Fixtures are committed (no RefreshDatabase).
+ * Prefers a self-spawned cross-platform `artisan serve` child (Symfony Process)
+ * that inherits the exact APP_KEY + DB env. External BASE_URL requires a
+ * fail-closed fixture + APP_KEY handshake.
  */
 
+use App\Enums\OrderStatus;
 use App\Enums\WalletTransactionType;
 use App\Models\Fulfillment;
 use App\Models\MobileCheckoutAttempt;
@@ -39,15 +31,18 @@ use App\Models\User;
 use App\Models\Wallet;
 use App\Models\WalletTransaction;
 use App\Models\WebsiteSetting;
+use App\Support\Api\V1\MobileCheckoutQuoteBuilder;
+use App\Support\LedgerMoney;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use Symfony\Component\Process\Process;
 
 /**
- * @return array{baseUrl: string, runId: string, spawned: bool, process: resource|null}|null
+ * @return array{baseUrl: string, runId: string, process: ?Process}
  */
-function m31ConcurrencyContext(): ?array
+function m31ConcurrencyContext(): array
 {
     static $context = null;
     static $skipReason = null;
@@ -88,31 +83,17 @@ function m31ConcurrencyContext(): ?array
         test()->markTestSkipped($skipReason);
     }
 
-    $baseUrl = rtrim((string) env('MOBILE_CONCURRENCY_BASE_URL', ''), '/');
+    $runId = 'm31c_'.Str::lower(Str::random(10));
+    $external = rtrim((string) env('MOBILE_CONCURRENCY_BASE_URL', ''), '/');
     $process = null;
-    $spawned = false;
 
-    if ($baseUrl === '') {
-        $port = (int) env('MOBILE_CONCURRENCY_PORT', (string) random_int(18080, 18999));
+    if ($external !== '') {
+        $baseUrl = $external;
+    } else {
+        $port = m31ConcurrencyFreePort();
         $baseUrl = 'http://127.0.0.1:'.$port;
         $process = m31ConcurrencySpawnServer($port);
-        $spawned = true;
-
-        $ready = false;
-        for ($i = 0; $i < 40; $i++) {
-            try {
-                $response = Http::timeout(1)->get($baseUrl.'/up');
-                if ($response->successful() || $response->status() > 0) {
-                    $ready = true;
-                    break;
-                }
-            } catch (Throwable) {
-                // waiting for artisan serve
-            }
-            usleep(250_000);
-        }
-
-        if (! $ready) {
+        if ($process === null || ! m31ConcurrencyWaitUntilReady($baseUrl)) {
             m31ConcurrencyStopServer($process);
             $skipReason = 'Failed to start local artisan serve for concurrency harness.';
             test()->markTestSkipped($skipReason);
@@ -121,13 +102,12 @@ function m31ConcurrencyContext(): ?array
 
     $context = [
         'baseUrl' => $baseUrl,
-        'runId' => 'm31c_'.Str::lower(Str::random(10)),
-        'spawned' => $spawned,
+        'runId' => $runId,
         'process' => $process,
     ];
 
     register_shutdown_function(static function () use (&$context): void {
-        if (is_array($context) && ($context['spawned'] ?? false) && isset($context['process'])) {
+        if (is_array($context) && ($context['process'] ?? null) instanceof Process) {
             m31ConcurrencyStopServer($context['process']);
         }
     });
@@ -135,19 +115,33 @@ function m31ConcurrencyContext(): ?array
     return $context;
 }
 
-/**
- * @return resource|null
- */
-function m31ConcurrencySpawnServer(int $port)
+function m31ConcurrencyFreePort(): int
 {
-    $connection = config('database.default');
+    $socket = @stream_socket_server('tcp://127.0.0.1:0', $errno, $errstr);
+    if ($socket === false) {
+        return random_int(18080, 18999);
+    }
+
+    $name = stream_socket_get_name($socket, false);
+    fclose($socket);
+    if (is_string($name) && str_contains($name, ':')) {
+        return (int) substr(strrchr($name, ':'), 1);
+    }
+
+    return random_int(18080, 18999);
+}
+
+function m31ConcurrencySpawnServer(int $port): ?Process
+{
+    $connection = (string) config('database.default');
     $db = config('database.connections.'.$connection);
 
-    $env = [
+    // Symfony Process env array is cross-platform (no Unix ENV=value prefix).
+    $env = m31ConcurrencyChildEnv([
         'APP_ENV' => 'testing',
         'APP_KEY' => (string) config('app.key'),
         'APP_DEBUG' => 'false',
-        'DB_CONNECTION' => (string) $connection,
+        'DB_CONNECTION' => $connection,
         'DB_HOST' => (string) ($db['host'] ?? '127.0.0.1'),
         'DB_PORT' => (string) ($db['port'] ?? '3306'),
         'DB_DATABASE' => (string) ($db['database'] ?? ''),
@@ -158,53 +152,87 @@ function m31ConcurrencySpawnServer(int $port)
         'SESSION_DRIVER' => 'array',
         'TELESCOPE_ENABLED' => 'false',
         'MOBILE_CONCURRENCY_TESTS' => '1',
-    ];
+    ]);
 
-    $pairs = [];
-    foreach ($env as $key => $value) {
-        $pairs[] = $key.'='.escapeshellarg($value);
-    }
-
-    $command = implode(' ', $pairs).' '.escapeshellarg(PHP_BINARY).' '.escapeshellarg(base_path('artisan')).' serve --host=127.0.0.1 --port='.$port;
-
-    $descriptors = [
-        0 => ['pipe', 'r'],
-        1 => ['file', sys_get_temp_dir().'/m31-concurrency-serve.out', 'a'],
-        2 => ['file', sys_get_temp_dir().'/m31-concurrency-serve.err', 'a'],
-    ];
-
-    $process = proc_open($command, $descriptors, $pipes, base_path());
-    if (! is_resource($process)) {
-        return null;
-    }
-
-    if (isset($pipes[0]) && is_resource($pipes[0])) {
-        fclose($pipes[0]);
-    }
+    $process = new Process(
+        [PHP_BINARY, base_path('artisan'), 'serve', '--host=127.0.0.1', '--port='.(string) $port],
+        base_path(),
+        $env,
+    );
+    $process->setTimeout(null);
+    $process->start();
 
     return $process;
 }
 
 /**
- * @param  resource|null  $process
+ * @param  array<string, string>  $overrides
+ * @return array<string, string>
  */
-function m31ConcurrencyStopServer($process): void
+function m31ConcurrencyChildEnv(array $overrides): array
 {
-    if (! is_resource($process)) {
-        return;
-    }
-
-    $status = proc_get_status($process);
-    if (($status['running'] ?? false) && isset($status['pid'])) {
-        if (PHP_OS_FAMILY === 'Windows') {
-            exec('taskkill /F /T /PID '.(int) $status['pid'].' 2>NUL');
-        } else {
-            posix_kill((int) $status['pid'], SIGTERM);
+    $base = [];
+    foreach (array_merge($_SERVER, $_ENV) as $key => $value) {
+        if (is_string($key) && is_scalar($value)) {
+            $base[$key] = (string) $value;
         }
     }
 
-    proc_terminate($process);
-    proc_close($process);
+    return array_merge($base, $overrides);
+}
+
+function m31ConcurrencyWaitUntilReady(string $baseUrl): bool
+{
+    for ($i = 0; $i < 40; $i++) {
+        try {
+            $response = Http::timeout(1)->get($baseUrl.'/up');
+            if ($response->status() > 0) {
+                return true;
+            }
+        } catch (Throwable) {
+            // waiting
+        }
+        usleep(250_000);
+    }
+
+    return false;
+}
+
+function m31ConcurrencyStopServer(?Process $process): void
+{
+    if ($process === null) {
+        return;
+    }
+
+    if ($process->isRunning()) {
+        $process->stop(3, SIGTERM);
+    }
+}
+
+/**
+ * Fail closed unless the HTTP server sees committed fixtures and shares APP_KEY.
+ *
+ * @param  array{user: User, token: string, package: Package, product: Product, baseUrl: string}  $fx
+ */
+function m31ConcurrencyAssertEnvironmentIdentity(array $fx): void
+{
+    $quote = Http::withHeaders(m31Headers($fx['token']))
+        ->post($fx['baseUrl'].'/api/v1/checkout/quote', [
+            'items' => [['product_id' => $fx['product']->id, 'package_id' => $fx['package']->id, 'quantity' => 1]],
+        ]);
+
+    if (! $quote->successful()) {
+        test()->fail('Concurrency environment identity handshake failed: server cannot see committed fixtures (wrong database or unreachable app).');
+    }
+
+    $fingerprint = (string) $quote->json('data.quote_fingerprint');
+    $payload = app(MobileCheckoutQuoteBuilder::class)->decodeAndVerifyFingerprint($fingerprint);
+    if ($payload === null) {
+        test()->fail('Concurrency environment identity handshake failed: APP_KEY mismatch between test process and HTTP server.');
+    }
+
+    expect((int) ($payload['product_id'] ?? 0))->toBe((int) $fx['product']->id)
+        ->and((int) ($payload['user_id'] ?? 0))->toBe((int) $fx['user']->id);
 }
 
 /**
@@ -214,10 +242,11 @@ function m31ConcurrencyStopServer($process): void
  *     token: string,
  *     package: Package,
  *     product: Product,
- *     baseUrl: string
+ *     baseUrl: string,
+ *     openingBalance: string
  * }
  */
-function m31ConcurrencyFixtures(string $runId, string $baseUrl, string|float $balance = 500): array
+function m31ConcurrencyFixtures(string $runId, string $baseUrl, string $balance = '500.00'): array
 {
     if (! WebsiteSetting::query()->exists()) {
         m31Website();
@@ -253,14 +282,19 @@ function m31ConcurrencyFixtures(string $runId, string $baseUrl, string|float $ba
     ]);
     $package->update(['name' => $runId.' package']);
 
-    return [
+    $fx = [
         'runId' => $runId,
         'user' => $user,
         'token' => m31Token($user),
         'package' => $package,
         'product' => $product,
         'baseUrl' => $baseUrl,
+        'openingBalance' => LedgerMoney::normalize($balance),
     ];
+
+    m31ConcurrencyAssertEnvironmentIdentity($fx);
+
+    return $fx;
 }
 
 function m31ConcurrencyCleanup(User ...$users): void
@@ -283,35 +317,73 @@ function m31ConcurrencyCleanup(User ...$users): void
     }
 }
 
-/**
- * @param  array<string, string>  $headers
- * @param  array<string, mixed>  $payload
- * @return array<int, \Illuminate\Http\Client\Response>
- */
-function m31ConcurrencyPool(string $baseUrl, string $path, array $headers, array $payload, int $copies = 2): array
+function m31ConcurrencyCleanupCatalog(Product ...$products): void
 {
-    $requests = [];
-    for ($i = 0; $i < $copies; $i++) {
-        $requests['r'.$i] = $headers;
+    $packageIds = [];
+    foreach ($products as $product) {
+        $packageIds[] = $product->package_id;
+        $product->delete();
     }
+    Package::query()->whereIn('id', array_filter($packageIds))->delete();
+}
 
-    return Http::pool(function ($pool) use ($baseUrl, $path, $requests, $payload) {
-        $out = [];
-        foreach ($requests as $as => $headers) {
-            $out[] = $pool->as($as)->withHeaders($headers)->post($baseUrl.$path, $payload);
-        }
+/**
+ * @return array{orders: int, paid: int, purchases: int, fulfillments: int, balance: string, attempts: int, processing: int, completed: int}
+ */
+function m31ConcurrencyDurable(User $user): array
+{
+    $walletIds = Wallet::query()->where('user_id', $user->id)->pluck('id');
+    $orderIds = Order::query()->where('user_id', $user->id)->pluck('id');
 
-        return $out;
-    });
+    return [
+        'orders' => Order::query()->where('user_id', $user->id)->count(),
+        'paid' => Order::query()->where('user_id', $user->id)->where('status', OrderStatus::Paid)->count(),
+        'purchases' => WalletTransaction::query()
+            ->whereIn('wallet_id', $walletIds)
+            ->where('type', WalletTransactionType::Purchase)
+            ->count(),
+        'fulfillments' => Fulfillment::query()->whereIn('order_id', $orderIds)->count(),
+        'balance' => LedgerMoney::normalize((string) Wallet::query()->where('user_id', $user->id)->value('balance')),
+        'attempts' => MobileCheckoutAttempt::query()->where('user_id', $user->id)->count(),
+        'processing' => MobileCheckoutAttempt::query()
+            ->where('user_id', $user->id)
+            ->where('status', 'processing')
+            ->count(),
+        'completed' => MobileCheckoutAttempt::query()
+            ->where('user_id', $user->id)
+            ->where('status', 'completed')
+            ->count(),
+    ];
+}
+
+function m31ConcurrencyAssertFloor(User $user): void
+{
+    $wallet = Wallet::query()->where('user_id', $user->id)->firstOrFail();
+    $balance = LedgerMoney::normalize((string) $wallet->balance);
+    $minimum = LedgerMoney::normalize((string) $wallet->minimumAllowedBalance());
+    expect(LedgerMoney::compare($balance, $minimum))->toBeGreaterThanOrEqual(0);
 }
 
 beforeEach(function (): void {
     m31ConcurrencyContext();
 });
 
+afterAll(function (): void {
+    $ctx = null;
+    try {
+        // Best-effort: context may have been skipped.
+        $flag = (string) env('MOBILE_CONCURRENCY_TESTS', '');
+        if (in_array($flag, ['1', 'true', 'TRUE'], true) && app()->environment('testing')) {
+            // Re-read static via calling helper only if already initialized — stop via shutdown fn.
+        }
+    } catch (Throwable) {
+        // ignore
+    }
+});
+
 test('same customer same key same payload concurrent checkout yields one purchase', function (): void {
     $ctx = m31ConcurrencyContext();
-    $fx = m31ConcurrencyFixtures($ctx['runId'].'_s1', $ctx['baseUrl'], 500);
+    $fx = m31ConcurrencyFixtures($ctx['runId'].'_s1', $ctx['baseUrl'], '500.00');
     $key = $ctx['runId'].'-same-payload';
 
     try {
@@ -320,56 +392,53 @@ test('same customer same key same payload concurrent checkout yields one purchas
                 'items' => [['product_id' => $fx['product']->id, 'package_id' => $fx['package']->id, 'quantity' => 1]],
             ]);
         expect($quote->successful())->toBeTrue();
-
         $payload = [
             'items' => [['product_id' => $fx['product']->id, 'package_id' => $fx['package']->id, 'quantity' => 1]],
             'quote_fingerprint' => $quote->json('data.quote_fingerprint'),
         ];
+        $total = (string) $quote->json('data.total.amount');
 
-        $responses = m31ConcurrencyPool(
-            $fx['baseUrl'],
-            '/api/v1/checkout',
-            m31Headers($fx['token'], $key),
-            $payload,
-            2,
-        );
+        $responses = Http::pool(fn ($pool) => [
+            $pool->as('a')->withHeaders(m31Headers($fx['token'], $key))->post($fx['baseUrl'].'/api/v1/checkout', $payload),
+            $pool->as('b')->withHeaders(m31Headers($fx['token'], $key))->post($fx['baseUrl'].'/api/v1/checkout', $payload),
+        ]);
 
-        $statuses = collect($responses)->map(fn ($r) => $r->status())->sort()->values()->all();
-        expect(collect($statuses)->every(fn ($s) => in_array($s, [200, 202], true)))->toBeTrue()
-            ->and($statuses)->toContain(200)
-            ->and(Order::query()->where('user_id', $fx['user']->id)->count())->toBe(1)
-            ->and(WalletTransaction::query()->where('type', WalletTransactionType::Purchase)->whereIn(
-                'wallet_id',
-                Wallet::query()->where('user_id', $fx['user']->id)->pluck('id')
-            )->count())->toBe(1)
-            ->and(Fulfillment::query()->whereIn(
-                'order_id',
-                Order::query()->where('user_id', $fx['user']->id)->pluck('id')
-            )->count())->toBe(1);
+        $statuses = collect($responses)->map(fn ($r) => $r->status())->values()->all();
+        expect(collect($statuses)->contains(500))->toBeFalse()
+            ->and(collect($statuses)->every(fn ($s) => in_array($s, [200, 202], true)))->toBeTrue()
+            ->and($statuses)->toContain(200);
 
-        // Safe 202 path resolves via status or retry without a second debit.
-        if (in_array(202, $statuses, true)) {
-            $status = Http::withHeaders(m31Headers($fx['token'], $key))
-                ->get($fx['baseUrl'].'/api/v1/checkout/status');
-            expect(in_array($status->status(), [200, 202], true))->toBeTrue();
-            if ($status->status() === 202) {
-                $retry = Http::withHeaders(m31Headers($fx['token'], $key))
-                    ->post($fx['baseUrl'].'/api/v1/checkout', $payload);
-                expect($retry->status())->toBe(200);
+        // Drain any 202 to a completed receipt without a second debit.
+        for ($i = 0; $i < 10; $i++) {
+            $status = Http::withHeaders(m31Headers($fx['token'], $key))->get($fx['baseUrl'].'/api/v1/checkout/status');
+            if ($status->status() === 200 && $status->json('data.state') === 'completed') {
+                expect($status->json('data.order.total.amount'))->toBe($total);
+                break;
             }
+            if (in_array(202, $statuses, true) || $status->status() === 202) {
+                Http::withHeaders(m31Headers($fx['token'], $key))->post($fx['baseUrl'].'/api/v1/checkout', $payload);
+            }
+            usleep(50_000);
         }
 
-        expect(Order::query()->where('user_id', $fx['user']->id)->count())->toBe(1);
+        $d = m31ConcurrencyDurable($fx['user']);
+        expect($d['orders'])->toBe(1)
+            ->and($d['paid'])->toBe(1)
+            ->and($d['purchases'])->toBe(1)
+            ->and($d['fulfillments'])->toBe(1)
+            ->and($d['completed'])->toBe(1)
+            ->and($d['processing'])->toBe(0)
+            ->and($d['balance'])->toBe(LedgerMoney::sub($fx['openingBalance'], $total));
+        m31ConcurrencyAssertFloor($fx['user']);
     } finally {
         m31ConcurrencyCleanup($fx['user']);
-        Product::query()->whereKey($fx['product']->id)->delete();
-        Package::query()->whereKey($fx['package']->id)->delete();
+        m31ConcurrencyCleanupCatalog($fx['product']);
     }
 });
 
 test('same customer same key different payload concurrent yields conflict and one purchase', function (): void {
     $ctx = m31ConcurrencyContext();
-    $fx = m31ConcurrencyFixtures($ctx['runId'].'_s2', $ctx['baseUrl'], 500);
+    $fx = m31ConcurrencyFixtures($ctx['runId'].'_s2', $ctx['baseUrl'], '500.00');
     $other = m31FixedProduct(['name' => $ctx['runId'].'_s2 other', 'entry_price' => 10]);
     $key = $ctx['runId'].'-diff-payload';
 
@@ -395,24 +464,34 @@ test('same customer same key different payload concurrent yields conflict and on
             ]),
         ]);
 
-        $statuses = collect($responses)->map(fn ($r) => $r->status())->sort()->values()->all();
+        $statuses = collect($responses)->map(fn ($r) => $r->status())->values()->all();
         $codes = collect($responses)->map(fn ($r) => $r->json('code'))->filter()->values()->all();
-
-        expect($statuses)->toContain(200)
+        expect(collect($statuses)->contains(500))->toBeFalse()
+            ->and($statuses)->toContain(200)
             ->and($statuses)->toContain(409)
-            ->and($codes)->toContain('idempotency_conflict')
-            ->and(Order::query()->where('user_id', $fx['user']->id)->count())->toBe(1)
-            ->and(collect($statuses)->contains(500))->toBeFalse();
+            ->and($codes)->toContain('idempotency_conflict');
+
+        $status = Http::withHeaders(m31Headers($fx['token'], $key))->get($fx['baseUrl'].'/api/v1/checkout/status');
+        expect($status->status())->toBe(200)
+            ->and($status->json('data.state'))->toBe('completed');
+
+        $d = m31ConcurrencyDurable($fx['user']);
+        expect($d['orders'])->toBe(1)
+            ->and($d['paid'])->toBe(1)
+            ->and($d['purchases'])->toBe(1)
+            ->and($d['fulfillments'])->toBe(1)
+            ->and($d['processing'])->toBe(0)
+            ->and($d['balance'])->toBe(LedgerMoney::sub($fx['openingBalance'], '10.00'));
+        m31ConcurrencyAssertFloor($fx['user']);
     } finally {
         m31ConcurrencyCleanup($fx['user']);
-        Product::query()->whereKey([$fx['product']->id, $other['product']->id])->delete();
-        Package::query()->whereKey([$fx['package']->id, $other['package']->id])->delete();
+        m31ConcurrencyCleanupCatalog($fx['product'], $other['product']);
     }
 });
 
 test('same customer different keys identical payload creates two intentional purchases', function (): void {
     $ctx = m31ConcurrencyContext();
-    $fx = m31ConcurrencyFixtures($ctx['runId'].'_s3', $ctx['baseUrl'], 500);
+    $fx = m31ConcurrencyFixtures($ctx['runId'].'_s3', $ctx['baseUrl'], '500.00');
 
     try {
         $quote = Http::withHeaders(m31Headers($fx['token']))
@@ -431,21 +510,26 @@ test('same customer different keys identical payload creates two intentional pur
         ]);
 
         expect(collect($responses)->every(fn ($r) => $r->status() === 200))->toBeTrue()
-            ->and(Order::query()->where('user_id', $fx['user']->id)->count())->toBe(2)
-            ->and(WalletTransaction::query()->where('type', WalletTransactionType::Purchase)->whereIn(
-                'wallet_id',
-                Wallet::query()->where('user_id', $fx['user']->id)->pluck('id')
-            )->count())->toBe(2);
+            ->and(collect($responses)->contains(fn ($r) => $r->status() === 500))->toBeFalse();
+
+        $d = m31ConcurrencyDurable($fx['user']);
+        expect($d['orders'])->toBe(2)
+            ->and($d['paid'])->toBe(2)
+            ->and($d['purchases'])->toBe(2)
+            ->and($d['fulfillments'])->toBe(2)
+            ->and($d['completed'])->toBe(2)
+            ->and($d['processing'])->toBe(0)
+            ->and($d['balance'])->toBe(LedgerMoney::sub($fx['openingBalance'], '20.00'));
+        m31ConcurrencyAssertFloor($fx['user']);
     } finally {
         m31ConcurrencyCleanup($fx['user']);
-        Product::query()->whereKey($fx['product']->id)->delete();
-        Package::query()->whereKey($fx['package']->id)->delete();
+        m31ConcurrencyCleanupCatalog($fx['product']);
     }
 });
 
 test('same wallet different keys with funds for only one yields one success and insufficient balance', function (): void {
     $ctx = m31ConcurrencyContext();
-    $fx = m31ConcurrencyFixtures($ctx['runId'].'_s4', $ctx['baseUrl'], 10);
+    $fx = m31ConcurrencyFixtures($ctx['runId'].'_s4', $ctx['baseUrl'], '10.00');
 
     try {
         $quote = Http::withHeaders(m31Headers($fx['token']))
@@ -463,28 +547,30 @@ test('same wallet different keys with funds for only one yields one success and 
             $pool->as('b')->withHeaders(m31Headers($fx['token'], $ctx['runId'].'-fund-b'))->post($fx['baseUrl'].'/api/v1/checkout', $payload),
         ]);
 
-        $statuses = collect($responses)->map(fn ($r) => $r->status())->sort()->values()->all();
+        $statuses = collect($responses)->map(fn ($r) => $r->status())->values()->all();
         $codes = collect($responses)->map(fn ($r) => $r->json('code'))->filter()->values()->all();
-
-        expect($statuses)->toContain(200)
+        expect(collect($statuses)->contains(500))->toBeFalse()
+            ->and($statuses)->toContain(200)
             ->and($statuses)->toContain(422)
-            ->and($codes)->toContain('insufficient_wallet_balance')
-            ->and(Order::query()->where('user_id', $fx['user']->id)->count())->toBe(1);
+            ->and($codes)->toContain('insufficient_wallet_balance');
 
-        $wallet = Wallet::query()->where('user_id', $fx['user']->id)->firstOrFail();
-        expect((float) $wallet->fresh()->balance)->toBeLessThanOrEqual(0.0)
-            ->and((float) $wallet->fresh()->availableToSpend())->toBeGreaterThanOrEqual(0.0);
+        $d = m31ConcurrencyDurable($fx['user']);
+        expect($d['orders'])->toBe(1)
+            ->and($d['paid'])->toBe(1)
+            ->and($d['purchases'])->toBe(1)
+            ->and($d['fulfillments'])->toBe(1)
+            ->and($d['balance'])->toBe('0.00');
+        m31ConcurrencyAssertFloor($fx['user']);
     } finally {
         m31ConcurrencyCleanup($fx['user']);
-        Product::query()->whereKey($fx['product']->id)->delete();
-        Package::query()->whereKey($fx['package']->id)->delete();
+        m31ConcurrencyCleanupCatalog($fx['product']);
     }
 });
 
 test('two customers using the same raw key remain isolated and may both succeed', function (): void {
     $ctx = m31ConcurrencyContext();
-    $fxA = m31ConcurrencyFixtures($ctx['runId'].'_s5a', $ctx['baseUrl'], 100);
-    $fxB = m31ConcurrencyFixtures($ctx['runId'].'_s5b', $ctx['baseUrl'], 100);
+    $fxA = m31ConcurrencyFixtures($ctx['runId'].'_s5a', $ctx['baseUrl'], '100.00');
+    $fxB = m31ConcurrencyFixtures($ctx['runId'].'_s5b', $ctx['baseUrl'], '100.00');
     $sharedKey = $ctx['runId'].'-shared-raw-key';
 
     try {
@@ -509,18 +595,24 @@ test('two customers using the same raw key remain isolated and may both succeed'
         ]);
 
         expect(collect($responses)->every(fn ($r) => $r->status() === 200))->toBeTrue()
-            ->and(Order::query()->where('user_id', $fxA['user']->id)->count())->toBe(1)
-            ->and(Order::query()->where('user_id', $fxB['user']->id)->count())->toBe(1);
+            ->and(collect($responses)->contains(fn ($r) => $r->status() === 500))->toBeFalse();
+
+        $dA = m31ConcurrencyDurable($fxA['user']);
+        $dB = m31ConcurrencyDurable($fxB['user']);
+        expect($dA['orders'])->toBe(1)->and($dA['paid'])->toBe(1)->and($dA['purchases'])->toBe(1)->and($dA['fulfillments'])->toBe(1)
+            ->and($dB['orders'])->toBe(1)->and($dB['paid'])->toBe(1)->and($dB['purchases'])->toBe(1)->and($dB['fulfillments'])->toBe(1)
+            ->and($dA['balance'])->toBe('90.00')->and($dB['balance'])->toBe('90.00');
+        m31ConcurrencyAssertFloor($fxA['user']);
+        m31ConcurrencyAssertFloor($fxB['user']);
     } finally {
         m31ConcurrencyCleanup($fxA['user'], $fxB['user']);
-        Product::query()->whereKey([$fxA['product']->id, $fxB['product']->id])->delete();
-        Package::query()->whereKey([$fxA['package']->id, $fxB['package']->id])->delete();
+        m31ConcurrencyCleanupCatalog($fxA['product'], $fxB['product']);
     }
 });
 
 test('checkout concurrent with status has no deadlock 500 and one purchase', function (): void {
     $ctx = m31ConcurrencyContext();
-    $fx = m31ConcurrencyFixtures($ctx['runId'].'_s6', $ctx['baseUrl'], 100);
+    $fx = m31ConcurrencyFixtures($ctx['runId'].'_s6', $ctx['baseUrl'], '100.00');
     $key = $ctx['runId'].'-checkout-status';
 
     try {
@@ -539,45 +631,47 @@ test('checkout concurrent with status has no deadlock 500 and one purchase', fun
             $pool->as('status')->withHeaders(m31Headers($fx['token'], $key))->get($fx['baseUrl'].'/api/v1/checkout/status'),
         ]);
 
-        $checkout = $responses['checkout'];
-        $status = $responses['status'];
+        expect($responses['checkout']->status())->not->toBe(500)
+            ->and($responses['status']->status())->not->toBe(500)
+            ->and(in_array($responses['checkout']->status(), [200, 202], true))->toBeTrue()
+            ->and(in_array($responses['status']->status(), [200, 202, 404, 409], true))->toBeTrue();
 
-        expect($checkout->status())->not->toBe(500)
-            ->and($status->status())->not->toBe(500)
-            ->and(in_array($checkout->status(), [200, 202], true))->toBeTrue()
-            ->and(in_array($status->status(), [200, 202, 404, 409], true))->toBeTrue();
-
-        // Drain to a terminal single purchase.
-        for ($i = 0; $i < 10; $i++) {
-            $probe = Http::withHeaders(m31Headers($fx['token'], $key))->get($fx['baseUrl'].'/api/v1/checkout/status');
-            if ($probe->status() === 200 && $probe->json('data.state') === 'completed') {
+        $finalStatus = null;
+        for ($i = 0; $i < 15; $i++) {
+            $finalStatus = Http::withHeaders(m31Headers($fx['token'], $key))->get($fx['baseUrl'].'/api/v1/checkout/status');
+            if ($finalStatus->status() === 200 && $finalStatus->json('data.state') === 'completed') {
                 break;
             }
-            if ($probe->status() === 409 && $probe->json('code') === 'checkout_retry_required') {
+            if ($finalStatus->status() === 409 && $finalStatus->json('code') === 'checkout_retry_required') {
                 Http::withHeaders(m31Headers($fx['token'], $key))->post($fx['baseUrl'].'/api/v1/checkout', $payload);
-                break;
-            }
-            if ($checkout->status() !== 200) {
+            } elseif ($responses['checkout']->status() !== 200) {
                 Http::withHeaders(m31Headers($fx['token'], $key))->post($fx['baseUrl'].'/api/v1/checkout', $payload);
             }
-            usleep(100_000);
+            usleep(50_000);
         }
 
-        expect(Order::query()->where('user_id', $fx['user']->id)->count())->toBe(1)
-            ->and(WalletTransaction::query()->where('type', WalletTransactionType::Purchase)->whereIn(
-                'wallet_id',
-                Wallet::query()->where('user_id', $fx['user']->id)->pluck('id')
-            )->count())->toBe(1);
+        expect($finalStatus)->not->toBeNull()
+            ->and($finalStatus->status())->toBe(200)
+            ->and($finalStatus->json('data.state'))->toBe('completed')
+            ->and($finalStatus->json('data.order.total.amount'))->toBe('10.00');
+
+        $d = m31ConcurrencyDurable($fx['user']);
+        expect($d['orders'])->toBe(1)
+            ->and($d['paid'])->toBe(1)
+            ->and($d['purchases'])->toBe(1)
+            ->and($d['fulfillments'])->toBe(1)
+            ->and($d['processing'])->toBe(0)
+            ->and($d['balance'])->toBe('90.00');
+        m31ConcurrencyAssertFloor($fx['user']);
     } finally {
         m31ConcurrencyCleanup($fx['user']);
-        Product::query()->whereKey($fx['product']->id)->delete();
-        Package::query()->whereKey($fx['package']->id)->delete();
+        m31ConcurrencyCleanupCatalog($fx['product']);
     }
 });
 
 test('unique first-insert race loser re-reads winner without uncaught query exception', function (): void {
     $ctx = m31ConcurrencyContext();
-    $fx = m31ConcurrencyFixtures($ctx['runId'].'_s7', $ctx['baseUrl'], 500);
+    $fx = m31ConcurrencyFixtures($ctx['runId'].'_s7', $ctx['baseUrl'], '500.00');
     $key = $ctx['runId'].'-first-insert';
 
     try {
@@ -592,29 +686,45 @@ test('unique first-insert race loser re-reads winner without uncaught query exce
             'quote_fingerprint' => $quote->json('data.quote_fingerprint'),
         ];
 
-        $responses = m31ConcurrencyPool(
-            $fx['baseUrl'],
-            '/api/v1/checkout',
-            m31Headers($fx['token'], $key),
-            $payload,
-            4,
-        );
+        $responses = Http::pool(fn ($pool) => [
+            $pool->as('a')->withHeaders(m31Headers($fx['token'], $key))->post($fx['baseUrl'].'/api/v1/checkout', $payload),
+            $pool->as('b')->withHeaders(m31Headers($fx['token'], $key))->post($fx['baseUrl'].'/api/v1/checkout', $payload),
+            $pool->as('c')->withHeaders(m31Headers($fx['token'], $key))->post($fx['baseUrl'].'/api/v1/checkout', $payload),
+            $pool->as('d')->withHeaders(m31Headers($fx['token'], $key))->post($fx['baseUrl'].'/api/v1/checkout', $payload),
+        ]);
 
-        $statuses = collect($responses)->map(fn ($r) => $r->status())->all();
+        $statuses = collect($responses)->map(fn ($r) => $r->status())->values()->all();
         expect(collect($statuses)->every(fn ($s) => in_array($s, [200, 202], true)))->toBeTrue()
-            ->and(collect($statuses)->contains(500))->toBeFalse()
-            ->and(MobileCheckoutAttempt::query()->where('user_id', $fx['user']->id)->count())->toBe(1)
-            ->and(Order::query()->where('user_id', $fx['user']->id)->count())->toBe(1);
+            ->and(collect($statuses)->contains(500))->toBeFalse();
+
+        for ($i = 0; $i < 10; $i++) {
+            $status = Http::withHeaders(m31Headers($fx['token'], $key))->get($fx['baseUrl'].'/api/v1/checkout/status');
+            if ($status->status() === 200 && $status->json('data.state') === 'completed') {
+                break;
+            }
+            Http::withHeaders(m31Headers($fx['token'], $key))->post($fx['baseUrl'].'/api/v1/checkout', $payload);
+            usleep(50_000);
+        }
+
+        $d = m31ConcurrencyDurable($fx['user']);
+        expect($d['attempts'])->toBe(1)
+            ->and($d['orders'])->toBe(1)
+            ->and($d['paid'])->toBe(1)
+            ->and($d['purchases'])->toBe(1)
+            ->and($d['fulfillments'])->toBe(1)
+            ->and($d['processing'])->toBe(0)
+            ->and($d['completed'])->toBe(1)
+            ->and($d['balance'])->toBe('490.00');
+        m31ConcurrencyAssertFloor($fx['user']);
     } finally {
         m31ConcurrencyCleanup($fx['user']);
-        Product::query()->whereKey($fx['product']->id)->delete();
-        Package::query()->whereKey($fx['package']->id)->delete();
+        m31ConcurrencyCleanupCatalog($fx['product']);
     }
 });
 
 test('stale orphan status reaches retryable outcome then same key payload retries safely', function (): void {
     $ctx = m31ConcurrencyContext();
-    $fx = m31ConcurrencyFixtures($ctx['runId'].'_s8', $ctx['baseUrl'], 100);
+    $fx = m31ConcurrencyFixtures($ctx['runId'].'_s8', $ctx['baseUrl'], '100.00');
     $key = $ctx['runId'].'-stale-orphan';
     $keyHash = hash('sha256', $key);
 
@@ -625,7 +735,6 @@ test('stale orphan status reaches retryable outcome then same key payload retrie
             ]);
         expect($quote->successful())->toBeTrue();
 
-        // Committed stale orphan visible to both Pest and HTTP server.
         MobileCheckoutAttempt::query()->create([
             'user_id' => $fx['user']->id,
             'key_hash' => $keyHash,
@@ -658,16 +767,25 @@ test('stale orphan status reaches retryable outcome then same key payload retrie
                 'items' => [['product_id' => $fx['product']->id, 'package_id' => $fx['package']->id, 'quantity' => 1]],
                 'quote_fingerprint' => $quote->json('data.quote_fingerprint'),
             ]);
+        expect($retry->status())->toBe(200)->and($retry->status())->not->toBe(500);
 
-        expect($retry->status())->toBe(200)
-            ->and(Order::query()->where('user_id', $fx['user']->id)->count())->toBe(1)
-            ->and(WalletTransaction::query()->where('type', WalletTransactionType::Purchase)->whereIn(
-                'wallet_id',
-                Wallet::query()->where('user_id', $fx['user']->id)->pluck('id')
-            )->count())->toBe(1);
+        $final = Http::withHeaders(m31Headers($fx['token'], $key))
+            ->get($fx['baseUrl'].'/api/v1/checkout/status');
+        expect($final->status())->toBe(200)
+            ->and($final->json('data.state'))->toBe('completed')
+            ->and($final->json('data.order.order_number'))->toBe($retry->json('data.order.order_number'))
+            ->and($final->json('data.order.total.amount'))->toBe('10.00');
+
+        $d = m31ConcurrencyDurable($fx['user']);
+        expect($d['orders'])->toBe(1)
+            ->and($d['paid'])->toBe(1)
+            ->and($d['purchases'])->toBe(1)
+            ->and($d['fulfillments'])->toBe(1)
+            ->and($d['processing'])->toBe(0)
+            ->and($d['balance'])->toBe('90.00');
+        m31ConcurrencyAssertFloor($fx['user']);
     } finally {
         m31ConcurrencyCleanup($fx['user']);
-        Product::query()->whereKey($fx['product']->id)->delete();
-        Package::query()->whereKey($fx['package']->id)->delete();
+        m31ConcurrencyCleanupCatalog($fx['product']);
     }
 });

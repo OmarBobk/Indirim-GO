@@ -390,25 +390,6 @@ final class MobileCheckoutIdempotency
 
     private function isUniqueUserKeyConstraint(QueryException $exception): bool
     {
-        $sqlState = (string) ($exception->errorInfo[0] ?? $exception->getCode());
-        $driverCode = (int) ($exception->errorInfo[1] ?? 0);
-        $message = $exception->getMessage();
-
-        // MySQL/MariaDB duplicate key on mobile_checkout_attempts unique (user_id, key_hash).
-        if ($sqlState === '23000' && ($driverCode === 1062 || str_contains($message, 'Duplicate entry'))) {
-            return str_contains($message, 'mobile_checkout_attempts')
-                || str_contains($message, 'user_id_key_hash')
-                || (str_contains($message, 'user_id') && str_contains($message, 'key_hash'));
-        }
-
-        // SQLite unique constraint on the composite index columns.
-        if (str_contains($message, 'UNIQUE constraint failed')
-            && str_contains($message, 'mobile_checkout_attempts')
-            && str_contains($message, 'user_id')
-            && str_contains($message, 'key_hash')) {
-            return true;
-        }
-
-        return false;
+        return MobileCheckoutAttemptUniqueConstraint::matches($exception);
     }
 }

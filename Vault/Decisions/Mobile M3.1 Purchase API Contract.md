@@ -40,3 +40,6 @@ Ship OpenAPI **1.2.0** single-line purchase contract under `/api/v1` with:
 - Shared Idempotency-Key validation (128 max) on checkout and status
 - Terminal attempt pruning at configured 72h retention (batched deletes)
 - Opt-in MySQL concurrency harness under `tests/Concurrency/`
+  (self-spawned cross-platform serve + fail-closed APP_KEY/fixture handshake)
+- In-transaction rollback probe (`MobileCheckoutCommitGate`) for atomicity tests only
+- Mobile order/debit totals use `PriceQuoteDTO` ledger decimals

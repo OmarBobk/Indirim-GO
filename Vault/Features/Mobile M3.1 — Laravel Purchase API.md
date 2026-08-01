@@ -85,6 +85,8 @@ Authoritative fulfillment row creation remains inside the payment transaction.
 - SQLite cannot prove true parallel DB races; opt-in MySQL harness:
   `MOBILE_CONCURRENCY_TESTS=1` + disposable `*_concurrency` DB +
   `tests/Concurrency/MobileCheckoutConcurrencyHarnessTest.php`.
+  The harness self-spawns a cross-platform `artisan serve` child (Symfony Process)
+  with the same APP_KEY/DB env; no manual Terminal A is required.
 
 ## Related
 

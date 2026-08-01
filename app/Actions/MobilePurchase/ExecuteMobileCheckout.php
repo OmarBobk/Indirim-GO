@@ -13,6 +13,7 @@ use App\Exceptions\WalletSpendDeniedException;
 use App\Models\MobileCheckoutAttempt;
 use App\Models\Order;
 use App\Models\User;
+use App\Support\Api\V1\MobileCheckoutCommitGate;
 use App\Support\Api\V1\MobileCheckoutIdempotency;
 use App\Support\Api\V1\MobileCheckoutQuoteBuilder;
 use App\Support\Api\V1\MobilePurchaseReceiptFactory;
@@ -27,6 +28,7 @@ final class ExecuteMobileCheckout
         private readonly MobileCheckoutIdempotency $idempotency,
         private readonly MobilePurchaseReceiptFactory $receiptFactory,
         private readonly CheckoutFromPayload $checkoutFromPayload,
+        private readonly MobileCheckoutCommitGate $commitGate,
     ) {}
 
     /**
@@ -178,6 +180,10 @@ final class ExecuteMobileCheckout
                         500,
                     );
                 }
+
+                // After debit + fulfillments, before attempt completion / outer commit.
+                // Production gate is a no-op; tests may bind a throwing collaborator.
+                $this->commitGate->afterAuthoritativePurchase($order, $lockedAttempt);
 
                 $receipt = null;
                 try {

@@ -360,3 +360,46 @@ test('fresh quote fingerprint uses ledger decimals without float sprintf bridge'
     expect($dto->finalTotalDecimal)->toBe('10.00')
         ->and($dto->unitPriceDecimal)->toStartWith('10.0');
 });
+
+test('binary float sensitive mobile totals stay equal across quote fingerprint order debit and receipt', function (): void {
+    $user = m31Customer();
+    m31Fund($user, '50.00');
+    // 0.10 is not exactly representable in binary floating point; quantity 3 is a classic trap.
+    ['package' => $package, 'product' => $product] = m31FixedProduct(['entry_price' => 0.1]);
+    $token = m31Token($user);
+    $key = 'float-sensitive-'.uniqid();
+
+    $quote = $this->postJson('/api/v1/checkout/quote', [
+        'items' => [['product_id' => $product->id, 'package_id' => $package->id, 'quantity' => 3]],
+    ], m31Headers($token))->assertOk();
+
+    $quoteTotal = (string) $quote->json('data.total.amount');
+    $fingerprint = (string) $quote->json('data.quote_fingerprint');
+    $payload = app(\App\Support\Api\V1\MobileCheckoutQuoteBuilder::class)->decodeAndVerifyFingerprint($fingerprint);
+    expect($payload)->not->toBeNull()
+        ->and((string) $payload['total'])->toBe($quoteTotal);
+
+    $checkout = $this->postJson('/api/v1/checkout', [
+        'items' => [['product_id' => $product->id, 'package_id' => $package->id, 'quantity' => 3]],
+        'quote_fingerprint' => $fingerprint,
+    ], m31Headers($token, $key))->assertOk();
+
+    $order = \App\Models\Order::query()->where('order_number', $checkout->json('data.order.order_number'))->firstOrFail();
+    $debit = \App\Models\WalletTransaction::query()
+        ->where('type', \App\Enums\WalletTransactionType::Purchase)
+        ->where('reference_id', $order->id)
+        ->firstOrFail();
+
+    $orderTotal = \App\Support\LedgerMoney::normalize((string) $order->total);
+    $debitAmount = \App\Support\LedgerMoney::normalize((string) $debit->amount);
+    $receiptTotal = (string) $checkout->json('data.order.total.amount');
+
+    expect($quoteTotal)->toBe('0.30')
+        ->and((string) $payload['total'])->toBe('0.30')
+        ->and($orderTotal)->toBe('0.30')
+        ->and($debitAmount)->toBe('0.30')
+        ->and($receiptTotal)->toBe('0.30')
+        ->and($quoteTotal)->toBe($orderTotal)
+        ->and($orderTotal)->toBe($debitAmount)
+        ->and($debitAmount)->toBe($receiptTotal);
+});
