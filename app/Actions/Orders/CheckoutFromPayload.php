@@ -28,7 +28,7 @@ class CheckoutFromPayload
         }
 
         $wallet = Wallet::forUser($user);
-        $cartHash = $this->cartHash($items);
+        $cartHash = $this->cartHash($items, $meta);
 
         $operation = function () use ($user, $wallet, $items, $meta, $cartHash): CheckoutResult {
             $lockedWallet = Wallet::query()
@@ -179,8 +179,9 @@ class CheckoutFromPayload
 
     /**
      * @param  array<int, array<string, mixed>>  $items
+     * @param  array<string, mixed>  $meta
      */
-    private function cartHash(array $items): string
+    private function cartHash(array $items, array $meta = []): string
     {
         $normalized = collect($items)
             ->filter(fn (mixed $item) => is_array($item))
@@ -196,6 +197,23 @@ class CheckoutFromPayload
             ->sortBy(fn (array $item) => [$item['product_id'], $item['package_id']])
             ->values()
             ->all();
+
+        // Distinct mobile Idempotency-Keys must not silently coalesce through the
+        // short-lived web paid-order reuse window. Only the key hash is included —
+        // never the raw Idempotency-Key.
+        if (($meta['source'] ?? null) === 'mobile_api') {
+            $attemptKeyHash = $meta['mobile_attempt_key_hash'] ?? null;
+            if (! is_string($attemptKeyHash) || $attemptKeyHash === '' || strlen($attemptKeyHash) !== 64) {
+                throw ValidationException::withMessages([
+                    'items' => 'Mobile checkout attempt identity is required.',
+                ]);
+            }
+
+            $normalized = [
+                'mobile_attempt_key_hash' => $attemptKeyHash,
+                'items' => $normalized,
+            ];
+        }
 
         return hash('sha256', json_encode($normalized));
     }

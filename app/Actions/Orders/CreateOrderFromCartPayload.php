@@ -15,6 +15,7 @@ use App\Models\User;
 use App\Notifications\OrderPriceFlooredNotification;
 use App\Services\NotificationRecipientService;
 use App\Services\SystemEventService;
+use App\Support\LedgerMoney;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -83,7 +84,9 @@ class CreateOrderFromCartPayload
 
             $lineItems = [];
             $subtotal = 0.0;
+            $subtotalDecimal = LedgerMoney::ZERO;
             $flooredItemsCount = 0;
+            $isMobileApi = ($meta['source'] ?? null) === 'mobile_api';
 
             $pricingEngine = app(PricingEngine::class);
 
@@ -122,8 +125,14 @@ class CreateOrderFromCartPayload
                         6
                     );
                     $price = $quote->toArray();
-                    $unitPrice = $quote->unitPrice;
-                    $lineTotal = $quote->finalTotal;
+                    if ($isMobileApi) {
+                        // Same ledger decimals as quote fingerprint — no float/sprintf bridge.
+                        $lineTotal = LedgerMoney::normalize($quote->finalTotalDecimal);
+                        $unitPrice = LedgerMoney::normalize($quote->unitPriceDecimal);
+                    } else {
+                        $unitPrice = $quote->unitPrice;
+                        $lineTotal = $quote->finalTotal;
+                    }
                     $pricingMeta = [
                         'mode' => ProductAmountMode::Custom->value,
                         'requested_amount' => $validatedAmount,
@@ -139,8 +148,13 @@ class CreateOrderFromCartPayload
                     }
                     $quote = $pricingEngine->quote($product, $quantity, null, $user);
                     $price = $quote->toArray();
-                    $unitPrice = $quote->unitPrice;
-                    $lineTotal = round((float) $quote->finalTotal, 2);
+                    if ($isMobileApi) {
+                        $lineTotal = LedgerMoney::normalize($quote->finalTotalDecimal);
+                        $unitPrice = LedgerMoney::normalize($quote->unitPriceDecimal);
+                    } else {
+                        $unitPrice = $quote->unitPrice;
+                        $lineTotal = round((float) $quote->finalTotal, 2);
+                    }
                 }
 
                 if (($price['meta']['is_floor_applied'] ?? false) === true) {
@@ -163,11 +177,23 @@ class CreateOrderFromCartPayload
                     'status' => OrderItemStatus::Pending,
                 ];
 
-                $subtotal += $lineTotal;
+                if ($isMobileApi) {
+                    $subtotalDecimal = LedgerMoney::add($subtotalDecimal, (string) $lineTotal);
+                } else {
+                    $subtotal += $lineTotal;
+                }
             }
 
-            $fee = (float) config('billing.checkout_fee_fixed', 0);
-            $total = round($subtotal + $fee, 2);
+            if ($isMobileApi) {
+                $fee = LedgerMoney::normalize((string) config('billing.checkout_fee_fixed', '0'));
+                $total = LedgerMoney::add($subtotalDecimal, $fee);
+                $subtotal = $subtotalDecimal;
+            } else {
+                $fee = (float) config('billing.checkout_fee_fixed', 0);
+                $total = round($subtotal + $fee, 2);
+            }
+
+            $mobileAttemptKeyHash = $meta['mobile_attempt_key_hash'] ?? null;
 
             $order = Order::create([
                 'user_id' => $user->id,
@@ -178,6 +204,9 @@ class CreateOrderFromCartPayload
                 'total' => $total,
                 'status' => OrderStatus::PendingPayment,
                 'meta' => $meta,
+                'mobile_attempt_key_hash' => is_string($mobileAttemptKeyHash) && $mobileAttemptKeyHash !== ''
+                    ? $mobileAttemptKeyHash
+                    : null,
             ]);
 
             $order->order_number = Order::generateOrderNumber($order->id, $order->created_at?->year);

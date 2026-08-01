@@ -1,16 +1,30 @@
 ---
-status: in-review
+status: accepted
 created: 2026-07-29
+updated: 2026-07-31
 feature: mobile-m2-1-catalog-api
+pull_request: https://github.com/OmarBobk/Indirim-GO/pull/40
 ---
 
 # Mobile M2.1 — Laravel Catalog API
 
-Customer-only read catalog API and authoritative OpenAPI updates for the Mobile Commerce Shell.
+Customer-only read catalog API and authoritative OpenAPI updates for the Mobile
+Commerce Shell.
+
+## Position
+
+- **Accepted / merged** on Laravel `staging` as
+  `485be1befcf99f9d4a337745ec0b4390529c79e1` (PR #40).
+- Present on current `origin/staging` tip
+  `7f39066f44b690e00f4c240f49b1f604efad693f` (ancestor of tip).
+- OpenAPI: `docs/api/v1/openapi.yaml` version **1.1.0**.
+- Flutter consumer: [[Mobile M2.2 — Flutter Commerce Shell]] (merged).
+- Local integration: [[Mobile M2.3 — Local Commerce Integration]] (Omar accepted).
 
 ## Goal
 
-Flutter M2.2 can load authenticated home shelves, browse/search packages, and inspect package product options with server-authored final prices.
+Flutter M2.2 can load authenticated home shelves, browse/search packages, and
+inspect package product options with server-authored final prices.
 
 ## Endpoints
 
@@ -73,16 +87,13 @@ Telescope may store customer-specific catalog response bodies when enabled — p
 
 ## Exclusions
 
-Flutter, cart/checkout/wallet/orders, custom quote API, package requirements, production deploy, `staging`→`main`.
-
-## M2.2 prerequisites
-
-- Merged OpenAPI on Laravel `staging`
-- Emulator base URL still local (`10.0.2.2`)
-- Mobile docs correction: stale M1.2 note remains in read-only mobile repo until M2.2
+Cart/checkout/wallet/orders, custom quote API, package requirements, production
+deploy, `staging`→`main`. Flutter implementation shipped separately as M2.2.
 
 ## Related
 
 - [[Mobile M2.0 — Commerce Shell Architecture]]
 - [[Mobile M2.1 Catalog API Contract]]
+- [[Mobile M2.2 — Flutter Commerce Shell]]
+- [[Mobile M2.3 — Local Commerce Integration]]
 - [[Mobile M1.3 — Local Integration and Closeout]]

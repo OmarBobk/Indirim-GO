@@ -27,6 +27,8 @@ Schedule::command('fulfillment:prune-automation-artifacts')
 
 Schedule::command('commission-clawbacks:sweep-stale --limit=50')
     ->everyFiveMinutes();
+Schedule::command('mobile-checkout:prune-attempts')
+    ->hourly();
 
 Schedule::command('wasim:scan-prices')
     ->dailyAt(config('fulfillment_automation.price_scan.schedule_time', '06:00'))
