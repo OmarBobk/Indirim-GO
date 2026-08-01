@@ -24,7 +24,7 @@ Canonical M6 feature record. Code is truth when docs conflict. See [[Wallet & Le
 - Truth boundaries: balance snapshot / posted TX / TopupRequest / refund TX / Commission / commission_credit TX / PayoutRequest / Activity / notifications — no duplicate owners.
 - Realtime taxonomy matches enum + `CustomerFinancialRealtimeScope`; payload = `reasons` + `schema_version` + `event_id` only.
 - Routes: `/wallet`, transactions (+ WTX detail), topups (+ TUP detail), create top-up, refunds (+ WTX detail), earnings (`view_referrals`).
-- Late credited commission clawback **not** implemented; pending→failed only. Documented Phase-1 debt — does not block M6 close; needs policy before high commission volume.
+- Late credited commission clawback **shipped in M7.1** (obligation + `commission_reversal`); see [[M7 — Financial Risk and Admin Operations]]. Pending→failed unchanged.
 - Decimal `(10,2)` wallet TX vs `(12,2)` orders/commissions — overflow at extreme totals; plan expansion before those limits, not M6 close.
 - Unrelated full-suite failures (admin roles, custom-amount checkout assert, Arabic 2FA copy, settlements modal) are outside Financial Centre ownership.
 
@@ -210,14 +210,16 @@ Shared eligibility: `SalespersonCommissionEligibility` (mirrors CreatePayoutBatc
 ### Refund / clawback
 
 - Pending → failed on refund approve (unchanged)
-- Credited + late refund = **Phase-1 debt; no clawback** — UI may show order context; never claim credited is forever if policy may change later; anomaly/support wording for integrity mismatches
-- See [[Refunds & Settlements]]
+- Credited + late refund → M7.1 clawback obligation + `commission_reversal`; Earnings shows reversed / waived-back / net / debt; Overview distinguishes clawback vs credit-facility debt
+- M7.2.2 posted waiver credit (`commission_clawback_waiver`) in ledger/detail as Money in; debt clears through ordinary balance arithmetic
+- M7.2.3 correction credit (`commission_reversal_correction`) distinct from waiver; dispute under-review is operational (no money on open)
+- Anomalies → `needs_review` (admin notified); salesperson safe copy only
+- See [[Refunds & Settlements]] + [[M7 — Financial Risk and Admin Operations]]
 
 ### Realtime
 
 - Existing private user channel + `CustomerFinancialStateChanged`
-- Reasons after M6.7: `CommissionStateChanged` (create / fail / credit) and `PayoutRequestStateChanged`
-- Page 1 in-place refresh; page 2+ banner; filters preserved; no amounts in WS payload
+- Reasons after M6.7: `CommissionStateChanged` (create / fail / credit / clawback / waiver / dispute / correction) and `PayoutRequestStateChanged`; reversal, waiver, and correction also emit `TransactionPosted` when money moves
 
 ### Magic Patterns
 
@@ -225,14 +227,15 @@ Shared eligibility: `SalespersonCommissionEligibility` (mirrors CreatePayoutBatc
 
 ### Deferred
 
-- Commission clawback / late-refund reversal policy
+- Commission clawback **historical exposure** — M7.2.4 report-only (no SP self-service dispute; dispute/correction shipped in M7.2.3)
 - `COM-*` / `PAY-*` public refs if product needs them
 - Dedicated salesperson order detail (order # is reference-only from earnings)
+- Dedicated salesperson CLB detail route (optional)
 - API/Sanctum
 
 ### Tests
 
-`SalespersonEarnings*`, presenter unit; SalespersonDashboard payout regressions; ReferralCommission / financial overview / TX detail / ledger filters green. Pint + `npm run build` OK.
+`SalespersonEarnings*`, presenter unit; `CommissionClawbackTest`; SalespersonDashboard payout regressions; ReferralCommission / financial overview / TX detail / ledger filters green. Pint + `npm run build` OK.
 
 ---
 

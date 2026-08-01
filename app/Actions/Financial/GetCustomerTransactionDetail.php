@@ -231,6 +231,31 @@ final class GetCustomerTransactionDetail
                 $sourceMissing,
                 $foreignSource,
             ),
+            WalletTransactionType::CommissionReversal => $this->resolveCommissionReversalSource(
+                $user,
+                $tx,
+                $orderNumber,
+                $title,
+                $description,
+                $sourceMissing,
+                $foreignSource,
+            ),
+            WalletTransactionType::CommissionClawbackWaiver => $this->resolveCommissionClawbackWaiverSource(
+                $user,
+                $tx,
+                $title,
+                $description,
+                $sourceMissing,
+                $foreignSource,
+            ),
+            WalletTransactionType::CommissionReversalCorrection => $this->resolveCommissionReversalCorrectionSource(
+                $user,
+                $tx,
+                $title,
+                $description,
+                $sourceMissing,
+                $foreignSource,
+            ),
             default => [
                 'title' => $title,
                 'description' => $description,
@@ -543,6 +568,207 @@ final class GetCustomerTransactionDetail
         ];
     }
 
+    /**
+     * @return array{
+     *     title: ?string,
+     *     description: ?string,
+     *     order_number: ?string,
+     *     topup_public_ref: ?string,
+     *     refund_public_ref: ?string,
+     *     payment_method: ?string,
+     *     product_label: ?string,
+     *     customer_safe_reason: ?string,
+     *     destination: ?FinancialDestinationDTO,
+     *     source_missing: bool,
+     *     foreign_source: bool
+     * }
+     */
+    private function resolveCommissionReversalSource(
+        User $user,
+        WalletTransaction $tx,
+        ?string $orderNumber,
+        ?string $title,
+        ?string $description,
+        bool $sourceMissing,
+        bool $foreignSource,
+    ): array {
+        $meta = is_array($tx->meta) ? $tx->meta : [];
+        $safeReason = ReceiptSnapshot::string($meta, 'customer_safe_reason')
+            ?? __('messages.commission_reversal_safe_explanation');
+        $refundRef = ReceiptSnapshot::string($meta, 'refund_public_ref');
+        $originalCreditRef = is_string($meta['original_commission_credit_public_ref'] ?? null)
+            ? (string) $meta['original_commission_credit_public_ref']
+            : null;
+
+        if ($tx->reference_type === Commission::class && is_numeric($tx->reference_id)) {
+            $commission = Commission::query()
+                ->whereKey((int) $tx->reference_id)
+                ->first(['id', 'salesperson_id', 'order_id']);
+
+            if ($commission === null) {
+                $sourceMissing = true;
+            } elseif ((int) $commission->salesperson_id !== (int) $user->id) {
+                $foreignSource = true;
+            } elseif ($orderNumber === null && $commission->order_id !== null) {
+                $orderNumber = Order::query()
+                    ->whereKey((int) $commission->order_id)
+                    ->value('order_number');
+                $orderNumber = is_string($orderNumber) ? $orderNumber : null;
+            }
+        }
+
+        $descriptionParts = array_values(array_filter([
+            $description,
+            $originalCreditRef !== null ? __('messages.commission_reversal_original_credit', ['ref' => $originalCreditRef]) : null,
+        ]));
+
+        return [
+            'title' => $title ?? __('messages.wallet_transaction_type_commission_reversal'),
+            'description' => $descriptionParts !== [] ? implode(' · ', $descriptionParts) : null,
+            'order_number' => $foreignSource ? null : $orderNumber,
+            'topup_public_ref' => null,
+            'refund_public_ref' => $foreignSource ? null : $refundRef,
+            'payment_method' => null,
+            'product_label' => null,
+            'customer_safe_reason' => $foreignSource ? null : mb_substr($safeReason, 0, 200),
+            'destination' => $foreignSource
+                ? null
+                : new FinancialDestinationDTO(FinancialDestinationType::WalletEarnings),
+            'source_missing' => $sourceMissing || $foreignSource,
+            'foreign_source' => $foreignSource,
+        ];
+    }
+
+    /**
+     * @return array{
+     *     title: ?string,
+     *     description: ?string,
+     *     order_number: ?string,
+     *     topup_public_ref: ?string,
+     *     refund_public_ref: ?string,
+     *     payment_method: ?string,
+     *     product_label: ?string,
+     *     customer_safe_reason: ?string,
+     *     destination: ?FinancialDestinationDTO,
+     *     source_missing: bool,
+     *     foreign_source: bool
+     * }
+     */
+    private function resolveCommissionClawbackWaiverSource(
+        User $user,
+        WalletTransaction $tx,
+        ?string $title,
+        ?string $description,
+        bool $sourceMissing,
+        bool $foreignSource,
+    ): array {
+        $meta = is_array($tx->meta) ? $tx->meta : [];
+        $safeReason = ReceiptSnapshot::string($meta, 'customer_safe_reason')
+            ?? __('messages.commission_clawback_waiver_safe_explanation');
+        $clawbackRef = is_string($meta['clawback_public_ref'] ?? null) ? (string) $meta['clawback_public_ref'] : null;
+        $reversalRef = is_string($meta['reversal_public_ref'] ?? null) ? (string) $meta['reversal_public_ref'] : null;
+
+        if ($tx->reference_type === \App\Models\CommissionClawbackDecision::class && is_numeric($tx->reference_id)) {
+            $decision = \App\Models\CommissionClawbackDecision::query()
+                ->whereKey((int) $tx->reference_id)
+                ->with('clawback:id,salesperson_id')
+                ->first();
+
+            if ($decision === null) {
+                $sourceMissing = true;
+            } elseif ((int) ($decision->clawback?->salesperson_id) !== (int) $user->id) {
+                $foreignSource = true;
+            }
+        }
+
+        $descriptionParts = array_values(array_filter([
+            $description,
+            $clawbackRef !== null ? __('messages.commission_clawback_waiver_clawback_ref', ['ref' => $clawbackRef]) : null,
+            $reversalRef !== null ? __('messages.commission_clawback_waiver_reversal_ref', ['ref' => $reversalRef]) : null,
+        ]));
+
+        return [
+            'title' => $title ?? __('messages.wallet_transaction_type_commission_clawback_waiver'),
+            'description' => $descriptionParts !== [] ? implode(' · ', $descriptionParts) : null,
+            'order_number' => null,
+            'topup_public_ref' => null,
+            'refund_public_ref' => null,
+            'payment_method' => null,
+            'product_label' => null,
+            'customer_safe_reason' => $foreignSource ? null : mb_substr($safeReason, 0, 200),
+            'destination' => $foreignSource
+                ? null
+                : new FinancialDestinationDTO(FinancialDestinationType::WalletEarnings),
+            'source_missing' => $sourceMissing || $foreignSource,
+            'foreign_source' => $foreignSource,
+        ];
+    }
+
+    /**
+     * @return array{
+     *     title: ?string,
+     *     description: ?string,
+     *     order_number: ?string,
+     *     topup_public_ref: ?string,
+     *     refund_public_ref: ?string,
+     *     payment_method: ?string,
+     *     product_label: ?string,
+     *     customer_safe_reason: ?string,
+     *     destination: ?FinancialDestinationDTO,
+     *     source_missing: bool,
+     *     foreign_source: bool
+     * }
+     */
+    private function resolveCommissionReversalCorrectionSource(
+        User $user,
+        WalletTransaction $tx,
+        ?string $title,
+        ?string $description,
+        bool $sourceMissing,
+        bool $foreignSource,
+    ): array {
+        $meta = is_array($tx->meta) ? $tx->meta : [];
+        $safeReason = ReceiptSnapshot::string($meta, 'customer_safe_reason')
+            ?? __('messages.commission_reversal_correction_safe_explanation');
+        $clawbackRef = is_string($meta['clawback_public_ref'] ?? null) ? (string) $meta['clawback_public_ref'] : null;
+        $reversalRef = is_string($meta['reversal_public_ref'] ?? null) ? (string) $meta['reversal_public_ref'] : null;
+
+        if ($tx->reference_type === \App\Models\CommissionClawbackDecision::class && is_numeric($tx->reference_id)) {
+            $decision = \App\Models\CommissionClawbackDecision::query()
+                ->whereKey((int) $tx->reference_id)
+                ->with('clawback:id,salesperson_id')
+                ->first();
+
+            if ($decision === null) {
+                $sourceMissing = true;
+            } elseif ((int) ($decision->clawback?->salesperson_id) !== (int) $user->id) {
+                $foreignSource = true;
+            }
+        }
+
+        $descriptionParts = array_values(array_filter([
+            $description,
+            $clawbackRef !== null ? __('messages.commission_reversal_correction_clawback_ref', ['ref' => $clawbackRef]) : null,
+            $reversalRef !== null ? __('messages.commission_reversal_correction_reversal_ref', ['ref' => $reversalRef]) : null,
+        ]));
+
+        return [
+            'title' => $title ?? __('messages.wallet_transaction_type_commission_reversal_correction'),
+            'description' => $descriptionParts !== [] ? implode(' · ', $descriptionParts) : null,
+            'order_number' => null,
+            'topup_public_ref' => null,
+            'refund_public_ref' => null,
+            'payment_method' => null,
+            'product_label' => null,
+            'customer_safe_reason' => $foreignSource ? null : mb_substr($safeReason, 0, 200),
+            'destination' => $foreignSource
+                ? null
+                : new FinancialDestinationDTO(FinancialDestinationType::WalletEarnings),
+            'source_missing' => $sourceMissing || $foreignSource,
+            'foreign_source' => $foreignSource,
+        ];
+    }
+
     private function ownedOrderProductSummary(Order $order): ?string
     {
         $names = OrderItem::query()
@@ -616,6 +842,14 @@ final class GetCustomerTransactionDetail
                 WalletTransactionType::Topup,
                 WalletTransactionType::Refund,
                 WalletTransactionType::CommissionCredit,
+            ], true) && $tx->direction !== WalletTransactionDirection::Credit
+        ) || (
+            $tx->type === WalletTransactionType::CommissionReversal
+            && $tx->direction !== WalletTransactionDirection::Debit
+        ) || (
+            in_array($tx->type, [
+                WalletTransactionType::CommissionClawbackWaiver,
+                WalletTransactionType::CommissionReversalCorrection,
             ], true) && $tx->direction !== WalletTransactionDirection::Credit
         );
 

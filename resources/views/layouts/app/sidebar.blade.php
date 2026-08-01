@@ -120,9 +120,9 @@
                     @endcan
                 </livewire:sidebar.operations-group>
 
-                @if (auth()->user()?->can('manage_topups') || auth()->user()?->can('manage_settlements') || auth()->user()?->can('adjust_wallets') || auth()->user()?->can('manage_wallet_credit'))
+                @if (auth()->user()?->can('manage_topups') || auth()->user()?->can('manage_settlements') || auth()->user()?->can('adjust_wallets') || auth()->user()?->can('manage_wallet_credit') || auth()->user()?->can('view_commission_clawbacks'))
                     <livewire:sidebar.financials-group
-                        :expanded="request()->routeIs('topups') || request()->routeIs('settlements') || request()->routeIs('customer-funds') || request()->routeIs('wallet-adjustments') || request()->routeIs('credit-facility') || request()->routeIs('admin.commissions') || request()->routeIs('admin.payout-requests')"
+                        :expanded="request()->routeIs('topups') || request()->routeIs('settlements') || request()->routeIs('customer-funds') || request()->routeIs('wallet-adjustments') || request()->routeIs('credit-facility') || request()->routeIs('admin.commissions') || request()->routeIs('admin.payout-requests') || request()->routeIs('admin.commission-clawbacks.*')"
                         :heading="__('messages.nav_financials')"
                         :key="'sidebar-financials-group'"
                     >
@@ -160,6 +160,14 @@
                             <span class="flex items-center gap-2">
                                 {{ __('messages.payout_requests') }}
                                 <livewire:sidebar.payout-indicator :key="'sidebar-payout-indicator'" />
+                            </span>
+                        </flux:sidebar.item>
+                        @endcan
+                        @can('view_commission_clawbacks')
+                        <flux:sidebar.item icon="arrow-uturn-left" :href="route('admin.commission-clawbacks.index')" :current="request()->routeIs('admin.commission-clawbacks.*')" wire:navigate>
+                            <span class="flex items-center gap-2">
+                                {{ __('messages.commission_clawbacks') }}
+                                <livewire:sidebar.clawback-indicator :key="'sidebar-clawback-indicator'" />
                             </span>
                         </flux:sidebar.item>
                         @endcan

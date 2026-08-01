@@ -7,6 +7,7 @@ namespace App\Support\Financial;
 use App\DTOs\Financial\FinancialBalanceDTO;
 use App\Enums\CreditFacilityStatus;
 use App\Models\Wallet;
+use App\Support\Commissions\SalespersonClawbackDebt;
 
 /**
  * Builds the balance snapshot for the customer financial overview.
@@ -34,6 +35,8 @@ final class GetCustomerWalletBalanceSummary
             }
         }
 
+        $isClawbackDebt = ! $creditActive && (new SalespersonClawbackDebt)->hasOutstandingDebt($wallet);
+
         return new FinancialBalanceDTO(
             availableToSpend: $wallet->availableToSpend(),
             prepaidBalance: $prepaid,
@@ -43,6 +46,7 @@ final class GetCustomerWalletBalanceSummary
             creditLimit: $creditLimit,
             remainingCredit: $remainingCredit,
             hasOutstandingDebt: bccomp($debt, '0', 2) === 1,
+            isClawbackDebt: $isClawbackDebt,
         );
     }
 }

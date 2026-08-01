@@ -21,6 +21,22 @@ class NotificationRecipientService
     }
 
     /**
+     * Users with an explicit permission (no role-name shortcut).
+     *
+     * @return \Illuminate\Database\Eloquent\Collection<int, User>
+     */
+    public function usersWithPermission(string $permission): \Illuminate\Database\Eloquent\Collection
+    {
+        $userIds = User::permission($permission)->pluck('id')->unique()->values();
+
+        if ($userIds->isEmpty()) {
+            return User::query()->whereRaw('1 = 0')->get();
+        }
+
+        return User::query()->whereIn('id', $userIds)->get();
+    }
+
+    /**
      * Admins and users who can update product entry prices (e.g. supervisors).
      *
      * @return \Illuminate\Database\Eloquent\Collection<int, User>

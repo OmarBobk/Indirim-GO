@@ -8,17 +8,21 @@ use App\DTOs\Earnings\CommissionDTO;
 use App\DTOs\Earnings\SalespersonEarningsFilters;
 use App\DTOs\Earnings\SalespersonEarningsPageDTO;
 use App\DTOs\Financial\FinancialDestinationDTO;
+use App\Enums\CommissionClawbackStatus;
 use App\Enums\CommissionStatus;
 use App\Enums\FinancialDestinationType;
 use App\Enums\PayoutRequestStatus;
 use App\Enums\WalletTransactionType;
 use App\Enums\WalletType;
 use App\Models\Commission;
+use App\Models\CommissionClawback;
 use App\Models\PayoutRequest;
 use App\Models\User;
 use App\Models\Wallet;
 use App\Models\WalletTransaction;
 use App\Models\WebsiteSetting;
+use App\Support\Commissions\CommissionClawbackDisputeState;
+use App\Support\Commissions\SalespersonClawbackDebt;
 use App\Support\Commissions\SalespersonCommissionEligibility;
 use App\Support\LedgerMoney;
 use App\Support\WalletTransactionPublicRef;
@@ -36,6 +40,8 @@ final class GetSalespersonEarnings
 {
     public function __construct(
         private readonly SalespersonCommissionEligibility $eligibility = new SalespersonCommissionEligibility,
+        private readonly SalespersonClawbackDebt $clawbackDebt = new SalespersonClawbackDebt,
+        private readonly CommissionClawbackDisputeState $disputeState = new CommissionClawbackDisputeState,
     ) {}
 
     public function handle(User $user, ?SalespersonEarningsFilters $filters = null): SalespersonEarningsPageDTO
@@ -52,6 +58,8 @@ final class GetSalespersonEarnings
         $eligibleTotal = $this->eligibility->eligiblePendingTotal($user);
         $threshold = $this->eligibility->minimumRequestThreshold();
         $payoutRequest = $this->latestPayoutRequest($user);
+        $hasDebt = $this->clawbackDebt->hasOutstandingDebt($wallet);
+        $debtAmount = $this->clawbackDebt->amount($wallet);
 
         $query = $this->baseQuery($user, $filters);
         $paginator = $query
@@ -81,6 +89,7 @@ final class GetSalespersonEarnings
         $this->eagerLoadRowRelations($rows);
 
         $walletTxRefs = $this->loadOwnedWalletTransactionRefs($user, $wallet, $rows);
+        $clawbacksByCommission = $this->loadClawbacksForRows($rows);
         $cutoff = now()->subDays($this->eligibility->waitDays());
 
         $items = $rows
@@ -88,6 +97,7 @@ final class GetSalespersonEarnings
                 $user,
                 $commission,
                 $walletTxRefs,
+                $clawbacksByCommission,
                 $cutoff,
             ))
             ->all();
@@ -106,7 +116,8 @@ final class GetSalespersonEarnings
             walletCurrency: 'USD',
             payoutThreshold: $threshold,
             waitDays: $this->eligibility->waitDays(),
-            canRequestPayout: $payoutRequest?->status !== PayoutRequestStatus::Pending
+            canRequestPayout: ! $hasDebt
+                && $payoutRequest?->status !== PayoutRequestStatus::Pending
                 && $this->eligibility->canRequestPayout($eligibleTotal),
             payoutRequestStatus: $payoutRequest?->status,
             payoutRequestEligibleAmount: $payoutRequest !== null
@@ -124,6 +135,12 @@ final class GetSalespersonEarnings
             walletDestination: new FinancialDestinationDTO(FinancialDestinationType::Wallet),
             transactionsDestination: new FinancialDestinationDTO(FinancialDestinationType::WalletTransactions),
             dashboardDestination: new FinancialDestinationDTO(FinancialDestinationType::SalespersonDashboard),
+            reversedTotal: $summary['reversed'],
+            waivedBackTotal: $summary['waived_back'],
+            correctedBackTotal: $summary['corrected_back'],
+            netCreditedTotal: $summary['net_credited'],
+            outstandingClawbackDebt: $debtAmount,
+            hasClawbackDebt: $hasDebt,
         );
     }
 
@@ -136,7 +153,11 @@ final class GetSalespersonEarnings
      *     credited_this_month: string,
      *     pending_count: int,
      *     credited_count: int,
-     *     failed_count: int
+     *     failed_count: int,
+     *     reversed: string,
+     *     waived_back: string,
+     *     corrected_back: string,
+     *     net_credited: string
      * }
      */
     private function aggregateSummary(User $user): array
@@ -180,6 +201,51 @@ final class GetSalespersonEarnings
             ->whereBetween('paid_at', [now()->startOfMonth(), now()->endOfMonth()])
             ->sum('commission_amount');
 
+        $reversedRaw = WalletTransaction::query()
+            ->where('type', WalletTransactionType::CommissionReversal)
+            ->where('status', WalletTransaction::STATUS_POSTED)
+            ->where('reference_type', Commission::class)
+            ->whereIn('reference_id', function ($query) use ($user): void {
+                $query->select('id')
+                    ->from('commissions')
+                    ->where('salesperson_id', $user->id);
+            })
+            ->sum('amount');
+        $reversed = LedgerMoney::normalize((string) ($reversedRaw ?: '0'));
+
+        $waivedRaw = WalletTransaction::query()
+            ->where('type', WalletTransactionType::CommissionClawbackWaiver)
+            ->where('status', WalletTransaction::STATUS_POSTED)
+            ->whereIn('wallet_id', function ($query) use ($user): void {
+                $query->select('id')
+                    ->from('wallets')
+                    ->where('user_id', $user->id);
+            })
+            ->sum('amount');
+        $waivedBack = LedgerMoney::normalize((string) ($waivedRaw ?: '0'));
+
+        $correctedRaw = WalletTransaction::query()
+            ->where('type', WalletTransactionType::CommissionReversalCorrection)
+            ->where('status', WalletTransaction::STATUS_POSTED)
+            ->whereIn('wallet_id', function ($query) use ($user): void {
+                $query->select('id')
+                    ->from('wallets')
+                    ->where('user_id', $user->id);
+            })
+            ->sum('amount');
+        $correctedBack = LedgerMoney::normalize((string) ($correctedRaw ?: '0'));
+
+        $netCredited = LedgerMoney::sub(
+            LedgerMoney::add(
+                LedgerMoney::add($credited, $waivedBack),
+                $correctedBack,
+            ),
+            $reversed,
+        );
+        if (LedgerMoney::compare($netCredited, LedgerMoney::ZERO) === -1) {
+            $netCredited = LedgerMoney::ZERO;
+        }
+
         return [
             'pending' => $pending,
             'credited' => $credited,
@@ -189,6 +255,10 @@ final class GetSalespersonEarnings
             'pending_count' => $pendingCount,
             'credited_count' => $creditedCount,
             'failed_count' => $failedCount,
+            'reversed' => $reversed,
+            'waived_back' => $waivedBack,
+            'corrected_back' => $correctedBack,
+            'net_credited' => $netCredited,
         ];
     }
 
@@ -292,12 +362,52 @@ final class GetSalespersonEarnings
     }
 
     /**
+     * @param  Collection<int, Commission>  $rows
+     * @return array<int, CommissionClawback>
+     */
+    private function loadClawbacksForRows(Collection $rows): array
+    {
+        $ids = $rows->pluck('id')->map(fn (mixed $id): int => (int) $id)->all();
+        if ($ids === []) {
+            return [];
+        }
+
+        return CommissionClawback::query()
+            ->whereIn('commission_id', $ids)
+            ->whereIn('status', [
+                CommissionClawbackStatus::Posted,
+                CommissionClawbackStatus::Waived,
+                CommissionClawbackStatus::NeedsReview,
+                CommissionClawbackStatus::Pending,
+                CommissionClawbackStatus::Processing,
+            ])
+            ->with([
+                'reversalWalletTransaction:id,public_ref,wallet_id,type,status,amount',
+                'decisions' => function ($query): void {
+                    $query->whereIn('type', [
+                        \App\Enums\CommissionClawbackDecisionType::Waiver,
+                        \App\Enums\CommissionClawbackDecisionType::Correction,
+                    ])
+                        ->with('relatedWalletTransaction:id,public_ref,amount,status,type')
+                        ->orderByDesc('id');
+                },
+            ])
+            ->orderByDesc('id')
+            ->get()
+            ->unique('commission_id')
+            ->keyBy(fn (CommissionClawback $clawback): int => (int) $clawback->commission_id)
+            ->all();
+    }
+
+    /**
      * @param  array<int, string>  $walletTxRefs
+     * @param  array<int, CommissionClawback>  $clawbacksByCommission
      */
     private function mapRow(
         User $user,
         Commission $commission,
         array $walletTxRefs,
+        array $clawbacksByCommission,
         CarbonInterface $cutoff,
     ): CommissionDTO {
         $amount = LedgerMoney::normalize((string) $commission->commission_amount);
@@ -354,12 +464,96 @@ final class GetSalespersonEarnings
             )
             : null;
 
-        // Salespeople do not get a weak customer order-detail shortcut from earnings.
         $orderDestination = null;
+
+        $clawback = $clawbacksByCommission[(int) $commission->id] ?? null;
+        $isFullyWaived = $clawback !== null && $clawback->status === CommissionClawbackStatus::Waived;
+        $waivedCredits = LedgerMoney::ZERO;
+        $correctionCredits = LedgerMoney::ZERO;
+        $latestWaiverRef = null;
+        $latestCorrectionRef = null;
+        if ($clawback !== null) {
+            foreach ($clawback->decisions as $decision) {
+                $wtx = $decision->relatedWalletTransaction;
+                if ($wtx === null || $wtx->status !== WalletTransaction::STATUS_POSTED) {
+                    continue;
+                }
+                if ($wtx->type === WalletTransactionType::CommissionClawbackWaiver) {
+                    $waivedCredits = LedgerMoney::add($waivedCredits, (string) $wtx->amount);
+                    if ($latestWaiverRef === null && is_string($wtx->public_ref)) {
+                        $latestWaiverRef = $wtx->public_ref;
+                    }
+                }
+                if ($wtx->type === WalletTransactionType::CommissionReversalCorrection) {
+                    $correctionCredits = LedgerMoney::add($correctionCredits, (string) $wtx->amount);
+                    if ($latestCorrectionRef === null && is_string($wtx->public_ref)) {
+                        $latestCorrectionRef = $wtx->public_ref;
+                    }
+                }
+            }
+        }
+        $isUnderDisputeReview = $clawback !== null && $this->disputeState->hasActiveDispute($clawback);
+
+        $reversedAmount = null;
+        if ($clawback !== null && $clawback->reversalWalletTransaction !== null) {
+            $reversedAmount = LedgerMoney::normalize((string) $clawback->reversalWalletTransaction->amount);
+        }
+
+        $isPartiallyCorrected = LedgerMoney::compare($correctionCredits, LedgerMoney::ZERO) === 1
+            && $reversedAmount !== null;
+        $isFullyCorrected = false;
+        if ($isPartiallyCorrected && $reversedAmount !== null) {
+            $remainingAfterCredits = LedgerMoney::sub($reversedAmount, LedgerMoney::add($waivedCredits, $correctionCredits));
+            if (LedgerMoney::compare($remainingAfterCredits, LedgerMoney::ZERO) !== 1) {
+                $isFullyCorrected = true;
+                $isPartiallyCorrected = false;
+            }
+        }
+        $isPartiallyWaived = $clawback !== null
+            && $clawback->status === CommissionClawbackStatus::Posted
+            && LedgerMoney::compare($waivedCredits, LedgerMoney::ZERO) === 1;
+        $isFullyReversed = $clawback !== null
+            && ($clawback->status === CommissionClawbackStatus::Posted || $isFullyWaived)
+            && $clawback->reversal_wallet_transaction_id !== null
+            && ! $isPartiallyWaived
+            && ($isFullyWaived || LedgerMoney::compare($waivedCredits, LedgerMoney::ZERO) !== 1);
+        // Posted with zero waivers = fully reversed; posted with partial waivers = partially waived;
+        // waived status = fully waived (net collected 0).
+        if ($isFullyWaived) {
+            $isFullyReversed = false;
+        } elseif ($isPartiallyWaived) {
+            $isFullyReversed = false;
+        } elseif ($isPartiallyCorrected || $isFullyCorrected) {
+            $isFullyReversed = false;
+        } elseif ($clawback !== null && $clawback->status === CommissionClawbackStatus::Posted) {
+            $isFullyReversed = true;
+        }
+
+        $clawbackNeedsReview = $clawback !== null && $clawback->status === CommissionClawbackStatus::NeedsReview;
+        $reversalRef = $clawback?->reversalWalletTransaction !== null
+            && is_string($clawback->reversalWalletTransaction->public_ref)
+            ? $clawback->reversalWalletTransaction->public_ref
+            : null;
+
+        $netEffect = $amount;
+        if ($reversedAmount !== null) {
+            $netEffect = LedgerMoney::sub(
+                LedgerMoney::add(
+                    LedgerMoney::add($amount, $waivedCredits),
+                    $correctionCredits,
+                ),
+                $reversedAmount,
+            );
+            if (LedgerMoney::compare($netEffect, LedgerMoney::ZERO) === -1) {
+                $netEffect = LedgerMoney::ZERO;
+            }
+        }
 
         $actorNext = match ($commission->status) {
             CommissionStatus::Pending => $isEligible ? 'messages.earnings_actor_staff' : 'messages.earnings_actor_wait',
-            CommissionStatus::Credited => $anomaly ? 'messages.earnings_actor_support' : null,
+            CommissionStatus::Credited => ($anomaly || $clawbackNeedsReview || $isUnderDisputeReview)
+                ? 'messages.earnings_actor_support'
+                : null,
             CommissionStatus::Failed => null,
         };
 
@@ -382,6 +576,39 @@ final class GetSalespersonEarnings
             actorNextKey: $actorNext,
             transactionDestination: $transactionDestination,
             orderDestination: $orderDestination,
+            isFullyReversed: $isFullyReversed,
+            clawbackPublicRef: $clawback?->public_ref,
+            reversalWalletTransactionPublicRef: $reversalRef,
+            reversedAmount: $reversedAmount,
+            reversalTransactionDestination: $reversalRef !== null
+                ? new FinancialDestinationDTO(
+                    FinancialDestinationType::WalletTransactionDetail,
+                    ['public_ref' => WalletTransactionPublicRef::normalize($reversalRef)]
+                )
+                : null,
+            clawbackNeedsReview: $clawbackNeedsReview || $isUnderDisputeReview,
+            isFullyWaived: $isFullyWaived,
+            isPartiallyWaived: $isPartiallyWaived,
+            isPartiallyCorrected: $isPartiallyCorrected,
+            isFullyCorrected: $isFullyCorrected,
+            isUnderDisputeReview: $isUnderDisputeReview,
+            waivedAmount: LedgerMoney::compare($waivedCredits, LedgerMoney::ZERO) === 1 ? $waivedCredits : null,
+            correctedAmount: LedgerMoney::compare($correctionCredits, LedgerMoney::ZERO) === 1 ? $correctionCredits : null,
+            waiverWalletTransactionPublicRef: $latestWaiverRef,
+            correctionWalletTransactionPublicRef: $latestCorrectionRef,
+            waiverTransactionDestination: $latestWaiverRef !== null
+                ? new FinancialDestinationDTO(
+                    FinancialDestinationType::WalletTransactionDetail,
+                    ['public_ref' => WalletTransactionPublicRef::normalize($latestWaiverRef)]
+                )
+                : null,
+            correctionTransactionDestination: $latestCorrectionRef !== null
+                ? new FinancialDestinationDTO(
+                    FinancialDestinationType::WalletTransactionDetail,
+                    ['public_ref' => WalletTransactionPublicRef::normalize($latestCorrectionRef)]
+                )
+                : null,
+            netCommissionEffect: $netEffect,
         );
     }
 

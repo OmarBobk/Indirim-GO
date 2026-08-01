@@ -8,6 +8,8 @@ use App\Http\Controllers\BuyNowCustomAmountQuoteController;
 use App\Http\Controllers\TopupProofController;
 use App\Livewire\Admin\AssistantChat;
 use App\Livewire\Admin\AutomationMonitor;
+use App\Livewire\Admin\CommissionClawbackShow;
+use App\Livewire\Admin\CommissionClawbacksIndex;
 use App\Livewire\Admin\CommissionsTable;
 use App\Livewire\Admin\PayoutRequestsTable;
 use App\Models\User;
@@ -135,6 +137,12 @@ Route::middleware(['auth', 'verified', 'backend'])->group(function () {
     Route::livewire('/admin/payout-requests', PayoutRequestsTable::class)
         ->middleware('can:manage_settlements')
         ->name('admin.payout-requests');
+    Route::livewire('/admin/commission-clawbacks', CommissionClawbacksIndex::class)
+        ->middleware('can:view_commission_clawbacks')
+        ->name('admin.commission-clawbacks.index');
+    Route::livewire('/admin/commission-clawbacks/{clawback}', CommissionClawbackShow::class)
+        ->middleware('can:view_commission_clawbacks')
+        ->name('admin.commission-clawbacks.show');
     Route::livewire('/admin/notifications', 'pages::backend.notifications.index')->name('admin.notifications.index');
 });
 

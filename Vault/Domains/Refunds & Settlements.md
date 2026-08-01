@@ -10,13 +10,14 @@ Customer refund requests and salesperson commission payouts / earnings.
 - Reject: `RejectRefundRequest` → `rejected` (no money moved); customer may re-request if fulfillment still Failed
 - Dismiss: `DismissPendingRefundForFulfillment` / `DismissStaleRefundRequest` → `rejected` + `meta.dismiss_reason` (Closed to customer; no self-dismiss)
 - Commission payout: `CreatePayoutBatch` → `WalletLedger` credit; key `commission_credit:{commission_id}`
-- On refund post today: pending commissions for fulfillment → `failed`; credited commissions are not yet reversed. M7.0 policy is approved and M7.1 is unblocked — see [[M7 — Financial Risk and Admin Operations]].
+- On refund post (M7.1): pending commissions for fulfillment → `failed`; credited → `commission_clawbacks` obligation; after-commit job posts `commission_reversal`. Customer refund never blocked by clawback failure — [[M7 — Financial Risk and Admin Operations]]
 - Customer may request refund or retry (limited) on failed fulfillments
 - Approve/reject/request/dismiss emit Activity + Financial broadcasters after commit (M6.4)
 - M6.7 signalling: refund approve emits one owner event containing `TransactionPosted` + `RefundStateChanged`; pending→failed and credited commissions use `CommissionStateChanged`; payout-request create/process uses `PayoutRequestStateChanged`
 - Payout batches deduplicate salesperson IDs and emit one `TransactionPosted` + `CommissionStateChanged` event per affected salesperson, not per commission row
+- Clawback posting emits salesperson `TransactionPosted` + `CommissionStateChanged` after commit
 
-## Commission / earnings (canonical — M6.6)
+## Commission / earnings (canonical — M6.6 / M7.1)
 
 Do **not** create a second commission feature note; keep earnings contracts here + [[Customer Financial Centre]].
 
@@ -24,19 +25,23 @@ Do **not** create a second commission feature note; keep earnings contracts here
 
 - Commission table = earnings workflow
 - Posted `commission_credit` WalletTransaction = money entered wallet
-- PayoutRequest = signal only (`pending`|`processed`)
+- Posted `commission_reversal` = clawback debit (original credit immutable)
+- Posted `commission_clawback_waiver` = forgiveness credit (M7.2.2); does not mutate reversal
+- Posted `commission_reversal_correction` = erroneous-reversal repair credit (M7.2.3); distinct from waiver
+- `CommissionClawback` (`CLB-*`) = obligation workflow truth; decisions `CLD-*` (waiver / dispute / correction)
+- PayoutRequest = signal only (`pending`|`processed`); blocked while clawback debt remains
 - Request floor `$10` exclusive (`RequestSalespersonPayout::MIN_ELIGIBLE_EXCLUSIVE`) ≠ admin batch min (`WebsiteSetting::getCommissionPayoutMinAmount()`, default `$200`)
 
 ### Refund × commission policy table (current code)
 
-| Case | Current behaviour | Severity | M6.6 UI | Future policy |
+| Case | Current behaviour | Severity | UI | Notes |
 |---|---|---|---|---|
 | A. Refund before credit | Pending → `failed` | Expected | Show failed | Keep |
 | B. Refund while pending | Same as A on approve | Expected | Show failed | Keep |
-| C. Late refund after credit | Credited **not** reversed; customer refund still posts | **Phase-1 debt** | Show credited + order context | **M7.0 approved:** per-fulfillment reversal + obligation workflow; M7.1 unblocked |
-| D. Partial / multi-unit | Pending for refunded FF fails; other FFs remain | Medium | Per-commission status | Grain = per-fulfillment; free-form partial USD of one FF not supported today |
-| E. Multi-fulfillment one fails | Per-fulfillment commission rows | Medium | Per row | Keep; clawback only refunded FF’s commission |
-| F. Already in PayoutBatch | Credited path; no reverse | High if late refund | Credited + WTX link | M7 clawback after policy approval |
+| C. Late refund after credit | Obligation + `commission_reversal` (prospective) | Controlled | Fully reversed / debt | **M7.1 shipped** |
+| D. Anomaly credit | Obligation `needs_review`; refund still posts | Ops | Review | No auto repair |
+| E. Partial / multi-unit | Only refunded FF clawed | Medium | Per row | Grain = per-fulfillment |
+| F. Already in PayoutBatch | Credited then reversible via clawback | High if spent | Credit + reversal WTX | Debt mode B |
 
 Never deduct customer refunds by salesperson commission.
 
@@ -68,7 +73,7 @@ Never deduct customer refunds by salesperson commission.
 ## Features
 
 - [[Customer Financial Centre]] — M6 closed
-- [[M7 — Financial Risk and Admin Operations]] — M7.0 clawback policy/architecture (implementation not started)
+- [[M7 — Financial Risk and Admin Operations]] — M7.1–M7.2.3 shipped (inbox/retry/waiver/dispute/correction); historical deferred (M7.2.4)
 - [[Customer Activity]] — rejected refund → refund detail destination when `public_ref` present
 
 ## Related

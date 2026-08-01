@@ -18,5 +18,6 @@ final readonly class FinancialBalanceDTO
         public ?string $creditLimit,
         public ?string $remainingCredit,
         public bool $hasOutstandingDebt,
+        public bool $isClawbackDebt = false,
     ) {}
 }

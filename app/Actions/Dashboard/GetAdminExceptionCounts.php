@@ -17,6 +17,7 @@ use App\Models\PayoutRequest;
 use App\Models\TopupRequest;
 use App\Models\User;
 use App\Models\WalletTransaction;
+use App\Support\Commissions\CommissionClawbackActionRequiredQuery;
 
 class GetAdminExceptionCounts
 {
@@ -31,6 +32,7 @@ class GetAdminExceptionCounts
         'fulfillment_queue',
         'automation_needs_review',
         'pending_payouts',
+        'clawback_action_required_total',
         'open_bugs',
     ];
 
@@ -58,11 +60,17 @@ class GetAdminExceptionCounts
      *     failed_fulfillments: int,
      *     automation_needs_review: int,
      *     pending_payouts: int,
+     *     clawback_needs_review: int,
+     *     clawback_retryable: int,
+     *     clawback_stale_processing: int,
+     *     clawback_action_required_total: int,
      *     open_bugs: int
      * }
      */
     public function handle(User $user): array
     {
+        $canViewClawbacks = $user->can('view_commission_clawbacks');
+
         return [
             'orders_with_failures' => $user->can('view_orders')
                 ? Order::query()
@@ -99,6 +107,18 @@ class GetAdminExceptionCounts
                 ? PayoutRequest::query()
                     ->where('status', PayoutRequestStatus::Pending)
                     ->count()
+                : 0,
+            'clawback_needs_review' => $canViewClawbacks
+                ? CommissionClawbackActionRequiredQuery::needsReviewCount()
+                : 0,
+            'clawback_retryable' => $canViewClawbacks
+                ? CommissionClawbackActionRequiredQuery::retryableCount()
+                : 0,
+            'clawback_stale_processing' => $canViewClawbacks
+                ? CommissionClawbackActionRequiredQuery::staleProcessingCount()
+                : 0,
+            'clawback_action_required_total' => $canViewClawbacks
+                ? CommissionClawbackActionRequiredQuery::actionRequired()->count()
                 : 0,
             'open_bugs' => $user->can('manage_bugs')
                 ? Bug::query()->openOrInProgress()->count()

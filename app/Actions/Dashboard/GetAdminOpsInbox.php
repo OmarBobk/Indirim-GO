@@ -276,6 +276,24 @@ class GetAdminOpsInbox
             );
         }
 
+        if ($user->can('view_commission_clawbacks')) {
+            $count = $counts['clawback_action_required_total'];
+
+            $cards[] = $this->card(
+                'clawback_action_required_total',
+                __('messages.admin_ops_clawbacks_action_required'),
+                $count,
+                route('admin.commission-clawbacks.index', ['filter' => 'needs_review']),
+                'arrow-uturn-left',
+                $count > 0 ? 'amber' : 'zinc',
+                $count > 0
+                    ? \App\Support\Commissions\CommissionClawbackActionRequiredQuery::actionRequired()
+                        ->oldest('created_at')
+                        ->value('created_at')
+                    : null,
+            );
+        }
+
         if ($user->can('manage_bugs')) {
             $count = $counts['open_bugs'];
 

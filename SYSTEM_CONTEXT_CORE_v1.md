@@ -63,13 +63,14 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 1. Every wallet balance mutation corresponds to one posted wallet transaction and one financial system event (ops snapshot reconcile is the documented exception under `--repair`).
 2. Never derive balances from `system_events`.
 3. Payment/refund/topup/settlement writes are done inside DB transactions with row locks via `WalletLedger`.
-4. Idempotency on money paths is mandatory (`purchase:order:{id}`, `topup:{id}`, `refund:*`, `commission_credit:{id}`, `settlement:{id}`).
+4. Idempotency on money paths is mandatory (`purchase:order:{id}`, `topup:{id}`, `refund:*`, `commission_credit:{id}`, `commission_reversal:{commission_id}:refund:{refund_tx_id}`, `settlement:{id}`).
 5. Notification/realtime emissions happen after commit (`DB::afterCommit` / financial+activity broadcasters).
 6. Custom-amount lines remain quantity-1 semantic lines with `requested_amount`.
 7. Pricing-rule coverage must include computed custom-amount entry totals.
 8. Backend visibility must remain permission-based (no role-only shortcuts).
 9. Commission payouts are wallet credits (`commission_credit`) and must be idempotent by `commission_credit:{commission_id}`.
 10. Customer wallet balance **may be negative** under an Active credit facility; spend checks use `WalletSpendPolicy` / `availableToSpend()`, and `WalletLedger` enforces `minimumAllowedBalance()` after lock. Platform wallets never overdraft.
+11. Salesperson wallets may go negative **only** via authorised `commission_reversal` (`WalletLedger::postCommissionReversal` / `allowClawbackDebt`). Customer credit facility is not reused for clawback debt. Purchases and payout requests stay blocked while clawback debt remains. Clawbacks are prospective-only (`billing.commission_clawback`). Admin clawback ops: `/admin/commission-clawbacks` + `CLB-*` detail; permissions `view_commission_clawbacks` / `process_commission_clawbacks` / `waive_commission_clawbacks` / `manage_commission_clawback_disputes` / `correct_commission_clawbacks`; retry redispatches Process only; waiver via `commission_clawback_waiver`; disputes pause unposted processing (decision-derived, no money on open); corrections via `commission_reversal_correction` credit (shared cumulative cap with waivers); stale sweeper `commission-clawbacks:sweep-stale`.
 
 ---
 
@@ -112,7 +113,7 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 ## 8. Financial core (wallet, topup, refund, settlement, credit facility)
 
 - **Wallet ledger:** posted tx sum mirrors stored balance; reconcile command validates and fixes drift. Posted TX statuses: `pending` | `posted` | `rejected` (not “approved”). Directions: `credit` | `debit`. Immutable once `posted` (`public_ref` e.g. `WTX-*`, `posted_at`).
-- **Transaction types:** topup, purchase, refund, adjustment, settlement, **commission_credit**.
+- **Transaction types:** topup, purchase, refund, adjustment, settlement, **commission_credit**, **commission_reversal**.
 - **Topup creation:** `SubmitCustomerTopupRequest` → `CreateTopupRequestAction` atomically creates topup request + pending wallet tx + immutable `public_ref` (`TUP-*`). Payment method chosen from active `payment_methods` (admin-managed under website settings).
 - **Topup conversion behavior:** TRY-entered topups convert to USD **at submission** (server-authoritative; rate locked into request amount). Posted wallet currency always USD.
 - **Topup proof UI behavior:** create form gates file requirement with `attachProof`; proof optional when disabled; private storage + ownership on download.
@@ -183,11 +184,11 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - **User fields:** referral code + referred-by linkage (`referral_code`, `referred_by_user_id`).
 - **Commission model:** `commissions` table, `CommissionStatus` enum (`pending`, `credited`, `failed`), commission rate snapshots, optional `payout_batch_id`, and unique `wallet_transaction_id`.
 - **Creation trigger:** commissions are generated in `PayOrderWithWallet` after order payment/fulfillment creation.
-- **Failure interaction:** refund approval currently marks related pending commissions failed; credited reversals are not implemented yet. **Approved M7.0 contract:** prospective per-fulfillment `commission_reversal`, customer refund never blocked, controlled negative salesperson balance only through authorised reversal, future credits repay normally, payout requests blocked in debt; M7.1 unblocked.
-- **Payout flow:** admins use `CreatePayoutBatch` through `/admin/commissions` (`can:manage_settlements`) to credit eligible completed/aged commissions to salesperson wallets. It creates `payout_batches`, posts `commission_credit` wallet transactions, records `wallet.commission.credited`, marks commissions `credited`, and notifies recipients after commit.
-- **Eligibility:** commission must be pending, not already batched/credited, order paid older than `WebsiteSetting::getCommissionPayoutWaitDays()`, and related fulfillment(s) completed; payout **batch** total must meet `WebsiteSetting::getCommissionPayoutMinAmount()` unless explicitly bypassed for a single admin credit. Salesperson **payout request** floor is separate: `RequestSalespersonPayout::MIN_ELIGIBLE_EXCLUSIVE` ($10 exclusive).
-- **Salesperson dashboard:** `/salesperson-dashboard` (`can:view_referrals`) = business KPIs via `SalespersonDashboardService`. **Earnings financial workspace (M6.6):** `/wallet/earnings` (`wallet.earnings.index`) via `GetSalespersonEarnings` + `SalespersonEarningsPresenter`; Financial Centre Earnings nav only with `view_referrals`. Frontend `/referral-link` also requires `can:view_referrals`.
-- **PayoutRequest:** workflow signal only (`pending`|`processed`); does not post wallet money.
+- **Failure interaction:** refund approval marks related pending commissions failed; credited commissions get durable `commission_clawbacks` (`CLB-*`) and after-commit `commission_reversal` posting (M7.1). Customer refund never depends on clawback success. Anomalies → `needs_review`. Prospective-only; no historical auto-debit. Payout requests blocked while clawback debt remains.
+- **Payout flow:** admins use `CreatePayoutBatch` through `/admin/commissions` (`can:manage_settlements`) to credit eligible completed/aged commissions to salesperson wallets. It creates `payout_batches`, posts `commission_credit` wallet transactions, records `wallet.commission.credited`, marks commissions `credited`, and notifies recipients after commit. Full credits still post when recipient is in debt (ordinary arithmetic reduces negative balance).
+- **Eligibility:** commission must be pending, not already batched/credited, order paid older than `WebsiteSetting::getCommissionPayoutWaitDays()`, and related fulfillment(s) completed; payout **batch** total must meet `WebsiteSetting::getCommissionPayoutMinAmount()` unless explicitly bypassed for a single admin credit. Salesperson **payout request** floor is separate: `RequestSalespersonPayout::MIN_ELIGIBLE_EXCLUSIVE` ($10 exclusive); debt check precedes threshold.
+- **Salesperson dashboard:** `/salesperson-dashboard` (`can:view_referrals`) = business KPIs via `SalespersonDashboardService`. **Earnings financial workspace (M6.6 / M7.1):** `/wallet/earnings` (`wallet.earnings.index`) via `GetSalespersonEarnings` + `SalespersonEarningsPresenter` (gross/reversed/net/debt); Financial Centre Earnings nav only with `view_referrals`. Frontend `/referral-link` also requires `can:view_referrals`.
+- **PayoutRequest:** workflow signal only (`pending`|`processed`); does not post wallet money; blocked while clawback debt remains.
 
 ---
 
@@ -268,7 +269,12 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - **2026-07 (M6.6):** **Salesperson earnings clarity** — `/wallet/earnings`; Commission truth vs wallet spendable; `GetSalespersonEarnings`; payout request ≠ money movement; late-refund clawback still deferred; `CommissionStateChanged` invalidation.
 - **2026-07 (M6.7):** **Financial realtime synchronisation** — reason-set payload; Action-owned after-commit writers; replay/batch deduplication; scoped Livewire refresh; page-2 zero-read banners; hidden/focus/online/reconnect reconciliation; print-safe transaction detail.
 - **2026-07 (M6.8):** **Customer Financial Centre closure review** — architecture/safety/security/realtime verified; M6 closed; late-refund clawback deferred to Track B.
-- **2026-07 (M7.0):** **Commission clawback policy architecture** — Track B active; per-fulfillment clawback + obligation workflow recommended; Omar decisions required before M7.1; no reversal code yet.
+- **2026-07 (M7.0):** **Commission clawback policy architecture** — Track B active; per-fulfillment clawback + obligation workflow approved.
+- **2026-07 (M7.1):** **Commission reversal kernel** — `commission_clawbacks` + `CLB-*`; `commission_reversal` via `WalletLedger::postCommissionReversal`; refund-independent after-commit job; controlled negative SP debt; purchase/payout blocks; Earnings/ledger/overview updates; prospective-only.
+- **2026-08 (M7.2.1):** **Admin clawback inbox/retry** — dedicated `/admin/commission-clawbacks` + `CLB-*` detail; `view_commission_clawbacks` / `process_commission_clawbacks`; `RetryCommissionClawback` redispatches Process only; stale sweeper; permission-aware exception counts.
+- **2026-08 (M7.2.2):** **Commission clawback waivers** — `waive_commission_clawbacks`; `commission_clawback_decisions` (`CLD-*`); status `waived`; unposted full (no WTX); posted full/partial credit `commission_clawback_waiver`; cumulative cap; Earnings/ledger/debt/payout unlock via ordinary arithmetic.
+- **2026-08 (M7.2.3):** **Disputes + erroneous corrections** — `manage_commission_clawback_disputes` / `correct_commission_clawbacks`; dispute open/resolve (no money on open; pause unposted); `commission_reversal_correction` credit; shared waiver+correction cap; no SP self-service; no ticketing. Historical deferred (M7.2.4).
+- **2026-08 (M7.2.0):** **Commission clawback admin-ops architecture** — inbox/retry/waiver/dispute/correction/historical split designed; dedicated `/admin/commission-clawbacks` recommended; distinct waiver/correction TX types.
 
 ---
 

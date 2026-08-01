@@ -16,14 +16,18 @@ Authoritative financial model for karman.store.
 - **Customer ledger (M6.2):** posted rows only; order by `posted_at` then `id`; public ref `WTX-*`
 - **Top-up workflow (M6.3):** `TopupRequest` + `TUP-*` public_ref; pending TX ≠ posted money; TRY→USD locked at submission; one pending per user
 - **Transaction detail / receipt (M6.5):** owned posted `WTX-*` detail; snapshot-first `meta.receipt`; printable HTML only (no server PDF)
-- **Salesperson earnings (M6.6):** Commission = earnings workflow; pending ≠ spendable; credited requires posted linked `commission_credit`; `/wallet/earnings` read model; PayoutRequest does not move money; late credited clawback → [[M7 — Financial Risk and Admin Operations]]
+- **Salesperson earnings (M6.6 / M7.1):** Commission = earnings workflow; pending ≠ spendable; credited requires posted linked `commission_credit`; late refund → clawback obligation + `commission_reversal`; `/wallet/earnings` shows gross/reversed/net/debt; PayoutRequest blocked while clawback debt remains
 - **Financial realtime (M6.7):** Actions emit after-commit invalidation-only reason sets; WalletLedger is broadcast-unaware; one private user channel; client coalesces/scopes server reconciliation
-- **M7.0 (architecture):** recommended future `commission_reversal` debit via WalletLedger + clawback obligation workflow; salesperson clawback debt must **not** reuse customer credit facility; no implementation yet
+- **M7.1 (shipped):** `WalletLedger::postCommissionReversal` may take salesperson wallet below zero only for `commission_reversal` + `allowClawbackDebt`; customer credit facility not reused; see [[M7 — Financial Risk and Admin Operations]]
+- **M7.2.1 (shipped):** dedicated admin clawback inbox/detail (`CLB-*`), retry Action (re-dispatch Process only), stale sweeper, permission-aware counts
+- **M7.2.2 (shipped):** `commission_clawback_decisions` (`CLD-*`); `waive_commission_clawbacks`; unposted full → status `waived` (no WTX); posted full/partial → credit `commission_clawback_waiver`; original reversal immutable; never use generic adjustment for forgiveness
+- **M7.2.3 (shipped):** disputes (`dispute_opened`/`dispute_resolved`) pause unposted processing; corrections via `commission_reversal_correction` credit; shared cumulative cap with waivers; permissions `manage_commission_clawback_disputes` / `correct_commission_clawbacks`
+- **M7.2.4 (deferred):** historical exposure report-only
 
 ## Key files
 
 - `app/Services/WalletLedger.php`, `WalletSpendPolicy.php`
-- `app/Support/LedgerMoney.php`, `CustomerFinancialBroadcaster.php`, `app/Support/Financial/CustomerFinancialRealtimeScope.php`, `WalletTransactionPublicRef.php`, `TopupRequestPublicRef.php`
+- `app/Support/LedgerMoney.php`, `CustomerFinancialBroadcaster.php`, `app/Support/Financial/CustomerFinancialRealtimeScope.php`, `WalletTransactionPublicRef.php`, `TopupRequestPublicRef.php`, `CommissionClawbackPublicRef.php`
 - `app/DTOs/WalletPosting.php`, `WalletAdjustmentResult.php`
 - `app/Actions/Wallets/AdjustWallet.php`, `UpdateCreditFacility.php`
 - `app/Actions/Orders/PayOrderWithWallet.php`
@@ -31,8 +35,8 @@ Authoritative financial model for karman.store.
 - `app/Actions/Topups/GetCustomerTopupRequests.php`, `GetCustomerTopupDetail.php`
 - `app/Support/CustomerTopupPresenter.php`, `FinancialDestinationResolver.php`
 - `app/Actions/Refunds/ApproveRefundRequest.php`
-- `app/Actions/Commissions/CreatePayoutBatch.php`, `RequestSalespersonPayout.php`
-- `app/Support/Commissions/SalespersonCommissionEligibility.php`
+- `app/Actions/Commissions/CreatePayoutBatch.php`, `RequestSalespersonPayout.php`, `CreateCommissionClawbackObligations.php`, `ProcessCommissionClawback.php`
+- `app/Support/Commissions/SalespersonCommissionEligibility.php`, `SalespersonClawbackDebt.php`
 - `app/Actions/Earnings/GetSalespersonEarnings.php`, `SalespersonEarningsPresenter.php`, `x-earnings.*`
 - `app/Console/Commands/WalletReconcile.php`, `ProfitSettleCommand.php`
 - **M6.1 overview:** `GetCustomerFinancialOverview`, `app/Support/Financial/*`, `CustomerFinancialPresenter`
@@ -44,7 +48,7 @@ Authoritative financial model for karman.store.
 ## Features
 
 - [[Customer Financial Centre]] — through **M6.8** closure (M6.0–M6.7 shipped)
-- [[M7 — Financial Risk and Admin Operations]] — Track B; M7.0 clawback policy only
+- [[M7 — Financial Risk and Admin Operations]] — Track B; **M7.1 + M7.2.1–M7.2.3 shipped**; historical deferred (M7.2.4)
 - [[Customer Activity]] — projection only
 
 ## Customer surfaces

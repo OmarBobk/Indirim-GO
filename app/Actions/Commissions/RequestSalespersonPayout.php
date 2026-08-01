@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Notifications\SalespersonPayoutRequestedNotification;
 use App\Services\NotificationRecipientService;
 use App\Support\AdminOpsBroadcaster;
+use App\Support\Commissions\SalespersonClawbackDebt;
 use App\Support\Commissions\SalespersonCommissionEligibility;
 use App\Support\CustomerFinancialBroadcaster;
 use Illuminate\Support\Facades\DB;
@@ -33,11 +34,16 @@ final class RequestSalespersonPayout
      * Creates at most one pending payout request per salesperson; notifies admins once per new request.
      * Does not move wallet money — CreatePayoutBatch credits commissions.
      *
-     * @return 'below_min'|'already_pending'|'created'
+     * @return 'below_min'|'already_pending'|'created'|'clawback_debt'
      */
     public function handle(User $salesperson): string
     {
         abort_unless($salesperson->can('view_referrals'), 403);
+
+        $debt = new SalespersonClawbackDebt;
+        if ($debt->blocksPayoutRequests($salesperson)) {
+            return 'clawback_debt';
+        }
 
         $eligible = $this->eligibility->eligiblePendingTotal($salesperson);
 

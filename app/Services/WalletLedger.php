@@ -71,6 +71,34 @@ final class WalletLedger
         ));
     }
 
+    /**
+     * Authorised commission clawback debit. May take salesperson wallet below zero.
+     * Outer Action supplies validated commission/refund facts — ledger does not query them.
+     *
+     * @param  array<string, mixed>|null  $meta
+     */
+    public function postCommissionReversal(
+        Wallet $wallet,
+        string $amount,
+        string $idempotencyKey,
+        ?array $meta = null,
+        ?string $referenceType = null,
+        ?int $referenceId = null,
+    ): WalletAdjustmentResult {
+        return $this->apply(new WalletPosting(
+            wallet: $wallet,
+            type: WalletTransactionType::CommissionReversal,
+            direction: WalletTransactionDirection::Debit,
+            amount: $amount,
+            idempotencyKey: $idempotencyKey,
+            meta: $meta,
+            referenceType: $referenceType,
+            referenceId: $referenceId,
+            minimumAllowedBalance: '-'.LedgerMoney::MAX_AMOUNT,
+            allowClawbackDebt: true,
+        ));
+    }
+
     public function apply(WalletPosting $posting): WalletAdjustmentResult
     {
         $idempotencyKey = trim($posting->idempotencyKey);
@@ -78,6 +106,8 @@ final class WalletLedger
         if ($idempotencyKey === '') {
             throw new InvalidWalletPostingAmountException('Idempotency key is required for wallet ledger posts.');
         }
+
+        $this->assertClawbackDebtOverrideAllowed($posting);
 
         $normalizedAmount = LedgerMoney::normalizePositive($posting->amount);
 
@@ -191,6 +221,7 @@ final class WalletLedger
             $posting->direction,
             $normalizedAmount,
             $posting->minimumAllowedBalance,
+            $posting->allowClawbackDebt,
         );
 
         $ledgerMeta = $this->buildPostedMeta($posting->meta, $previousBalance, $newBalance);
@@ -322,6 +353,7 @@ final class WalletLedger
             $posting->direction,
             $normalizedAmount,
             $posting->minimumAllowedBalance,
+            $posting->allowClawbackDebt,
         );
 
         $ledgerMeta = $this->buildPostedMeta(
@@ -389,11 +421,31 @@ final class WalletLedger
     /**
      * @return array{0: string, 1: string}
      */
+    private function assertClawbackDebtOverrideAllowed(WalletPosting $posting): void
+    {
+        if (! $posting->allowClawbackDebt) {
+            return;
+        }
+
+        if (
+            $posting->type !== WalletTransactionType::CommissionReversal
+            || $posting->direction !== WalletTransactionDirection::Debit
+        ) {
+            throw new InvalidWalletPostingAmountException(
+                'Clawback debt override is only valid for commission_reversal debits.'
+            );
+        }
+    }
+
+    /**
+     * @return array{0: string, 1: string}
+     */
     private function computeBalances(
         Wallet $lockedWallet,
         WalletTransactionDirection $direction,
         string $normalizedAmount,
         ?string $minimumAllowedBalance,
+        bool $allowClawbackDebt = false,
     ): array {
         $previousBalance = LedgerMoney::normalize((string) $lockedWallet->balance);
         $newBalance = $direction === WalletTransactionDirection::Credit
@@ -401,9 +453,16 @@ final class WalletLedger
             : LedgerMoney::sub($previousBalance, $normalizedAmount);
 
         if ($direction === WalletTransactionDirection::Debit) {
+            $walletFloor = LedgerMoney::normalize($lockedWallet->minimumAllowedBalance());
             $floor = $minimumAllowedBalance !== null
                 ? LedgerMoney::normalize($minimumAllowedBalance)
-                : LedgerMoney::normalize($lockedWallet->minimumAllowedBalance());
+                : $walletFloor;
+
+            // Non-clawback posts cannot deepen below the wallet spend floor even if a caller
+            // forged a lower minimumAllowedBalance.
+            if (! $allowClawbackDebt && LedgerMoney::compare($floor, $walletFloor) === -1) {
+                $floor = $walletFloor;
+            }
 
             if (LedgerMoney::compare($newBalance, $floor) === -1) {
                 throw new InsufficientWalletBalanceException(
