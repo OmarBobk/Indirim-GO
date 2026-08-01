@@ -1,6 +1,7 @@
 ---
-status: backlog
+status: active
 created: 2026-07-30
+updated: 2026-08-01
 owner: Omar
 type: roadmap
 ---
@@ -16,7 +17,7 @@ Related: [[Fulfillments & Automation]], [[Orders & Checkout]], [[Refunds & Settl
 | Track | Focus | Status |
 |---|---|---|
 | **B** | Financial risk + admin ops | **Closed** (M7.0–M7.2.4) |
-| **C** | Fulfilment / supplier automation | Backlog — recommended next if ops cost dominates |
+| **C** | Fulfilment / supplier automation | **Active** — C1.0 architecture done (2026-08-01); next C1.1 after Omar decisions |
 | **D** | Growth / conversion | Backlog — recommended next if conversion dominates |
 
 Suggested order inside each track below. Adjust from real ops bottlenecks and conversion data.
@@ -27,7 +28,9 @@ Suggested order inside each track below. Adjust from real ops bottlenecks and co
 
 **Closed:** Track B — Financial Risk and Admin Operations (through M7.2.4 historical exposure report-only)
 
-**Recommended next:** Track C (automation) **or** Track D (growth) — Omar chooses.
+**Active:** Track C — C1 Automation Reliability (see [[C1 — Automation Reliability and Supplier UI Resilience]]).
+
+**Also available:** Track D (growth) if conversion dominates — Omar chooses priority between C1 delivery and D1.
 
 - Historical manual collection remains intentionally deferred/rejected.
 - Do not invent M7.2.5 for deferred stress/UI/export items.
@@ -38,19 +41,21 @@ Suggested order inside each track below. Adjust from real ops bottlenecks and co
 
 Suggested order: **C1 → C2 → C3 → C4**
 
-### C1 — Wasim production hardening
+### C1 — Automation reliability and supplier UI resilience
 
-**Goal:** Safer, observable Wasim purchase/reconcile automation in production.
+**Canonical note:** [[C1 — Automation Reliability and Supplier UI Resilience]]
 
-**Scope candidates**
-- Failure taxonomy, retry/backoff, stale-run handling
-- Session-expiry monitoring; credential/browser alerts
-- Worker health + build-version visibility
-- Screenshot/artifact investigation UX
-- Rate-limit protection; metrics/failure budgets
-- Operator runbooks; kill-switch / rollout verification
+**Goal:** Live ops dashboard + structured progress; Wasim UI adapters/contracts; circuit breakers; production hardening.
 
-**Start when:** live Wasim volume is regular and manual/session failures are a real ops cost.
+| Slice | Focus | Status |
+|---|---|---|
+| **C1.0** | Architecture + audit only | **Done** 2026-08-01 (no code) |
+| **C1.1** | Live Automation Operations Dashboard + progress/heartbeat | Next — blocked on Omar decisions |
+| **C1.2** | Wasim UI adapters + page contracts + health probe | Not started |
+| **C1.3** | Circuit breaker + recovery | Not started |
+| **C1.4** | Production acceptance + hardening | Not started |
+
+**Do not** start C1.2–C1.4 work inside C1.1. Do not rewrite Wasim selectors until C1.2.
 
 ### C2 — Second supplier driver
 

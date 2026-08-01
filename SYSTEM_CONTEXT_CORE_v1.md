@@ -20,6 +20,7 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - **Optional realtime isolation:** authentication and other authoritative flows must not fail when optional Reverb/Pusher publication fails. Durable activity rows remain; `ActivityLogBroadcaster` isolates `ActivityLogChanged` transport errors with safe logs (no signed broadcaster URLs/secrets).
 - **Agent rules:** follow `.cursor/rules/laravel-boost.mdc` for stack versions, conventions, and karman.store financial guardrails.
 - **Branch reality (Aug 2026):** Checkout **`staging`** has M6 Customer Financial Centre + Mobile API through **M3.1** (purchase). **Track B (M7 commission clawbacks M7.0–M7.2.4)** is complete on branch **`local/commission-policy`** (tip includes `2352ba0`) — merge before assuming clawback code/routes exist in the running tree. Feature brief: `Vault/Features/M7 — Financial Risk and Admin Operations.md`. Permissions: `Docs/roles.md`.
+- **Track C / C1 (active architecture):** **C1.0** Automation Operations + Supplier UI Resilience architecture completed 2026-08-01 (docs/vault only — **not shipped**). Canonical note: `Vault/Features/C1 — Automation Reliability and Supplier UI Resilience.md`. Next implementable slice: **C1.1** Live Automation Operations Dashboard (progress/heartbeat + working-now). Do not begin C1.2 adapters/circuits inside C1.1. Existing automation behavior in §9 remains current production truth until C1.x ships.
 
 ---
 
