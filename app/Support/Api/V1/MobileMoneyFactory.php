@@ -6,6 +6,7 @@ namespace App\Support\Api\V1;
 
 use App\Models\User;
 use App\Support\FrontendMoney;
+use App\Support\LedgerMoney;
 
 /**
  * Builds the mobile Money envelope from an authoritative USD ledger amount.
@@ -24,21 +25,38 @@ final class MobileMoneyFactory
     }
 
     /**
+     * Preferred path: decimal string → LedgerMoney normalize → Money envelope.
+     *
+     * @return MoneyArray
+     */
+    public function fromUsdDecimal(string $amount): array
+    {
+        $normalized = LedgerMoney::normalize($amount);
+        $display = $this->money->displayForUsdAmount($normalized, 2);
+
+        return [
+            'amount' => $normalized,
+            'currency' => 'USD',
+            'display' => $display,
+        ];
+    }
+
+    /**
+     * Compatibility wrapper for catalog callers that still pass numeric USD totals.
+     * Prefer {@see fromUsdDecimal()} for purchase quote/receipt paths.
+     *
      * @return MoneyArray|null
      */
-    public function fromUsdAmount(?float $amount): ?array
+    public function fromUsdAmount(float|int|string|null $amount): ?array
     {
         if ($amount === null) {
             return null;
         }
 
-        $normalized = round($amount, 2, PHP_ROUND_HALF_EVEN);
-        $display = $this->money->displayForUsdAmount($normalized, 2);
+        if (is_string($amount)) {
+            return $this->fromUsdDecimal($amount);
+        }
 
-        return [
-            'amount' => number_format($normalized, 2, '.', ''),
-            'currency' => 'USD',
-            'display' => $display,
-        ];
+        return $this->fromUsdDecimal(sprintf('%.2F', $amount));
     }
 }

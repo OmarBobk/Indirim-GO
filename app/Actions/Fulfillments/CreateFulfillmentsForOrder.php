@@ -19,6 +19,7 @@ use App\Services\FulfillmentAutomationService;
 use App\Services\NotificationRecipientService;
 use App\Services\SystemEventService;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class CreateFulfillmentsForOrder
 {
@@ -101,28 +102,74 @@ class CreateFulfillmentsForOrder
                     $fulfillmentId = $fulfillment->id;
                     $orderId = $order->id;
                     DB::afterCommit(static function () use ($fulfillmentId, $orderId): void {
-                        event(new FulfillmentListChanged($fulfillmentId, 'created'));
-                        $fulfillment = Fulfillment::query()->find($fulfillmentId);
-                        if ($fulfillment !== null && app(FulfillmentAutomationService::class)->isEligible($fulfillment)) {
-                            DispatchFulfillmentAutomationJob::dispatch($fulfillmentId);
+                        // Optional publication only. Durable fulfillments are already committed.
+                        // Isolate transport/notification failures so a paid purchase cannot become HTTP 500.
+                        try {
+                            event(new FulfillmentListChanged($fulfillmentId, 'created'));
+                        } catch (\Throwable $exception) {
+                            Log::warning('Fulfillment list broadcast failed', [
+                                'error_id' => 'fulfillment_list_broadcast_failed',
+                                'fulfillment_id' => $fulfillmentId,
+                                'exception_class' => $exception::class,
+                            ]);
                         }
-                        $order = Order::query()->find($orderId);
-                        if ($fulfillment !== null && $order !== null) {
-                            $orderUser = User::query()->find($order->user_id);
-                            app(SystemEventService::class)->record(
-                                'fulfillment.created',
-                                $fulfillment,
-                                $orderUser,
-                                [
-                                    'order_id' => $order->id,
-                                    'order_item_id' => $fulfillment->order_item_id,
-                                    'provider' => $fulfillment->provider,
-                                ],
-                                'info',
-                                false,
-                            );
-                            $adminNotification = FulfillmentCreatedNotification::fromFulfillment($fulfillment);
-                            app(NotificationRecipientService::class)->adminUsers()->each(fn ($admin) => $admin->notify($adminNotification));
+
+                        // Automation dispatch is recoverable via fulfillment:dispatch-automation
+                        // while the durable row remains Queued. Never silently lose this path
+                        // inside a broad catch that also covers notifications.
+                        try {
+                            $fulfillment = Fulfillment::query()->find($fulfillmentId);
+                            if ($fulfillment !== null && app(FulfillmentAutomationService::class)->isEligible($fulfillment)) {
+                                DispatchFulfillmentAutomationJob::dispatch($fulfillmentId);
+                            }
+                        } catch (\Throwable $exception) {
+                            Log::warning('Fulfillment automation dispatch failed; queued recovery will retry', [
+                                'error_id' => 'fulfillment_automation_dispatch_failed',
+                                'fulfillment_id' => $fulfillmentId,
+                                'order_id' => $orderId,
+                                'exception_class' => $exception::class,
+                                'recoverable_via' => 'fulfillment:dispatch-automation',
+                            ]);
+                        }
+
+                        try {
+                            $fulfillment = Fulfillment::query()->find($fulfillmentId);
+                            $order = Order::query()->find($orderId);
+                            if ($fulfillment !== null && $order !== null) {
+                                $orderUser = User::query()->find($order->user_id);
+                                app(SystemEventService::class)->record(
+                                    'fulfillment.created',
+                                    $fulfillment,
+                                    $orderUser,
+                                    [
+                                        'order_id' => $order->id,
+                                        'order_item_id' => $fulfillment->order_item_id,
+                                        'provider' => $fulfillment->provider,
+                                    ],
+                                    'info',
+                                    false,
+                                );
+                                $adminNotification = FulfillmentCreatedNotification::fromFulfillment($fulfillment);
+                                app(NotificationRecipientService::class)->adminUsers()->each(
+                                    function ($admin) use ($adminNotification): void {
+                                        try {
+                                            $admin->notify($adminNotification);
+                                        } catch (\Throwable $exception) {
+                                            Log::warning('Fulfillment created notification failed', [
+                                                'error_id' => 'fulfillment_created_notification_failed',
+                                                'admin_id' => $admin->id,
+                                                'exception_class' => $exception::class,
+                                            ]);
+                                        }
+                                    }
+                                );
+                            }
+                        } catch (\Throwable $exception) {
+                            Log::warning('Fulfillment after-commit notification side effect failed', [
+                                'error_id' => 'fulfillment_after_commit_notification_failed',
+                                'fulfillment_id' => $fulfillmentId,
+                                'exception_class' => $exception::class,
+                            ]);
                         }
                     });
 

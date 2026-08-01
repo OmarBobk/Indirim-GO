@@ -8,6 +8,7 @@ use App\Enums\ProductAmountMode;
 use App\Models\Product;
 use App\Models\User;
 use App\Services\CustomerPriceService;
+use App\Support\LedgerMoney;
 
 final class PricingEngine
 {
@@ -23,21 +24,28 @@ final class PricingEngine
         if ($amountMode === ProductAmountMode::Custom) {
             $requestedAmount = $this->customAmountValidator->validate($product, $amount);
             $prices = $this->quoteCustom($product, $requestedAmount, $user);
-            $final = (float) $prices['final_price'];
+            $finalDecimal = $this->ledgerDecimal($prices['final_price']);
+            // Keep per-unit rate at BCMath scale 8 for custom amounts (Buy Now / web).
+            $unitDecimal = $requestedAmount > 0
+                ? bcdiv($finalDecimal, (string) $requestedAmount, 8)
+                : $finalDecimal;
 
             return new PriceQuoteDTO(
                 amountMode: ProductAmountMode::Custom->value,
                 basePrice: (float) $prices['base_price'],
                 discountAmount: (float) $prices['discount_amount'],
-                finalPrice: $final,
-                finalTotal: $final,
-                unitPrice: $requestedAmount > 0
-                    ? (float) bcdiv(number_format($final, 8, '.', ''), (string) $requestedAmount, 8)
-                    : $final,
+                finalPrice: (float) $finalDecimal,
+                finalTotal: (float) $finalDecimal,
+                unitPrice: (float) $unitDecimal,
                 quantity: 1,
                 requestedAmount: $requestedAmount,
                 tierName: $prices['tier_name'] ?? null,
                 meta: (array) ($prices['meta'] ?? []),
+                basePriceDecimal: $this->ledgerDecimal($prices['base_price']),
+                discountAmountDecimal: $this->ledgerDecimal($prices['discount_amount']),
+                finalPriceDecimal: $finalDecimal,
+                finalTotalDecimal: $finalDecimal,
+                unitPriceDecimal: $unitDecimal,
             );
         }
 
@@ -46,18 +54,54 @@ final class PricingEngine
             ? $this->priceService->finalPriceForQuantity($product, $normalizedQuantity, $user)
             : $this->quoteFixedGuest($product, $normalizedQuantity);
 
+        $finalTotalDecimal = $this->ledgerDecimal($prices['final_total']);
+        $unitPriceDecimal = $this->unitPriceDecimal($finalTotalDecimal, $normalizedQuantity);
+
         return new PriceQuoteDTO(
             amountMode: ProductAmountMode::Fixed->value,
             basePrice: (float) $prices['base_price'],
             discountAmount: (float) $prices['discount_amount'],
-            finalPrice: (float) $prices['unit_price'],
-            finalTotal: (float) $prices['final_total'],
-            unitPrice: (float) $prices['unit_price'],
+            finalPrice: (float) $unitPriceDecimal,
+            finalTotal: (float) $finalTotalDecimal,
+            unitPrice: (float) $unitPriceDecimal,
             quantity: $normalizedQuantity,
             requestedAmount: null,
             tierName: $prices['tier_name'] ?? null,
             meta: (array) ($prices['meta'] ?? []),
+            basePriceDecimal: $this->ledgerDecimal($prices['base_price']),
+            discountAmountDecimal: $this->ledgerDecimal($prices['discount_amount']),
+            finalPriceDecimal: $unitPriceDecimal,
+            finalTotalDecimal: $finalTotalDecimal,
+            unitPriceDecimal: $unitPriceDecimal,
         );
+    }
+
+    /**
+     * Convert pricing-service numeric money onto the ledger decimal-string path
+     * without sprintf('%.2F', float) binary formatting.
+     */
+    private function ledgerDecimal(float|int|string $amount): string
+    {
+        if (is_string($amount)) {
+            return LedgerMoney::normalize($amount);
+        }
+
+        // CustomerPriceService already banker's-rounds to 2dp; bridge via integer cents.
+        $cents = (int) round(((float) $amount) * 100, 0, PHP_ROUND_HALF_EVEN);
+        $sign = $cents < 0 ? '-' : '';
+        $absolute = abs($cents);
+
+        return LedgerMoney::normalize(sprintf('%s%d.%02d', $sign, intdiv($absolute, 100), $absolute % 100));
+    }
+
+    private function unitPriceDecimal(string $finalTotalDecimal, int $quantity): string
+    {
+        if ($quantity <= 0) {
+            return $finalTotalDecimal;
+        }
+
+        // Prefer dividing the authoritative line total so unit/line stay BCMath-consistent.
+        return bcdiv($finalTotalDecimal, (string) $quantity, 8);
     }
 
     /**

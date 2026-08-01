@@ -15,6 +15,12 @@ pest()->extend(Tests\TestCase::class)
     ->use(Illuminate\Foundation\Testing\RefreshDatabase::class)
     ->in('Feature');
 
+// Opt-in MySQL concurrency harness — committed fixtures, no RefreshDatabase transaction wrap.
+pest()->extend(Tests\TestCase::class)
+    ->in('Concurrency');
+
+require_once __DIR__.'/Support/mobile_purchase_helpers.php';
+
 /*
 |--------------------------------------------------------------------------
 | Expectations

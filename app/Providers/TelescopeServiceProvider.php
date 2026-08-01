@@ -55,6 +55,9 @@ class TelescopeServiceProvider extends TelescopeApplicationServiceProvider
             'code',
             'recovery_code',
             'challenge_token',
+            'requirements',
+            'items.*.requirements',
+            'items.0.requirements',
         ]);
 
         Telescope::hideRequestHeaders([
@@ -62,11 +65,15 @@ class TelescopeServiceProvider extends TelescopeApplicationServiceProvider
             'cookie',
             'x-csrf-token',
             'x-xsrf-token',
+            'idempotency-key',
+            'Idempotency-Key',
         ]);
 
         Telescope::hideResponseParameters([
             'data.token.access_token',
             'data.challenge_token',
+            'data.item.requirements_schema',
+            'details.current_quote.item.requirements_schema',
         ]);
     }
 

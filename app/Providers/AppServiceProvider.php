@@ -13,6 +13,8 @@ use App\Listeners\SendBugRecordedAdminNotifications;
 use App\Services\CustomerPriceService;
 use App\Services\PriceCalculator;
 use App\Support\ActivityLogBroadcaster;
+use App\Support\Api\V1\MobileCheckoutCommitGate;
+use App\Support\Api\V1\NullMobileCheckoutCommitGate;
 use Carbon\CarbonImmutable;
 use Illuminate\Auth\Events\Logout;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -40,6 +42,7 @@ class AppServiceProvider extends ServiceProvider
         });
 
         $this->app->bind(HumanVerifier::class, TurnstileVerifier::class);
+        $this->app->singleton(MobileCheckoutCommitGate::class, NullMobileCheckoutCommitGate::class);
     }
 
     /**
@@ -49,6 +52,7 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->configureDefaults();
         $this->configureMobileCatalogRateLimiting();
+        $this->configureMobilePurchaseRateLimiting();
         $this->registerAuthActivityHooks();
         $this->registerActivityBroadcasting();
         $this->registerBugNotifications();
@@ -66,6 +70,27 @@ class AppServiceProvider extends ServiceProvider
             return [
                 Limit::perMinute(60)->by('mobile-catalog-user|'.$userId),
                 Limit::perMinute(120)->by('mobile-catalog-ip|'.$request->ip()),
+            ];
+        });
+    }
+
+    protected function configureMobilePurchaseRateLimiting(): void
+    {
+        RateLimiter::for('mobile-purchase-read', function (Request $request): array {
+            $userId = $request->user()?->getAuthIdentifier() ?? 'guest';
+
+            return [
+                Limit::perMinute(60)->by('mobile-purchase-read-user|'.$userId),
+                Limit::perMinute(120)->by('mobile-purchase-read-ip|'.$request->ip()),
+            ];
+        });
+
+        RateLimiter::for('mobile-purchase-write', function (Request $request): array {
+            $userId = $request->user()?->getAuthIdentifier() ?? 'guest';
+
+            return [
+                Limit::perMinute(20)->by('mobile-purchase-write-user|'.$userId),
+                Limit::perMinute(60)->by('mobile-purchase-write-ip|'.$request->ip()),
             ];
         });
     }
