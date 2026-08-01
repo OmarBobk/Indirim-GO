@@ -52,6 +52,20 @@
                 </a>
             </p>
         @endif
+        @if (! empty($item['is_fully_reversed']))
+            <p class="mt-1 text-xs text-zinc-600 dark:text-zinc-300" data-test="earnings-fully-reversed">
+                @if (! empty($item['clawback_public_ref']))
+                    <span class="font-mono" dir="ltr">{{ $item['clawback_public_ref'] }}</span>
+                    <span aria-hidden="true"> · </span>
+                @endif
+                @if (! empty($item['reversal_href']) && ! empty($item['reversal_wallet_transaction_public_ref']))
+                    <a href="{{ $item['reversal_href'] }}" wire:navigate class="font-medium text-(--color-accent) hover:underline">
+                        {{ __('messages.earnings_view_reversal') }}
+                        <span class="font-mono" dir="ltr">({{ $item['reversal_wallet_transaction_public_ref'] }})</span>
+                    </a>
+                @endif
+            </p>
+        @endif
     </div>
 
     <div class="shrink-0 text-start sm:text-end">

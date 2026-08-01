@@ -5,17 +5,19 @@ Activity log events (spatie/laravel-activitylog): where each `activity()->log()`
 ### Payments
 | Event | Logged in | Subject | Key properties |
 | --- | --- | --- | --- |
-| `topup.requested` | `resources/views/pages/frontend/⚡wallet.blade.php` (Livewire) | `TopupRequest` | `topup_request_id`, `wallet_id`, `user_id`, `amount`, `currency`, `method` |
+| `topup.requested` | `app/Actions/Topups/SubmitCustomerTopupRequest.php` | `TopupRequest` | `topup_request_id`, `wallet_id`, `user_id`, `amount`, `currency`, `method` |
 | `topup.approved` | `app/Actions/Topups/ApproveTopupRequest.php` | `TopupRequest` | `topup_request_id`, `wallet_id`, `user_id`, `amount`, `currency`, `transaction_id` |
 | `topup.rejected` | `app/Actions/Topups/RejectTopupRequest.php` | `TopupRequest` | `topup_request_id`, `wallet_id`, `user_id`, `amount`, `currency`, `transaction_id` |
-| `wallet.credited` | `app/Actions/Topups/ApproveTopupRequest.php`, `app/Actions/Refunds/ApproveRefundRequest.php`, `app/Actions/Wallets/AdjustWallet.php` | `Wallet` | `wallet_id`, `user_id`, `amount`, `currency`, `transaction_id`, `source` (`topup`/`commission`/`adjustment`) |
+| `wallet.credited` | `app/Actions/Topups/ApproveTopupRequest.php`, `app/Actions/Refunds/ApproveRefundRequest.php`, `app/Actions/Wallets/AdjustWallet.php`, `app/Actions/Commissions/CreatePayoutBatch.php` | `Wallet` | `wallet_id`, `user_id`, `amount`, `currency`, `transaction_id`, `source` (`topup`/`commission`/`adjustment`) |
 | `wallet.adjusted` | `app/Actions/Wallets/AdjustWallet.php` | `WalletTransaction` | `wallet_id`, `target_user_id`, `actor_id`, `amount`, `currency`, `adjustment_kind`, `reason`, `previous_balance`, `new_balance`, `transaction_id`, `idempotency_key`, `ip_address` |
 | `wallet.credit_facility.updated` | `app/Actions/Wallets/UpdateCreditFacility.php` | `Wallet` | `wallet_id`, `target_user_id`, `actor_id`, `currency`, `outstanding_debt`, `available_credit_after`, `previous_limit`, `previous_terms`, `previous_enabled`, `previous_status`, `new_limit`, `new_terms`, `new_enabled`, `new_status`, `ip_address` |
 | `wallet.debited` | `app/Actions/Orders/PayOrderWithWallet.php` | `WalletTransaction` | `wallet_id`, `order_id`, `transaction_id`, `amount`, `currency`, `direction` |
 | `wallet.reconciled` | `app/Console/Commands/WalletReconcile.php` | `Wallet` | `wallet_id`, `user_id`, `stored_balance`, `expected_balance`, `diff` |
+| `commission.credited` | `app/Actions/Commissions/CreatePayoutBatch.php` | `Commission` | commission + wallet tx linkage |
 | `refund.requested` | `app/Actions/Orders/RefundOrderItem.php` | `WalletTransaction` | `transaction_id`, `order_id`, `order_item_id`, `fulfillment_id`, `wallet_id`, `amount`, `currency`, `note` |
 | `refund.approved` | `app/Actions/Refunds/ApproveRefundRequest.php` | `WalletTransaction` | `transaction_id`, `idempotency_key`, `order_id`, `wallet_id`, `amount`, `currency`, `reason` |
 | `refund.rejected` | `app/Actions/Refunds/RejectRefundRequest.php` | `WalletTransaction` | `transaction_id`, `order_id`, `order_item_id`, `fulfillment_id`, `amount`, `currency` |
+| `refund.dismissed` | `app/Actions/Refunds/DismissStaleRefundRequest.php` | `WalletTransaction` | stale refund cleanup |
 
 ### Orders
 | Event | Logged in | Subject | Key properties |
@@ -33,6 +35,14 @@ Activity log events (spatie/laravel-activitylog): where each `activity()->log()`
 | `fulfillment.failed` | `app/Actions/Fulfillments/FailFulfillment.php` | `Fulfillment` | `fulfillment_id`, `order_id`, `order_item_id`, `provider`, `status_from`, `status_to`, `reason`, `actor`, `actor_id` |
 | `fulfillment.retry_requested` | `app/Actions/Fulfillments/RetryFulfillment.php` | `Fulfillment` | `fulfillment_id`, `order_id`, `order_item_id`, `status_from`, `status_to`, `retry_count`, `actor`, `actor_id` |
 | `fulfillment.process_failed` | `app/Console/Commands/ProcessFulfillments.php` | `Fulfillment` | `fulfillment_id`, `order_id`, `order_item_id`, `provider`, `error` (also `Log::error` in same command) |
+| `fulfillment.automation.dispatched` | `app/Actions/Fulfillments/DispatchFulfillmentAutomationRun.php` | run / fulfillment | automation dispatch |
+| `fulfillment.automation.submitted` / `.reconcile_pending` / `.succeeded` / `.failed` / `.needs_review` | `app/Actions/Fulfillments/IngestFulfillmentAutomationResult.php` | run / fulfillment | terminal ingest outcomes |
+
+### Commissions & payouts
+| Event | Logged in | Subject | Key properties |
+| --- | --- | --- | --- |
+| `payout_request.created` | `app/Actions/Commissions/RequestSalespersonPayout.php` | `PayoutRequest` | eligible amount / status |
+| `payout_request.processed` | `app/Actions/Commissions/MarkPayoutRequestProcessed.php` | `PayoutRequest` | processed_by / processed_at |
 
 ### Admin & Security
 | Event | Logged in | Subject | Key properties |
@@ -54,3 +64,9 @@ Activity log events (spatie/laravel-activitylog): where each `activity()->log()`
 | `category.deleted` | `app/Actions/Categories/DeleteCategoryTree.php` | `Category` | `root_category_id`, `deleted_count`, `deleted_ids` |
 | `product.deleted` | `app/Actions/Products/DeleteProduct.php` | `Product` | `product_id`, `name`, `package_id` |
 | `package.deleted` | `app/Actions/Packages/DeletePackage.php` | `Package` | `package_id`, `name`, `category_id` |
+
+### Loyalty
+| Event | Logged in | Subject | Key properties |
+| --- | --- | --- | --- |
+| `loyalty.tier_changed` | `app/Actions/Loyalty/EvaluateLoyaltyForUserAction.php` | `User` | `user_id`, `previous_tier`, `new_tier` (system event mirror: `tier.upgraded`) |
+

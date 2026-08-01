@@ -37,6 +37,9 @@ final class CustomerRecentWalletTransactionsReader
                 WalletTransactionType::Refund,
                 WalletTransactionType::Adjustment,
                 WalletTransactionType::CommissionCredit,
+                WalletTransactionType::CommissionReversal,
+                WalletTransactionType::CommissionClawbackWaiver,
+                WalletTransactionType::CommissionReversalCorrection,
             ])
             ->orderByDesc('posted_at')
             ->orderByDesc('id')
@@ -154,7 +157,11 @@ final class CustomerRecentWalletTransactionsReader
             return [null, new FinancialDestinationDTO(FinancialDestinationType::WalletTopups)];
         }
 
-        if ($tx->type === WalletTransactionType::CommissionCredit) {
+        if ($tx->type === WalletTransactionType::CommissionCredit
+            || $tx->type === WalletTransactionType::CommissionReversal
+            || $tx->type === WalletTransactionType::CommissionClawbackWaiver
+            || $tx->type === WalletTransactionType::CommissionReversalCorrection
+        ) {
             return [null, new FinancialDestinationDTO(FinancialDestinationType::WalletEarnings)];
         }
 

@@ -11,7 +11,13 @@ use App\Enums\CustomerActivityDestinationType;
 use App\Enums\CustomerActivityImportance;
 use App\Enums\CustomerActivityStatusToken;
 use App\Notifications\BugRecordedNotification;
+use App\Notifications\CommissionClawbackDisputeOpenedNotification;
+use App\Notifications\CommissionClawbackDisputeResolvedNotification;
+use App\Notifications\CommissionClawbackNeedsReviewNotification;
+use App\Notifications\CommissionClawbackWaiverApprovedNotification;
 use App\Notifications\CommissionCreditedNotification;
+use App\Notifications\CommissionReversalCorrectionPostedNotification;
+use App\Notifications\CommissionReversalPostedNotification;
 use App\Notifications\FulfillmentCompletedNotification;
 use App\Notifications\FulfillmentCreatedNotification;
 use App\Notifications\FulfillmentFailedNotification;
@@ -58,6 +64,11 @@ final class CustomerActivityNotificationMapper
             UserBlockedNotification::class,
             UserUnblockedNotification::class,
             CommissionCreditedNotification::class,
+            CommissionReversalPostedNotification::class,
+            CommissionClawbackWaiverApprovedNotification::class,
+            CommissionClawbackDisputeOpenedNotification::class,
+            CommissionClawbackDisputeResolvedNotification::class,
+            CommissionReversalCorrectionPostedNotification::class,
         ];
     }
 
@@ -80,6 +91,7 @@ final class CustomerActivityNotificationMapper
             WasimPriceReactiveFlagNotification::class,
             WasimPriceDriftReviewNotification::class,
             OrderPriceFlooredNotification::class,
+            CommissionClawbackNeedsReviewNotification::class,
         ];
     }
 
@@ -262,6 +274,56 @@ final class CustomerActivityNotificationMapper
                 'destinationType' => CustomerActivityDestinationType::Wallet,
                 'iconKey' => 'gift',
                 'dedupePrefix' => 'commission',
+            ],
+            CommissionReversalPostedNotification::class => [
+                'category' => CustomerActivityCategory::Rewards,
+                'importance' => CustomerActivityImportance::Informational,
+                'statusToken' => CustomerActivityStatusToken::Progress,
+                'requiresAction' => false,
+                'actionLabelKey' => 'messages.activity_action_view_wallet',
+                'destinationType' => CustomerActivityDestinationType::Wallet,
+                'iconKey' => 'arrow-uturn-left',
+                'dedupePrefix' => 'commission_reversal',
+            ],
+            CommissionClawbackWaiverApprovedNotification::class => [
+                'category' => CustomerActivityCategory::Rewards,
+                'importance' => CustomerActivityImportance::Informational,
+                'statusToken' => CustomerActivityStatusToken::Progress,
+                'requiresAction' => false,
+                'actionLabelKey' => 'messages.activity_action_view_wallet',
+                'destinationType' => CustomerActivityDestinationType::Wallet,
+                'iconKey' => 'gift',
+                'dedupePrefix' => 'commission_clawback_waiver',
+            ],
+            CommissionClawbackDisputeOpenedNotification::class => [
+                'category' => CustomerActivityCategory::Rewards,
+                'importance' => CustomerActivityImportance::Informational,
+                'statusToken' => CustomerActivityStatusToken::Progress,
+                'requiresAction' => false,
+                'actionLabelKey' => 'messages.activity_action_view_wallet',
+                'destinationType' => CustomerActivityDestinationType::Wallet,
+                'iconKey' => 'exclamation-circle',
+                'dedupePrefix' => 'commission_clawback_dispute',
+            ],
+            CommissionClawbackDisputeResolvedNotification::class => [
+                'category' => CustomerActivityCategory::Rewards,
+                'importance' => CustomerActivityImportance::Informational,
+                'statusToken' => CustomerActivityStatusToken::Progress,
+                'requiresAction' => false,
+                'actionLabelKey' => 'messages.activity_action_view_wallet',
+                'destinationType' => CustomerActivityDestinationType::Wallet,
+                'iconKey' => 'check-circle',
+                'dedupePrefix' => 'commission_clawback_dispute_resolved',
+            ],
+            CommissionReversalCorrectionPostedNotification::class => [
+                'category' => CustomerActivityCategory::Rewards,
+                'importance' => CustomerActivityImportance::Informational,
+                'statusToken' => CustomerActivityStatusToken::Progress,
+                'requiresAction' => false,
+                'actionLabelKey' => 'messages.activity_action_view_wallet',
+                'destinationType' => CustomerActivityDestinationType::Wallet,
+                'iconKey' => 'gift',
+                'dedupePrefix' => 'commission_reversal_correction',
             ],
             UserBlockedNotification::class => [
                 'category' => CustomerActivityCategory::Account,

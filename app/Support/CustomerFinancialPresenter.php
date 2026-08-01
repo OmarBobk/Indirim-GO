@@ -93,11 +93,17 @@ final class CustomerFinancialPresenter
             'remaining_credit' => $balance->creditFacilityActive ? $format($balance->remainingCredit) : null,
             'credit_facility_active' => $balance->creditFacilityActive,
             'has_outstanding_debt' => $balance->hasOutstandingDebt,
+            'is_clawback_debt' => $balance->isClawbackDebt,
             'currency' => $balance->currency,
             'labels' => [
                 'available' => __('messages.wallet_available_to_spend'),
                 'prepaid' => __('messages.wallet_prepaid_balance'),
-                'debt' => __('messages.wallet_you_owe'),
+                'debt' => $balance->isClawbackDebt
+                    ? __('messages.wallet_clawback_debt_label')
+                    : __('messages.wallet_you_owe'),
+                'debt_hint' => $balance->isClawbackDebt
+                    ? __('messages.wallet_clawback_debt_hint')
+                    : null,
                 'credit_limit' => __('messages.wallet_credit_limit_label'),
                 'remaining_credit' => __('messages.wallet_available_credit_label'),
             ],
@@ -177,6 +183,9 @@ final class CustomerFinancialPresenter
             WalletTransactionType::Adjustment => __('messages.wallet_transaction_type_adjustment'),
             WalletTransactionType::Settlement => __('messages.wallet_transaction_type_settlement'),
             WalletTransactionType::CommissionCredit => __('messages.wallet_transaction_type_commission_credit'),
+            WalletTransactionType::CommissionReversal => __('messages.wallet_transaction_type_commission_reversal'),
+            WalletTransactionType::CommissionClawbackWaiver => __('messages.wallet_transaction_type_commission_clawback_waiver'),
+            WalletTransactionType::CommissionReversalCorrection => __('messages.wallet_transaction_type_commission_reversal_correction'),
         };
     }
 

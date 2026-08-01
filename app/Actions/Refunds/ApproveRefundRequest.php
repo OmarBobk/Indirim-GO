@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Refunds;
 
+use App\Actions\Commissions\CreateCommissionClawbackObligations;
 use App\Actions\Fulfillments\AppendFulfillmentLog;
 use App\DTOs\WalletPosting;
 use App\Enums\CommissionStatus;
@@ -16,6 +17,7 @@ use App\Enums\WalletTransactionDirection;
 use App\Enums\WalletTransactionType;
 use App\Exceptions\InvalidWalletPostingAmountException;
 use App\Jobs\EvaluateLoyaltyForUser;
+use App\Jobs\ProcessCommissionClawbackJob;
 use App\Models\Commission;
 use App\Models\Fulfillment;
 use App\Models\Order;
@@ -382,8 +384,12 @@ class ApproveRefundRequest
                         ->log('Order refunded');
                 }
 
+                // Pending commissions fail immediately. Credited commissions get durable clawback
+                // obligations (M7.1) — wallet debit happens after commit via ProcessCommissionClawbackJob.
+                $salespersonIds = [];
+                $clawbackIds = [];
+
                 if ($fulfillment !== null) {
-                    // Commission credits are NOT reversed on refund in Phase 1.
                     $salespersonIds = Commission::query()
                         ->where('fulfillment_id', $fulfillment->id)
                         ->where('status', CommissionStatus::Pending)
@@ -397,8 +403,42 @@ class ApproveRefundRequest
                         ->where('fulfillment_id', $fulfillment->id)
                         ->where('status', CommissionStatus::Pending)
                         ->update(['status' => CommissionStatus::Failed]);
+
+                    $clawbackIds = app(CreateCommissionClawbackObligations::class)->handle(
+                        refundTransaction: $transaction,
+                        fulfillment: $fulfillment,
+                        order: $order,
+                    );
+
+                    if ($clawbackIds !== []) {
+                        $clawbackSalespersonIds = \App\Models\CommissionClawback::query()
+                            ->whereIn('id', $clawbackIds)
+                            ->pluck('salesperson_id')
+                            ->unique()
+                            ->filter()
+                            ->values()
+                            ->all();
+
+                        $salespersonIds = array_values(array_unique(array_merge(
+                            $salespersonIds,
+                            $clawbackSalespersonIds,
+                        )));
+
+                        foreach ($clawbackIds as $clawbackId) {
+                            app(SystemEventService::class)->record(
+                                'commission.clawback.created',
+                                \App\Models\CommissionClawback::query()->find($clawbackId),
+                                $actor,
+                                [
+                                    'clawback_id' => $clawbackId,
+                                    'refund_wallet_transaction_id' => $transaction->id,
+                                ],
+                                'info',
+                                true,
+                            );
+                        }
+                    }
                 } else {
-                    // Commission credits are NOT reversed on refund in Phase 1.
                     $salespersonIds = Commission::query()
                         ->where('order_id', $order->id)
                         ->whereNull('fulfillment_id')
@@ -426,7 +466,11 @@ class ApproveRefundRequest
                 $userId = $order->user_id;
                 $approvedTransactionId = $transaction->id;
                 $adminIdForEvent = $adminId;
-                DB::afterCommit(function () use ($userId, $approvedTransactionId, $adminIdForEvent): void {
+                $clawbackIdsForJobs = $clawbackIds;
+                DB::afterCommit(function () use ($userId, $approvedTransactionId, $adminIdForEvent, $clawbackIdsForJobs): void {
+                    foreach ($clawbackIdsForJobs as $clawbackId) {
+                        ProcessCommissionClawbackJob::dispatch((int) $clawbackId);
+                    }
                     $tx = WalletTransaction::query()->find($approvedTransactionId);
                     if ($tx !== null) {
                         $admin = User::query()->find($adminIdForEvent);

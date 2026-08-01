@@ -56,6 +56,9 @@
                         {{ $balance['outstanding_debt']['formatted'] }}
                         <span class="sr-only">{{ __('messages.financial_debt_a11y') }}</span>
                     </dd>
+                    @if (! empty($balance['labels']['debt_hint']))
+                        <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{{ $balance['labels']['debt_hint'] }}</p>
+                    @endif
                 </div>
             @endif
 

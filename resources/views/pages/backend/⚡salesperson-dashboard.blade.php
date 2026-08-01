@@ -160,6 +160,12 @@ new #[Layout('layouts.app')] class extends Component
             return;
         }
 
+        if ($result === 'clawback_debt') {
+            $this->error(__('messages.earnings_payout_blocked_clawback_debt'));
+
+            return;
+        }
+
         if ($result === 'already_pending') {
             $this->info(__('messages.payout_request_already_pending'));
 

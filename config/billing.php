@@ -19,4 +19,15 @@ return [
      * @var list<int>
      */
     'wallet_payment_terms_days' => [15, 30, 45, 60, 90],
+
+    /**
+     * M7.1 commission clawback policy (prospective only).
+     * When effective_at is null, policy is active from application boot after M7.1 deploy.
+     */
+    'commission_clawback' => [
+        'policy_version' => (int) env('BILLING_COMMISSION_CLAWBACK_POLICY_VERSION', 1),
+        'effective_at' => env('BILLING_COMMISSION_CLAWBACK_EFFECTIVE_AT'),
+        /** Minutes after attempted_at before processing is considered stale. */
+        'processing_stale_minutes' => (int) env('BILLING_COMMISSION_CLAWBACK_STALE_MINUTES', 30),
+    ],
 ];

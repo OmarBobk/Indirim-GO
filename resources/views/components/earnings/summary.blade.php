@@ -18,6 +18,22 @@
                 {{ $summary['credited']['formatted'] ?? '—' }}
             </p>
             <p class="mt-1 text-xs text-zinc-600 dark:text-zinc-300">{{ $summary['credited_in_wallet'] ?? '' }}</p>
+            @if (! empty($summary['reversed']['formatted']))
+                <p class="mt-2 text-xs text-zinc-500 dark:text-zinc-400" data-test="earnings-reversed-total">
+                    {{ $summary['reversed_label'] ?? '' }}:
+                    <span class="tabular-nums" dir="ltr">{{ $summary['reversed']['formatted'] }}</span>
+                    @if (! empty($summary['waived_back']['formatted']))
+                        · {{ $summary['waived_back_label'] ?? '' }}:
+                        <span class="tabular-nums" dir="ltr">{{ $summary['waived_back']['formatted'] }}</span>
+                    @endif
+                    @if (! empty($summary['corrected_back']['formatted']))
+                        · {{ $summary['corrected_back_label'] ?? '' }}:
+                        <span class="tabular-nums" dir="ltr">{{ $summary['corrected_back']['formatted'] }}</span>
+                    @endif
+                    · {{ $summary['net_credited_label'] ?? '' }}:
+                    <span class="tabular-nums" dir="ltr">{{ $summary['net_credited']['formatted'] ?? '—' }}</span>
+                </p>
+            @endif
         </div>
 
         <div class="storefront-card storefront-card--pad-md" data-test="earnings-pending-card">
@@ -26,6 +42,13 @@
                 {{ $summary['pending']['formatted'] ?? '—' }}
             </p>
             <p class="mt-1 text-xs text-zinc-600 dark:text-zinc-300">{{ $summary['pending_not_spendable'] ?? '' }}</p>
+            @if (! empty($summary['has_clawback_debt']) && ! empty($summary['clawback_debt']))
+                <p class="mt-2 text-xs text-red-700 dark:text-red-400" data-test="earnings-clawback-debt">
+                    {{ $summary['clawback_debt_label'] ?? '' }}:
+                    <span class="tabular-nums font-medium" dir="ltr">{{ $summary['clawback_debt']['formatted'] }}</span>
+                </p>
+                <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{{ $summary['clawback_debt_hint'] ?? '' }}</p>
+            @endif
         </div>
     </div>
 
