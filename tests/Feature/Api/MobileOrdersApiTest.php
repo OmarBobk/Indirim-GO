@@ -31,9 +31,11 @@ function m41SeedOrder(
     array $orderAttributes = [],
     int $extraItems = 0,
 ): array {
+    static $packageOrder = 500000;
     $package = Package::factory()->create([
         'is_active' => true,
-        'order' => random_int(100000, 999999999),
+        'order' => ++$packageOrder,
+        'slug' => 'm41-pkg-'.uniqid('', true),
     ]);
     $product = Product::factory()->create([
         'package_id' => $package->id,
