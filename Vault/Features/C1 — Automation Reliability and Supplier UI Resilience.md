@@ -1,131 +1,101 @@
 ---
 status: shipped-partial
 created: 2026-08-01
-updated: 2026-08-05
+updated: 2026-08-06
 owner: Omar
 type: feature
-milestone: C1.1
+milestone: C1.4
 ---
 
 # C1 — Automation Reliability and Supplier UI Resilience
 
-Related: [[Fulfillments & Automation]], [[Future Roadmap - Automation and Growth]], [[İndirimGo Index]]
+Related: [[Fulfillments & Automation]], [[Future Roadmap - Automation and Growth]], [[İndirimGo Index]], `Docs/AUTOMATION_OPERATIONS_RUNBOOK.md`
 
 ## Goal
 
-Give admins a live Automation Operations Dashboard, structured run progress/heartbeats, and (later) Wasim UI adapters/contracts/circuit breakers — without moving business truth into the worker.
+Give admins a live Automation Operations Dashboard, structured run progress/heartbeats, Wasim UI adapters/contracts/health probes, and supplier-capability circuit breakers — without moving business truth into the worker — then **accept live** in C1.4.
 
 ## Constraints
 
 - Stack: Laravel 12, Livewire 4, Tailwind 4, Flux **FREE** only
 - Laravel owns business/workflow state; worker executes browser only
 - HMAC callbacks; progress never mutates fulfillment/financial finality
-- C1.1 admin-only under existing admin gate
-- No AI-generated click paths in production
+- Admin-only under existing admin gate
+- No AI-generated click paths / runtime LLM selector repair
 
-## Non-goals (still deferred)
+## Architecture status (2026-08-06)
 
-- C1.2: UI adapters, UI-version detection, page contracts, session/supplier health probes
-- C1.3: circuit breakers, auto purchase pause, resume policies
-- Second supplier, selector redesign, Git/deploy in this milestone
+**C1.0–C1.3 code shipped** (C1.1 committed; C1.2/C1.3 present on `local/track-c1` worktree — **must be committed before any deploy**).  
+**C1.4 acceptance: NOT CLOSED** (2026-08-06 local review).
 
-## Architecture status (2026-08-05)
+### C1.4 blockers (honest)
 
-**C1.0** architecture done (2026-08-01).  
-**C1.1 shipped** — Live Automation Operations Dashboard + structured progress/heartbeat.  
-**Next:** C1.2 Wasim UI Adapter and Contract Health (not started).
+- Worktree dirty: C1.2 + C1.3 uncommitted → do not deploy
+- Environment: `APP_ENV=local` — not production
+- Worker `http://127.0.0.1:3100` **unreachable** during review
+- Probe product `FULFILLMENT_AUTOMATION_WASIM_PROBE_PRODUCT_API` **empty**
+- No production deploy / restart performed
+- No live Wasim probe / controlled purchase performed
+
+### C1.4 verified (automated / local)
+
+- Laravel suites: circuits, probe, ops dashboard, progress, fulfillment automation, price-scan, prune/stale filters — green
+- Worker: `tsc` build `2026-08-05-c1.2-ui-adapters`; ui-adapter / progress / swal / orders / parse-money selfchecks — green
+- Pint + `npm run build` (Laravel frontend) — green
+- Migrations present locally: progress fields + `automation_supplier_circuits` (ran on local DB)
+- Runbook written: `Docs/AUTOMATION_OPERATIONS_RUNBOOK.md`
+
+### Closure verdict
+
+**C — Not closed.** Safety controls exist in code/tests; live production acceptance criteria not met.
+
+### Next to close C1
+
+1. Commit C1.2+C1.3 on clean branch (no unrelated merges)
+2. Configure probe product API
+3. Deploy Laravel + restart worker; verify `/health` build
+4. Live probe → UI classification
+5. Controlled purchase + reconcile only if gates pass
+6. Failure sims on safe environment; privacy/pruning sign-off
+7. Re-run this checklist → verdict A or B
 
 ---
 
-## C1.1 shipped (2026-08-05)
+## C1.3 shipped (code)
 
-### Progress protocol
+See prior section: three Wasim circuits, Laravel policy, dispatch gating, probe-gated resume, dashboard controls.
 
-- Route: `POST /internal/automation/runs/{uuid}/progress` (HMAC, same middleware as result)
-- Payload: `progress_sequence`, `phase`, `step` (allowlisted enum), `emitted_at`, `heartbeat`, safe message/params, worker/driver metadata, nullable UI/contract versions, `session_alias`
-- Monotonic sequence; duplicate/out-of-order ignored; terminal runs no-op
-- Progress **cannot** change fulfillment status, schedule refunds, or act as price authority
-- Final result callback remains outcome authority
+## C1.2 shipped (code)
 
-### Snapshot + events
+`wasim-ui-v1` only; HMAC probe; fail-closed unknown UI.
 
-- Run columns: `progress_sequence`, `last_heartbeat_at`, `current_step_started_at`, `progress_snapshot` (JSON)
-- Table `fulfillment_automation_run_events` — unique `(run_id, sequence)`; created only on **step change**
-- Heartbeats update snapshot only (no event rows)
-- Per-run event prune via `progress.events_per_run_limit` (default 100); artifact prune also deletes events
+## C1.1 shipped (committed `2529ef9`)
 
-### Step registry
-
-`FulfillmentAutomationProgressStep` (+ worker `ALLOWED_STEPS`): shared + purchase + reconcile steps (no click-level noise). EN/AR labels under `messages.automation_step_*`.
-
-### Heartbeat / stale
-
-- Worker heartbeat ~15s while owning a run (`progress.heartbeat_interval_seconds`)
-- Config `liveness.*`: purchase/reconcile slow 180s, stale 480s; legacy fallback 30m
-- Waiting supplier / scheduled reconcile are **not** worker-stale
-- Sweeper uses heartbeat-first classification; skips Reserved; FailFulfillment only for stale Running/Dispatched
-
-### Dashboard
-
-- Upgraded `/admin/automation` (not replaced)
-- `GetAutomationOperationsDashboard` → DTOs → presenter → board partial
-- Health cards: global, worker, active ops, needs attention, session (unknown until C1.2), driver
-- Sections: Working now, Waiting for supplier, Scheduled reconciliation, Needs attention, Recent outcomes + existing paginated inbox
-- Honest presentation: succeeded purchase + awaiting reconcile → “Supplier accepted — awaiting reconciliation”
-- Realtime: `run_progress_changed` refreshes ops board; does not reset history pagination; heartbeats not broadcast
-- Client-side elapsed timers only (display); server owns stale classification
-
-### Worker
-
-- `ProgressReporter`, instance ID, richer `/health`, build `2026-08-01-c1.1-progress`
-- Instrumentation around existing Wasim flow; `pre_submit` screenshot before buy click
-- Progress failures non-blocking; may set `progress_observability_degraded` on final payload
-
-### Exception counts
-
-`automation_needs_review` badge = needs-review runs + stale active + reconcile exhausted (`AutomationActionRequiredQuery`)
-
-### Tests
-
-- `AutomationProgressCallbackTest`, `AutomationOperationsDashboardTest`
-- Regression: `FulfillmentAutomationTest`, `AutomationAdminTest`, `PruneFulfillmentAutomationArtifactsTest`
-- Worker: `npm run test:progress` + build verify
-
-### Key files
-
-- `app/Actions/Fulfillments/IngestFulfillmentAutomationProgress.php`
-- `app/Actions/Fulfillments/GetAutomationOperationsDashboard.php`
-- `app/Support/Automation/*`
-- `app/Enums/FulfillmentAutomationProgressStep.php`
-- `app/Livewire/Admin/AutomationMonitor.php` + `partials/automation-operations-board.blade.php`
-- `automation-worker/src/progress/*`, `workerIdentity.ts`, Wasim progress hooks
-- Migration `2026_08_01_204758_add_progress_fields_to_fulfillment_automation_runs_table.php`
+Ops dashboard + structured progress/heartbeat.
 
 ## Acceptance criteria
 
-- [x] C1.0 architecture
-- [x] Progress registry + HMAC callback
-- [x] Snapshot + bounded events
-- [x] Worker progress/heartbeat + richer health
-- [x] Heartbeat-aware stale + waiting/scheduled visibility
-- [x] Dashboard health header + working-now board
-- [x] Selective realtime
-- [x] Pre-submit artifact
-- [x] Tests + Pint + worker/frontend build
-- [ ] C1.2 adapters/contracts (not started)
-- [ ] C1.3 circuits (not started)
+- [x] C1.0–C1.3 implementation (code)
+- [x] Pre-deploy automated gates (local 2026-08-06)
+- [x] Operator runbook + rollback written
+- [ ] Clean deployable commit of C1.2+C1.3
+- [ ] Production/staging deploy + worker restart
+- [ ] Live probe with configured product
+- [ ] Live UI = `wasim-ui-v1` (or safe Branch B pause)
+- [ ] Controlled purchase + reconcile
+- [ ] Live failure simulations as feasible
+- [ ] Artifact privacy sign-off on live screenshots
+- [ ] C1 closed (A or B)
 
 ## Gotchas
 
-- `submitted` / awaiting reconcile still terminalizes the **run** as Succeeded; board derives waiting/scheduled from fulfillment meta + `next_reconcile_at`
-- Do not derive current step from `log_excerpt`
-- Progress sequence starts at 1 (worker increments before send)
-- Session health card intentionally unknown until C1.2
-- Pre-submit screenshots may still show player ID on page — private admin artifact; no HTML capture in C1.1
-- Restart automation-worker after deploy so `/health` build matches `2026-08-01-c1.1-progress`
+- Only `wasim-ui-v1` proven — never invent v2 to pass acceptance
+- Do not deploy dirty worktree
+- Empty probe product → product slice `not_configured`; do not treat as full health for purchase gate
+- Opening a circuit ≠ fail/refund/cancel submitted orders
+- Track B (`origin/local/commission-policy`) is separate — do not merge solely for C1.4
 
-## Open questions / C1.2 exclusions
+## Recommended next (after C1 close)
 
-- UI adapters, detector, page contracts, non-mutating supplier probes
-- Circuit breakers / auto pause / probe-gated resume
-- Dedicated automation permissions (still admin-only)
+- If Branch B (unsupported UI): narrow **C1.2.x** compatibility patch only
+- Else: ops soak, then choose C2 / Track D / mobile by business pressure — **not** auto-start C2

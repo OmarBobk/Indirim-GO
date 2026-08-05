@@ -6,9 +6,14 @@ namespace App\Livewire\Admin;
 
 use App\Actions\Fulfillments\CancelFulfillmentAutomationRun;
 use App\Actions\Fulfillments\GetAutomationOperationsDashboard;
+use App\Actions\Fulfillments\PauseAutomationSupplierCircuit;
 use App\Actions\Fulfillments\ResolveFulfillmentAutomationReview;
+use App\Actions\Fulfillments\ResumeAutomationSupplierCircuit;
 use App\Actions\Fulfillments\RetryFulfillmentAutomation;
+use App\Actions\Fulfillments\RunWasimHealthProbe;
 use App\DTOs\Automation\AutomationOperationsDashboardDTO;
+use App\Enums\AutomationCircuitCapability;
+use App\Enums\AutomationCircuitPauseReason;
 use App\Enums\FulfillmentAutomationProgressStep;
 use App\Enums\FulfillmentAutomationRunStatus;
 use App\Models\FulfillmentAutomationRun;
@@ -24,6 +29,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\On;
@@ -85,6 +91,90 @@ final class AutomationMonitor extends Component
         }
 
         $this->success(__('messages.automation_wasim_session_cleared'));
+    }
+
+    public function pauseWasimCircuit(string $capability, string $reason): void
+    {
+        abort_unless(auth()->user()?->hasRole('admin'), 403);
+
+        $capabilityEnum = AutomationCircuitCapability::tryFrom($capability);
+        $reasonEnum = AutomationCircuitPauseReason::tryFrom($reason);
+
+        if ($capabilityEnum === null || $reasonEnum === null) {
+            $this->error(__('messages.automation_circuit_invalid_request'));
+
+            return;
+        }
+
+        try {
+            app(PauseAutomationSupplierCircuit::class)->handle(
+                auth()->user(),
+                'wasim',
+                $capabilityEnum,
+                $reasonEnum,
+            );
+        } catch (Throwable $exception) {
+            report($exception);
+            $this->error(__('messages.automation_circuit_pause_failed'));
+
+            return;
+        }
+
+        unset($this->operationsDashboard);
+        $this->success(__('messages.automation_circuit_paused'));
+    }
+
+    public function resumeWasimCircuit(string $capability): void
+    {
+        abort_unless(auth()->user()?->hasRole('admin'), 403);
+
+        $capabilityEnum = AutomationCircuitCapability::tryFrom($capability);
+
+        if ($capabilityEnum === null) {
+            $this->error(__('messages.automation_circuit_invalid_request'));
+
+            return;
+        }
+
+        try {
+            app(ResumeAutomationSupplierCircuit::class)->handle(
+                auth()->user(),
+                'wasim',
+                $capabilityEnum,
+                confirmed: true,
+            );
+        } catch (ValidationException $exception) {
+            $this->error(collect($exception->errors())->flatten()->first() ?: __('messages.automation_circuit_resume_failed'));
+
+            return;
+        } catch (Throwable $exception) {
+            report($exception);
+            $this->error(__('messages.automation_circuit_resume_failed'));
+
+            return;
+        }
+
+        unset($this->operationsDashboard);
+        $this->success(__('messages.automation_circuit_resumed'));
+    }
+
+    public function runWasimHealthProbe(): void
+    {
+        abort_unless(auth()->user()?->hasRole('admin'), 403);
+
+        unset($this->operationsDashboard);
+
+        $snapshot = app(RunWasimHealthProbe::class)->handle(force: true);
+        $state = $snapshot['last_result']['state'] ?? null;
+
+        if ($state === 'healthy') {
+            $this->success(__('messages.automation_wasim_probe_succeeded'));
+
+            return;
+        }
+
+        $label = is_string($state) ? __('messages.automation_wasim_probe_state_'.$state) : __('messages.automation_wasim_probe_failed');
+        $this->error(__('messages.automation_wasim_probe_failed').' — '.$label);
     }
 
     public function saveWasimCredentials(): void

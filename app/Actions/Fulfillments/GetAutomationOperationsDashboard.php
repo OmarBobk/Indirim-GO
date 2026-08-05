@@ -7,20 +7,25 @@ namespace App\Actions\Fulfillments;
 use App\DTOs\Automation\AutomationHealthCardDTO;
 use App\DTOs\Automation\AutomationOperationsDashboardDTO;
 use App\DTOs\Automation\AutomationOperationsItemDTO;
+use App\Enums\AutomationCircuitCapability;
+use App\Enums\AutomationCircuitState;
 use App\Enums\AutomationRunLiveness;
 use App\Enums\FulfillmentAutomationRunStatus;
 use App\Enums\FulfillmentStatus;
+use App\Models\AutomationSupplierCircuit;
 use App\Models\Fulfillment;
 use App\Models\FulfillmentAutomationRun;
 use App\Models\WebsiteSetting;
 use App\Services\FulfillmentAutomationService;
+use App\Support\Automation\AutomationCircuitGate;
 use App\Support\Automation\AutomationOperationsPresenter;
 use App\Support\Automation\AutomationRunLivenessClassifier;
+use App\Support\Automation\WasimHealthProbeStore;
 use App\Support\Automation\WorkerHealthProbe;
 use Illuminate\Support\Collection;
 
 /**
- * Builds the admin automation operations dashboard (C1.1).
+ * Builds the admin automation operations dashboard (C1.1 / C1.3).
  */
 final class GetAutomationOperationsDashboard
 {
@@ -33,6 +38,8 @@ final class GetAutomationOperationsDashboard
         private readonly AutomationOperationsPresenter $presenter,
         private readonly WorkerHealthProbe $workerHealthProbe,
         private readonly FulfillmentAutomationService $automationService,
+        private readonly WasimHealthProbeStore $wasimProbeStore,
+        private readonly AutomationCircuitGate $circuitGate,
     ) {}
 
     public function handle(): AutomationOperationsDashboardDTO
@@ -66,6 +73,7 @@ final class GetAutomationOperationsDashboard
             ->all();
 
         $needsAttentionCount = count($needsAttention);
+        $waitingRecovery = $this->waitingRecoveryItems();
 
         return new AutomationOperationsDashboardDTO(
             healthCards: $this->healthCards($activeRuns, $waitingSupplier, $scheduledReconcile, $needsAttentionCount),
@@ -75,6 +83,7 @@ final class GetAutomationOperationsDashboard
             reconcileExhausted: $reconcileExhausted,
             needsAttention: $needsAttention,
             recentOutcomes: $this->recentOutcomes(),
+            waitingRecovery: $waitingRecovery,
         );
     }
 
@@ -251,23 +260,177 @@ final class GetAutomationOperationsDashboard
                 checkedAtIso: now()->toIso8601String(),
                 meta: ['count' => $needsAttentionCount],
             ),
-            new AutomationHealthCardDTO(
+            $this->sessionHealthCard(),
+            $this->driverHealthCard($worker),
+            ...$this->circuitHealthCards(),
+        ];
+    }
+
+    /**
+     * @return list<AutomationHealthCardDTO>
+     */
+    private function circuitHealthCards(): array
+    {
+        return $this->circuitGate->wasimCircuits()
+            ->map(function (AutomationSupplierCircuit $circuit): AutomationHealthCardDTO {
+                $state = match ($circuit->state) {
+                    AutomationCircuitState::Enabled => 'enabled',
+                    AutomationCircuitState::ProbeRequired => 'attention',
+                    AutomationCircuitState::PausedAuto, AutomationCircuitState::PausedManual => 'disabled',
+                };
+
+                return new AutomationHealthCardDTO(
+                    key: 'circuit_'.$circuit->capability->value,
+                    state: $state,
+                    label: __('messages.automation_circuit_capability_'.$circuit->capability->value),
+                    reason: __('messages.automation_circuit_state_'.$circuit->state->value),
+                    checkedAtIso: ($circuit->opened_at ?? $circuit->updated_at)?->toIso8601String(),
+                    meta: [
+                        'reason_code' => $circuit->reason_code,
+                        'opened_source' => $circuit->opened_source?->value,
+                        'failures' => $circuit->consecutive_failure_count,
+                        'last_probe' => $circuit->last_probe_state,
+                        'last_healthy_at' => $circuit->last_healthy_at?->toIso8601String(),
+                    ],
+                );
+            })
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Queued Wasim purchases blocked by purchase circuit, plus awaiting reconcile blocked by reconcile circuit.
+     *
+     * @return list<AutomationOperationsItemDTO>
+     */
+    private function waitingRecoveryItems(): array
+    {
+        $items = [];
+
+        $purchasePaused = ! $this->circuitGate->isDispatchAllowed('wasim', AutomationCircuitCapability::Purchase);
+        $reconcilePaused = ! $this->circuitGate->isDispatchAllowed('wasim', AutomationCircuitCapability::Reconcile);
+
+        if ($purchasePaused) {
+            $queued = Fulfillment::query()
+                ->where('status', FulfillmentStatus::Queued)
+                ->whereNull('claimed_by')
+                ->where('provider', 'browser:wasim')
+                ->with(['order:id,order_number', 'orderItem.product:id,name', 'orderItem.package:id,name'])
+                ->latest('id')
+                ->limit(self::LIST_LIMIT)
+                ->get();
+
+            foreach ($queued as $fulfillment) {
+                $items[] = $this->presenter->presentAwaitingFulfillment($fulfillment, AutomationRunLiveness::NeedsAttention);
+            }
+        }
+
+        if ($reconcilePaused) {
+            $awaiting = Fulfillment::query()
+                ->where('status', FulfillmentStatus::Processing)
+                ->where('meta->automation->awaiting_wasim_reconcile', true)
+                ->with(['order:id,order_number', 'orderItem.product:id,name', 'orderItem.package:id,name'])
+                ->latest('updated_at')
+                ->limit(self::LIST_LIMIT)
+                ->get();
+
+            foreach ($awaiting as $fulfillment) {
+                $items[] = $this->presenter->presentAwaitingFulfillment($fulfillment, AutomationRunLiveness::NeedsAttention);
+            }
+        }
+
+        return collect($items)
+            ->unique(fn (AutomationOperationsItemDTO $item): string => 'f:'.$item->fulfillmentId)
+            ->take(self::LIST_LIMIT)
+            ->values()
+            ->all();
+    }
+
+    private function sessionHealthCard(): AutomationHealthCardDTO
+    {
+        $snapshot = $this->wasimProbeStore->get();
+        $probe = $snapshot['last_result'] ?? null;
+
+        if ($probe === null) {
+            return new AutomationHealthCardDTO(
                 key: 'session',
                 state: 'unknown',
                 label: __('messages.automation_health_session'),
                 reason: __('messages.automation_health_session_unknown'),
                 checkedAtIso: now()->toIso8601String(),
-            ),
-            new AutomationHealthCardDTO(
+            );
+        }
+
+        $probeState = (string) ($probe['state'] ?? 'unreachable');
+
+        $cardState = match ($probeState) {
+            'healthy' => 'healthy',
+            'authentication_required' => 'attention',
+            'not_configured' => 'unknown',
+            'unreachable' => 'unavailable',
+            default => 'degraded',
+        };
+
+        return new AutomationHealthCardDTO(
+            key: 'session',
+            state: $cardState,
+            label: __('messages.automation_health_session'),
+            reason: __('messages.automation_wasim_probe_state_'.$probeState),
+            checkedAtIso: is_string($probe['checked_at'] ?? null) ? $probe['checked_at'] : null,
+            meta: [
+                'session_state' => $probe['session_state'] ?? null,
+                'consecutive_failures' => $snapshot['consecutive_failure_count'] ?? 0,
+                'last_healthy_at' => $snapshot['last_healthy_at'] ?? null,
+            ],
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $worker
+     */
+    private function driverHealthCard(array $worker): AutomationHealthCardDTO
+    {
+        $snapshot = $this->wasimProbeStore->get();
+        $probe = $snapshot['last_result'] ?? null;
+
+        if ($probe === null) {
+            return new AutomationHealthCardDTO(
                 key: 'driver',
-                state: 'available',
+                state: 'unknown',
                 label: __('messages.automation_health_driver'),
+                reason: __('messages.automation_health_session_unknown'),
                 checkedAtIso: now()->toIso8601String(),
                 meta: [
                     'wasim' => $worker['driver_versions']['wasim'] ?? null,
-                    'detected_ui' => 'unknown',
+                    'detected_ui' => null,
                 ],
-            ),
-        ];
+            );
+        }
+
+        $probeState = (string) ($probe['state'] ?? 'unreachable');
+
+        $cardState = match ($probeState) {
+            'healthy' => 'available',
+            'unsupported_ui', 'contract_failed' => 'unavailable',
+            default => 'degraded',
+        };
+
+        /** @var list<string> $failureCodes */
+        $failureCodes = is_array($probe['failure_codes'] ?? null) ? $probe['failure_codes'] : [];
+
+        return new AutomationHealthCardDTO(
+            key: 'driver',
+            state: $cardState,
+            label: __('messages.automation_health_driver'),
+            reason: __('messages.automation_wasim_probe_state_'.$probeState),
+            checkedAtIso: is_string($probe['checked_at'] ?? null) ? $probe['checked_at'] : null,
+            meta: [
+                'wasim' => $probe['driver_version'] ?? ($worker['driver_versions']['wasim'] ?? null),
+                'detected_ui' => $probe['detected_ui_version'] ?? null,
+                'purchase_contract' => $probe['purchase_contract_version'] ?? null,
+                'orders_contract' => $probe['orders_contract_version'] ?? null,
+                'failure_codes' => $failureCodes === [] ? null : implode(', ', array_slice($failureCodes, 0, 5)),
+            ],
+        );
     }
 }

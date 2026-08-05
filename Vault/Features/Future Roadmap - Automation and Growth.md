@@ -17,7 +17,7 @@ Related: [[Fulfillments & Automation]], [[Orders & Checkout]], [[Refunds & Settl
 | Track | Focus | Status |
 |---|---|---|
 | **B** | Financial risk + admin ops | **Closed** (M7.0–M7.2.4) |
-| **C** | Fulfilment / supplier automation | **Active** — C1.1 shipped (2026-08-05); next C1.2 |
+| **C** | Fulfilment / supplier automation | **Active** — C1.3 code shipped; **C1.4 not closed** (2026-08-06) |
 | **D** | Growth / conversion | Backlog — recommended next if conversion dominates |
 
 Suggested order inside each track below. Adjust from real ops bottlenecks and conversion data.
@@ -51,11 +51,11 @@ Suggested order: **C1 → C2 → C3 → C4**
 |---|---|---|
 | **C1.0** | Architecture + audit only | **Done** 2026-08-01 (no code) |
 | **C1.1** | Live Automation Operations Dashboard + progress/heartbeat | **Shipped** 2026-08-05 |
-| **C1.2** | Wasim UI adapters + page contracts + health probe | Next |
-| **C1.3** | Circuit breaker + recovery | Not started |
-| **C1.4** | Production acceptance + hardening | Not started |
+| **C1.2** | Wasim UI adapters + page contracts + health probe | **Shipped** 2026-08-05 |
+| **C1.3** | Circuit breakers / auto pause / probe-gated resume | **Shipped (code)** 2026-08-05 |
+| **C1.4** | Production acceptance + hardening | **Not closed** 2026-08-06 — gates green locally; live probe/purchase not performed |
 
-**Do not** start C1.3–C1.4 work inside C1.2. Do not rewrite Wasim selectors until C1.2 adapter split.
+**Do not** invent a second Wasim UI adapter without live fixtures. Do not start C2 until C1 is closed (A) or safely paused (B) with an explicit business decision.
 
 ### C2 — Second supplier driver
 

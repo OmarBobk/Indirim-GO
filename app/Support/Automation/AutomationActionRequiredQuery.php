@@ -12,9 +12,10 @@ use App\Models\FulfillmentAutomationRun;
 use Illuminate\Support\Carbon;
 
 /**
- * Bounded action-required automation query helpers (C1.1).
+ * Bounded action-required automation query helpers (C1.1 / C1.3).
  * Counts needs_review runs + stale active runs + reconcile-exhausted
- * fulfillments without double-counting a run/fulfillment across categories.
+ * fulfillments + auto-paused / probe-required Wasim circuits without
+ * double-counting routine manual pauses as emergencies.
  */
 final class AutomationActionRequiredQuery
 {
@@ -45,8 +46,22 @@ final class AutomationActionRequiredQuery
             ->count();
     }
 
+    public static function pausedSafetyCircuitsCount(): int
+    {
+        return \App\Models\AutomationSupplierCircuit::query()
+            ->where('supplier_key', 'wasim')
+            ->whereIn('state', [
+                \App\Enums\AutomationCircuitState::PausedAuto->value,
+                \App\Enums\AutomationCircuitState::ProbeRequired->value,
+            ])
+            ->count();
+    }
+
     public static function total(): int
     {
-        return self::needsReviewRunsCount() + self::staleActiveRunsCount() + self::reconcileExhaustedCount();
+        return self::needsReviewRunsCount()
+            + self::staleActiveRunsCount()
+            + self::reconcileExhaustedCount()
+            + self::pausedSafetyCircuitsCount();
     }
 }

@@ -11,6 +11,7 @@
     "test:parse-swal": "tsx src/drivers/wasim/parseSwalPurchase.selfcheck.ts",
     "test:orders-date": "tsx src/drivers/wasim/ordersPageHelpers.selfcheck.ts",
     "test:progress": "tsx src/progress/ProgressReporter.selfcheck.ts",
+    "test:ui-adapter": "tsx src/drivers/wasim/ui/uiAdapter.selfcheck.ts",
     "postinstall": "playwright install chromium"
   },
   "dependencies": {

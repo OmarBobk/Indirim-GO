@@ -254,10 +254,58 @@
                     >
                         {{ __('messages.automation_wasim_clear_session') }}
                     </flux:button>
+                    <flux:button
+                        type="button"
+                        variant="ghost"
+                        wire:click="runWasimHealthProbe"
+                        wire:loading.attr="disabled"
+                        wire:target="runWasimHealthProbe"
+                    >
+                        {{ __('messages.automation_wasim_run_probe') }}
+                    </flux:button>
                 </div>
                 <flux:text class="text-xs text-zinc-500 dark:text-zinc-400">
                     {{ __('messages.automation_wasim_clear_session_hint') }}
                 </flux:text>
+                <flux:text class="text-xs text-zinc-500 dark:text-zinc-400">
+                    {{ __('messages.automation_wasim_run_probe_hint') }}
+                </flux:text>
+
+                <div class="mt-4 space-y-3 rounded-xl border border-zinc-200 p-3 dark:border-zinc-700">
+                    <flux:heading size="sm">{{ __('messages.automation_circuit_controls_heading') }}</flux:heading>
+                    <flux:text class="text-xs text-zinc-500 dark:text-zinc-400">
+                        {{ __('messages.automation_circuit_controls_hint') }}
+                    </flux:text>
+                    @foreach (['purchase', 'reconcile', 'price_scan'] as $capability)
+                        <div class="flex flex-wrap items-center gap-2" wire:key="circuit-controls-{{ $capability }}">
+                            <span class="min-w-[9rem] text-sm font-medium text-zinc-800 dark:text-zinc-200">
+                                {{ __('messages.automation_circuit_capability_'.$capability) }}
+                            </span>
+                            <flux:button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                wire:click="pauseWasimCircuit('{{ $capability }}', 'investigation')"
+                                wire:loading.attr="disabled"
+                                wire:target="pauseWasimCircuit"
+                                wire:confirm="{{ __('messages.automation_circuit_pause_confirm') }}"
+                            >
+                                {{ __('messages.automation_circuit_pause') }}
+                            </flux:button>
+                            <flux:button
+                                type="button"
+                                size="sm"
+                                variant="primary"
+                                wire:click="resumeWasimCircuit('{{ $capability }}')"
+                                wire:loading.attr="disabled"
+                                wire:target="resumeWasimCircuit"
+                                wire:confirm="{{ __('messages.automation_circuit_resume_confirm') }}"
+                            >
+                                {{ __('messages.automation_circuit_resume') }}
+                            </flux:button>
+                        </div>
+                    @endforeach
+                </div>
             </form>
         </details>
     </section>
@@ -266,7 +314,7 @@
     <section class="relative overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
         <div
             wire:loading.delay
-            wire:target="toggleAutomation, saveWasimCredentials, clearWasimBrowserSession, retryRun, cancelRun, markReviewSucceeded, markReviewFailed"
+            wire:target="toggleAutomation, saveWasimCredentials, clearWasimBrowserSession, runWasimHealthProbe, pauseWasimCircuit, resumeWasimCircuit, retryRun, cancelRun, markReviewSucceeded, markReviewFailed"
             class="absolute inset-0 z-10 bg-white/60 dark:bg-zinc-900/60"
         >
             <div class="p-6 space-y-2">
@@ -279,7 +327,7 @@
         <div
             class="overflow-x-auto"
             wire:loading.remove.delay
-            wire:target="toggleAutomation, saveWasimCredentials, clearWasimBrowserSession, retryRun, cancelRun, markReviewSucceeded, markReviewFailed"
+            wire:target="toggleAutomation, saveWasimCredentials, clearWasimBrowserSession, runWasimHealthProbe, pauseWasimCircuit, resumeWasimCircuit, retryRun, cancelRun, markReviewSucceeded, markReviewFailed"
         >
             @if ($this->runs->count() === 0)
                 <div class="flex flex-col items-center gap-3 p-12 text-center">

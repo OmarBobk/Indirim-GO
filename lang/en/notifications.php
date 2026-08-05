@@ -81,6 +81,10 @@ return [
     'salesperson_payout_requested_message' => ':name requested a payout (#:id, eligible: :eligible_display). Review payout requests.',
 
     'wasim_price_drift_review_title' => 'Wasim prices need review',
+    'automation_circuit_paused_title' => 'Wasim automation paused',
+    'automation_circuit_paused_message' => ':capability paused (:reason). New dispatch is blocked; submitted supplier orders are not cancelled.',
+    'automation_circuit_probe_required_title' => 'Wasim automation ready to resume',
+    'automation_circuit_probe_required_message' => ':capability probe passed. An admin must explicitly resume dispatch.',
     'wasim_price_drift_review_message' => ':count product(s) have entry prices that differ from the latest Wasim scan. Open price drift to review.',
 
     'wasim_price_reactive_flag_title' => 'Wasim price alert from fulfillment',

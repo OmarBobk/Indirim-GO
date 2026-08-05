@@ -16,6 +16,13 @@ export const ALLOWED_STEPS = [
   'finalizing_result',
   'callback_sending',
 
+  'ui_detecting',
+  'ui_recognized',
+  'ui_unsupported',
+  'page_contract_validating',
+  'page_contract_valid',
+  'page_contract_failed',
+
   'opening_product',
   'product_loaded',
   'reading_supplier_price',
@@ -49,6 +56,6 @@ export type ProgressStep = (typeof ALLOWED_STEPS)[number];
  * independently of the worker build number.
  */
 export const DRIVER_VERSIONS: Record<string, string> = {
-  wasim: 'wasim-1.0.0',
+  wasim: 'wasim-1.1.0',
   acme: 'acme-1.0.0',
 };

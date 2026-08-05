@@ -81,6 +81,10 @@ return [
     'salesperson_payout_requested_message' => ':name طلب صرفًا (#:id، المؤهل: :eligible_display). راجع طلبات الصرف.',
 
     'wasim_price_drift_review_title' => 'أسعار واسم تحتاج مراجعة',
+    'automation_circuit_paused_title' => 'أتمتة وسيم متوقفة',
+    'automation_circuit_paused_message' => 'تم إيقاف :capability (:reason). الإرسال الجديد محظور؛ طلبات المورد المُرسلة لا تُلغى.',
+    'automation_circuit_probe_required_title' => 'أتمتة وسيم جاهزة للاستئناف',
+    'automation_circuit_probe_required_message' => 'نجح فحص :capability. يجب على المشرف استئناف الإرسال صراحة.',
     'wasim_price_drift_review_message' => ':count منتج/منتجات لها أسعار دخول تختلف عن آخر مسح لوسيم. افتح صفحة انحراف الأسعار للمراجعة.',
 
     'wasim_price_reactive_flag_title' => 'تنبيه سعر واسم من التنفيذ',

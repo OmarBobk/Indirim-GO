@@ -2,32 +2,26 @@ import type { Page } from 'playwright';
 import type { RunPayload } from '../../types.js';
 import type { RunLogger } from '../../logging/runLogger.js';
 import type { ProgressReporter } from '../../progress/ProgressReporter.js';
-import { isWasimLoginPage } from './login.js';
-import { WASIM_ORDERS_URL, isWasimHostname } from './urls.js';
+import { isWasimLoginPage, isWasimOrdersPage } from './pageState.js';
+import { WASIM_ORDERS_URL } from './urls.js';
+import { defaultWasimUiAdapter } from './ui/registry.js';
+import { resolveWasimUiForPage } from './ui/resolveAdapter.js';
+import type { SafeDiagnostics, WasimUiAdapter } from './ui/types.js';
 
-function isWasimOrdersPage(url: string): boolean {
-  try {
-    const parsed = new URL(url);
+export type OpenOrdersSuccess = {
+  ok: true;
+  adapter: WasimUiAdapter;
+  uiVersion: string;
+  ordersContractVersion: string;
+};
 
-    return isWasimHostname(parsed.hostname)
-      && parsed.pathname.replace(/\/$/, '').toLowerCase().endsWith('/customer/order');
-  } catch {
-    return false;
-  }
-}
-
-async function submitLoginForm(page: Page, username: string, password: string): Promise<void> {
-  const emailField = page.locator(
-    '#Input_Email, input[name="Input.Email"], input[placeholder="name@example.com"]',
-  ).first();
-  const passwordField = page.locator(
-    '#Input_Password, input[name="Input.Password"], input[placeholder="password"]',
-  ).first();
-
-  await emailField.fill(username);
-  await passwordField.fill(password);
-  await page.getByRole('button', { name: 'دخول' }).click();
-}
+export type OpenOrdersFailure = {
+  ok: false;
+  errorCode: string;
+  message: string;
+  outcome?: 'failed' | 'needs_review';
+  diagnostics?: SafeDiagnostics;
+};
 
 export async function openWasimOrdersPage(
   page: Page,
@@ -35,9 +29,10 @@ export async function openWasimOrdersPage(
   logger: RunLogger,
   screenshot: (label: string) => Promise<void>,
   progress?: ProgressReporter,
-): Promise<{ ok: true } | { ok: false; errorCode: string; message: string }> {
+): Promise<OpenOrdersSuccess | OpenOrdersFailure> {
   const username = payload.credentials?.username?.trim();
   const password = payload.credentials?.password;
+  const adapter = defaultWasimUiAdapter();
 
   if (!username || !password) {
     return {
@@ -56,13 +51,27 @@ export async function openWasimOrdersPage(
     timeout: 60_000,
   });
 
-  if (isWasimLoginPage(page.url())) {
+  let resolved = await resolveWasimUiForPage(page, logger, progress, { allowLoginRequired: true });
+
+  if (!resolved.ok) {
+    await screenshot('ui_unsupported');
+
+    return {
+      ok: false,
+      errorCode: resolved.failureCode,
+      message: `Wasim orders UI quarantine: ${resolved.failureCode}.`,
+      outcome: 'needs_review',
+      diagnostics: resolved.diagnostics,
+    };
+  }
+
+  if (isWasimLoginPage(page.url()) || resolved.detection.kind === 'login_required') {
     logger.log('login', 'Login required for Wasim orders page');
     progress?.step('login_required');
     await screenshot('login');
 
     progress?.step('authentication_started');
-    await submitLoginForm(page, username, password);
+    await adapter.submitLogin(page, username, password);
 
     try {
       await page.waitForURL(
@@ -73,20 +82,65 @@ export async function openWasimOrdersPage(
       // Verified below.
     }
 
-    if (!isWasimLoginPage(page.url())) {
-      progress?.step('authentication_succeeded');
+    if (isWasimLoginPage(page.url())) {
+      await screenshot('login_failed');
+
+      return {
+        ok: false,
+        errorCode: 'authentication_failed',
+        message: 'Wasim orders login failed.',
+      };
+    }
+
+    progress?.step('authentication_succeeded');
+    resolved = await resolveWasimUiForPage(page, logger, progress, { allowLoginRequired: false });
+
+    if (!resolved.ok) {
+      await screenshot('ui_unsupported');
+
+      return {
+        ok: false,
+        errorCode: resolved.failureCode,
+        message: `Wasim orders UI quarantine: ${resolved.failureCode}.`,
+        outcome: 'needs_review',
+        diagnostics: resolved.diagnostics,
+      };
     }
   }
 
-  if (!isWasimOrdersPage(page.url())) {
+  if (!isWasimOrdersPage(page.url()) || resolved.detection.kind !== 'recognized' || !resolved.detection.reconcileCapable) {
     await screenshot('orders_page_unreachable');
 
     return {
       ok: false,
-      errorCode: 'orders_page_unreachable',
+      errorCode: 'orders_ui_unsupported',
       message: `Expected Wasim orders page but landed on ${page.url()}`,
+      outcome: 'needs_review',
+      diagnostics: await resolved.adapter.collectSafeDiagnostics(page, 'orders_ui_unsupported'),
     };
   }
+
+  progress?.step('page_contract_validating');
+  const contract = await resolved.adapter.validateOrdersContract(page);
+
+  if (!contract.ok) {
+    await screenshot('orders_contract_failed');
+    progress?.step('page_contract_failed', contract.failureCode);
+
+    return {
+      ok: false,
+      errorCode: contract.failureCode ?? 'orders_contract_failed',
+      message: 'Wasim orders page contract failed.',
+      outcome: 'needs_review',
+      diagnostics: await resolved.adapter.collectSafeDiagnostics(
+        page,
+        contract.failureCode ?? 'orders_contract_failed',
+      ),
+    };
+  }
+
+  progress?.step('page_contract_valid');
+  progress?.setContractMeta(resolved.adapter.uiVersion, resolved.adapter.ordersContractVersion);
 
   await page.locator('#responsiveDataTable2, #btn-Transaction').first().waitFor({
     state: 'visible',
@@ -95,5 +149,10 @@ export async function openWasimOrdersPage(
 
   await screenshot('orders_page');
 
-  return { ok: true };
+  return {
+    ok: true,
+    adapter: resolved.adapter,
+    uiVersion: resolved.adapter.uiVersion,
+    ordersContractVersion: resolved.adapter.ordersContractVersion,
+  };
 }

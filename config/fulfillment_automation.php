@@ -64,6 +64,33 @@ return [
         'reactive_flags_enabled' => (bool) env('FULFILLMENT_AUTOMATION_PRICE_SCAN_REACTIVE_FLAGS', true),
     ],
 
+    'wasim_probe' => [
+        'enabled' => (bool) env('FULFILLMENT_AUTOMATION_WASIM_PROBE_ENABLED', true),
+        'schedule_minutes' => (int) env('FULFILLMENT_AUTOMATION_WASIM_PROBE_SCHEDULE_MINUTES', 20),
+        'timeout_seconds' => (int) env('FULFILLMENT_AUTOMATION_WASIM_PROBE_TIMEOUT_SECONDS', 90),
+        'cache_seconds' => (int) env('FULFILLMENT_AUTOMATION_WASIM_PROBE_CACHE_SECONDS', 60),
+        'test_product_api' => env('FULFILLMENT_AUTOMATION_WASIM_PROBE_PRODUCT_API'),
+        'expected_product_id' => env('FULFILLMENT_AUTOMATION_WASIM_PROBE_EXPECTED_PRODUCT_ID'),
+        'expected_currency' => env('FULFILLMENT_AUTOMATION_WASIM_PROBE_EXPECTED_CURRENCY', 'TRY'),
+    ],
+
+    'circuits' => [
+        'purchase' => [
+            'threshold_count' => (int) env('FULFILLMENT_AUTOMATION_CIRCUIT_PURCHASE_THRESHOLD', 3),
+            'threshold_window_minutes' => (int) env('FULFILLMENT_AUTOMATION_CIRCUIT_PURCHASE_WINDOW', 10),
+        ],
+        'reconcile' => [
+            'threshold_count' => (int) env('FULFILLMENT_AUTOMATION_CIRCUIT_RECONCILE_THRESHOLD', 3),
+            'threshold_window_minutes' => (int) env('FULFILLMENT_AUTOMATION_CIRCUIT_RECONCILE_WINDOW', 15),
+        ],
+        'price_scan' => [
+            'threshold_count' => (int) env('FULFILLMENT_AUTOMATION_CIRCUIT_PRICE_SCAN_THRESHOLD', 3),
+            'threshold_window_minutes' => (int) env('FULFILLMENT_AUTOMATION_CIRCUIT_PRICE_SCAN_WINDOW', 15),
+        ],
+        'probe_freshness_seconds' => (int) env('FULFILLMENT_AUTOMATION_CIRCUIT_PROBE_FRESHNESS', 1800),
+        'supported_ui_versions' => ['wasim-ui-v1'],
+    ],
+
     'queue' => env('FULFILLMENT_AUTOMATION_QUEUE', 'fulfillment-automation'),
 
     'suppliers' => [

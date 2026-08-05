@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\SupplierPrices;
 
+use App\Actions\Fulfillments\ObserveAutomationSafetySignal;
 use App\Enums\SupplierPriceScanItemStatus;
 use App\Enums\SupplierPriceScanStatus;
 use App\Models\Product;
@@ -37,6 +38,8 @@ class IngestSupplierPriceScanResult
 
             $okCount = 0;
             $failedCount = 0;
+            /** @var list<array{product_id: int, error_code: string}> $circuitSignals */
+            $circuitSignals = [];
 
             foreach ($items as $itemPayload) {
                 if (! is_array($itemPayload)) {
@@ -82,19 +85,25 @@ class IngestSupplierPriceScanResult
                     continue;
                 }
 
+                $errorCode = is_string($itemPayload['error_code'] ?? null) ? $itemPayload['error_code'] : 'scan_failed';
                 $failedCount++;
                 $this->markItemFailed(
                     $scanItem,
-                    is_string($itemPayload['error_code'] ?? null) ? $itemPayload['error_code'] : 'scan_failed',
+                    $errorCode,
                     is_string($itemPayload['message'] ?? null) ? $itemPayload['message'] : 'Supplier price scan failed.',
                 );
-                $this->updateProductScanError(
-                    $productId,
-                    is_string($itemPayload['error_code'] ?? null) ? $itemPayload['error_code'] : 'scan_failed',
-                );
+                $this->updateProductScanError($productId, $errorCode);
+                $circuitSignals[] = ['product_id' => $productId, 'error_code' => $errorCode];
             }
 
             $batchFailed = is_string($payload['error_code'] ?? null) && $items === [];
+
+            if ($batchFailed) {
+                $circuitSignals[] = [
+                    'product_id' => 0,
+                    'error_code' => (string) $payload['error_code'],
+                ];
+            }
 
             $lockedScan->fill([
                 'status' => $batchFailed ? SupplierPriceScanStatus::Failed : SupplierPriceScanStatus::Completed,
@@ -109,9 +118,12 @@ class IngestSupplierPriceScanResult
             ])->save();
 
             $scanId = $lockedScan->id;
+            $scanUuid = (string) $lockedScan->uuid;
             $completed = ! $batchFailed;
 
-            DB::afterCommit(function () use ($scanId, $completed): void {
+            DB::afterCommit(function () use ($scanId, $scanUuid, $completed, $circuitSignals): void {
+                $this->observeCircuitSignals($scanUuid, $circuitSignals);
+
                 if (! $completed) {
                     return;
                 }
@@ -121,6 +133,51 @@ class IngestSupplierPriceScanResult
 
             return $lockedScan->refresh();
         });
+    }
+
+    /**
+     * @param  list<array{product_id: int, error_code: string}>  $signals
+     */
+    private function observeCircuitSignals(string $scanUuid, array $signals): void
+    {
+        $observer = app(ObserveAutomationSafetySignal::class);
+
+        foreach ($signals as $signal) {
+            $mapped = $this->mapPriceScanFailureCode($signal['error_code']);
+
+            if ($mapped === null) {
+                continue;
+            }
+
+            $observer->handle([
+                'supplier_key' => 'wasim',
+                'failure_code' => $mapped,
+                'source_type' => 'price_scan',
+                'source_key' => $scanUuid.':'.$signal['product_id'].':'.$mapped,
+                'capability_hint' => 'price_scan',
+                'occurred_at' => now(),
+            ]);
+        }
+    }
+
+    private function mapPriceScanFailureCode(string $errorCode): ?string
+    {
+        return match ($errorCode) {
+            'unsupported_ui', 'ambiguous_ui', 'price_scan_ui_unsupported' => 'price_scan_ui_unsupported',
+            'supplier_total_field_missing',
+            'supplier_total_unparseable',
+            'supplier_price_parse_failed',
+            'quantity_field_missing',
+            'price_scan_parse_failed' => 'price_scan_parse_failed',
+            'authentication_required',
+            'authentication_failed',
+            'authenticated_contract_failed',
+            'access_denied',
+            'login_failed',
+            'credentials_missing',
+            'maintenance' => $errorCode,
+            default => null,
+        };
     }
 
     private function markItemOk(SupplierPriceScanItem $item, float $scannedPrice, ?string $displayedRaw): void

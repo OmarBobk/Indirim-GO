@@ -17,6 +17,7 @@ final readonly class AutomationOperationsDashboardDTO
      * @param  list<AutomationOperationsItemDTO>  $reconcileExhausted
      * @param  list<AutomationOperationsItemDTO>  $needsAttention
      * @param  list<AutomationOperationsItemDTO>  $recentOutcomes
+     * @param  list<AutomationOperationsItemDTO>  $waitingRecovery
      */
     public function __construct(
         public array $healthCards,
@@ -26,5 +27,6 @@ final readonly class AutomationOperationsDashboardDTO
         public array $reconcileExhausted,
         public array $needsAttention,
         public array $recentOutcomes,
+        public array $waitingRecovery = [],
     ) {}
 }

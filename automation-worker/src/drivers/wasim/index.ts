@@ -20,13 +20,14 @@ export const wasimDriver: RunDriver = {
 
     if (!productResult.ok) {
       return {
-        outcome: 'failed',
+        outcome: productResult.outcome ?? 'failed',
         errorCode: productResult.errorCode,
         message: productResult.message,
         deliveredPayload: {
           checkpoint: 'product',
           url: page.url(),
           product_api: payload.product_api ?? null,
+          ...(productResult.diagnostics ? { ui_diagnostics: productResult.diagnostics } : {}),
         },
       };
     }
@@ -56,6 +57,9 @@ export const wasimDriver: RunDriver = {
             url: page.url(),
             product_api: productResult.productApi,
             product_url: productResult.productUrl,
+            adapter_id: productResult.adapter.adapterId,
+            detected_ui_version: productResult.uiVersion,
+            purchase_contract_version: productResult.purchaseContractVersion,
             ...(priceResult.supplierTotal !== undefined
               ? {
                 supplier_total: priceResult.supplierTotal,
@@ -81,6 +85,9 @@ export const wasimDriver: RunDriver = {
             url: page.url(),
             product_api: productResult.productApi,
             product_url: productResult.productUrl,
+            adapter_id: productResult.adapter.adapterId,
+            detected_ui_version: productResult.uiVersion,
+            purchase_contract_version: productResult.purchaseContractVersion,
           },
         };
       }
@@ -103,6 +110,9 @@ export const wasimDriver: RunDriver = {
             url: page.url(),
             product_api: productResult.productApi,
             product_url: productResult.productUrl,
+            adapter_id: productResult.adapter.adapterId,
+            detected_ui_version: productResult.uiVersion,
+            purchase_contract_version: productResult.purchaseContractVersion,
             ...(customResult.supplierTotal !== undefined
               ? {
                 supplier_total: customResult.supplierTotal,
@@ -129,6 +139,9 @@ export const wasimDriver: RunDriver = {
       customQuantity,
       supplierTotal,
       productAmountMode: payload.product_amount_mode ?? 'fixed',
+      adapter: productResult.adapter,
+      uiVersion: productResult.uiVersion,
+      purchaseContractVersion: productResult.purchaseContractVersion,
     }, progress);
   },
 };

@@ -40,3 +40,8 @@ Schedule::command('wasim:sweep-stale-price-scans')
     ->everyFifteenMinutes()
     ->when(fn (): bool => (bool) config('fulfillment_automation.enabled', false)
         && (bool) config('fulfillment_automation.price_scan.enabled', true));
+
+Schedule::command('fulfillment:probe-wasim-health')
+    ->cron('*/'.max(1, (int) config('fulfillment_automation.wasim_probe.schedule_minutes', 20)).' * * * *')
+    ->when(fn (): bool => (bool) config('fulfillment_automation.enabled', false)
+        && (bool) config('fulfillment_automation.wasim_probe.enabled', true));

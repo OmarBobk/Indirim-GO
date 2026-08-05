@@ -288,7 +288,30 @@ class IngestFulfillmentAutomationResult
         string $outcome,
     ): FulfillmentAutomationRun {
         $errorCode = (string) ($payload['error_code'] ?? 'automation_failed');
+        if (
+            is_array($resultPayload)
+            && isset($resultPayload['ui_diagnostics']['failure_code'])
+            && is_string($resultPayload['ui_diagnostics']['failure_code'])
+            && $resultPayload['ui_diagnostics']['failure_code'] !== ''
+        ) {
+            $errorCode = $resultPayload['ui_diagnostics']['failure_code'];
+        }
+
         $errorMessage = (string) ($payload['message'] ?? $payload['error_message'] ?? 'Automation failed');
+        $isReconcile = $this->automationService->isReconcileRun($lockedRun);
+        $preserveAwaitingReconcile = $isReconcile && $this->isReconcileCircuitSafetyFailure($errorCode);
+
+        if ($preserveAwaitingReconcile) {
+            return $this->handleReconcileCircuitSafetyFailure(
+                $lockedRun,
+                $lockedFulfillment,
+                $errorCode,
+                $errorMessage,
+                $resultPayload,
+                $logExcerpt,
+            );
+        }
+
         $runStatus = $outcome === 'needs_review'
             ? FulfillmentAutomationRunStatus::NeedsReview
             : FulfillmentAutomationRunStatus::Failed;
@@ -349,8 +372,100 @@ class IngestFulfillmentAutomationResult
             : 'fulfillment.automation.failed';
 
         $this->recordTerminalEvent($lockedRun, $lockedFulfillment, $eventType);
+        $this->queueSafetySignalObservation($lockedRun, $errorCode, $isReconcile);
 
         return $lockedRun->refresh();
+    }
+
+    /**
+     * Reconcile UI/contract failures must not fail/refund submitted supplier orders.
+     *
+     * @param  array<string, mixed>|null  $resultPayload
+     */
+    private function handleReconcileCircuitSafetyFailure(
+        FulfillmentAutomationRun $lockedRun,
+        Fulfillment $lockedFulfillment,
+        string $errorCode,
+        string $errorMessage,
+        ?array $resultPayload,
+        mixed $logExcerpt,
+    ): FulfillmentAutomationRun {
+        $fulfillmentMeta = $lockedFulfillment->meta ?? [];
+        $fulfillmentMeta['automation'] = array_merge($fulfillmentMeta['automation'] ?? [], [
+            'awaiting_wasim_reconcile' => true,
+            'requires_review' => true,
+            'last_run_uuid' => $lockedRun->uuid,
+            'last_error_code' => $errorCode,
+            'reconcile_circuit_blocked' => true,
+        ]);
+
+        $lockedRun->fill([
+            'status' => FulfillmentAutomationRunStatus::NeedsReview,
+            'error_code' => $errorCode,
+            'error_message' => $errorMessage,
+            'result_payload' => is_array($resultPayload) ? $resultPayload : null,
+            'log_excerpt' => is_array($logExcerpt) ? $logExcerpt : null,
+            'finished_at' => now(),
+            'callback_received_at' => now(),
+        ])->save();
+
+        $lockedFulfillment->update(['meta' => $fulfillmentMeta]);
+
+        // Keep fulfillment processing — do not FailFulfillment / refund.
+        if ($lockedFulfillment->status !== FulfillmentStatus::Processing) {
+            $lockedFulfillment->update(['status' => FulfillmentStatus::Processing]);
+        }
+
+        app(AppendFulfillmentLog::class)->handle(
+            $lockedFulfillment,
+            FulfillmentLogLevel::Warn,
+            'Wasim reconcile UI/contract unsafe; fulfillment kept awaiting recovery',
+            [
+                'action' => 'automation_reconcile_circuit_safety',
+                'run_uuid' => $lockedRun->uuid,
+                'error_code' => $errorCode,
+            ],
+        );
+
+        $this->recordTerminalEvent($lockedRun, $lockedFulfillment, 'fulfillment.automation.needs_review');
+        $this->queueSafetySignalObservation($lockedRun, $errorCode, true);
+
+        return $lockedRun->refresh();
+    }
+
+    private function isReconcileCircuitSafetyFailure(string $errorCode): bool
+    {
+        return in_array($errorCode, [
+            'orders_ui_unsupported',
+            'orders_contract_failed',
+            'ambiguous_ui',
+            'unsupported_ui',
+            'access_denied',
+            'authentication_failed',
+            'authenticated_contract_failed',
+            'maintenance',
+        ], true);
+    }
+
+    private function queueSafetySignalObservation(
+        FulfillmentAutomationRun $lockedRun,
+        string $errorCode,
+        bool $isReconcile,
+    ): void {
+        $supplierKey = (string) ($lockedRun->supplier_key ?? 'wasim');
+        $runUuid = (string) $lockedRun->uuid;
+        $capabilityHint = $isReconcile ? 'reconcile' : 'purchase';
+
+        DB::afterCommit(function () use ($supplierKey, $errorCode, $runUuid, $capabilityHint): void {
+            app(ObserveAutomationSafetySignal::class)->handle([
+                'supplier_key' => $supplierKey,
+                'failure_code' => $errorCode,
+                'source_type' => 'automation_run',
+                'source_key' => $runUuid.':'.$errorCode,
+                'capability_hint' => $capabilityHint,
+                'occurred_at' => now(),
+            ]);
+        });
     }
 
     private function markReconcileExhausted(

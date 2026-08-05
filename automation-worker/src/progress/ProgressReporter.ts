@@ -40,6 +40,8 @@ export class ProgressReporter {
   private failures = 0;
   private lastStep: ProgressStep | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private detectedUiVersion: string | null = null;
+  private pageContractVersion: string | null = null;
 
   constructor(options: ProgressReporterOptions) {
     this.progressUrl = options.progressUrl?.trim() || null;
@@ -52,6 +54,12 @@ export class ProgressReporter {
     this.sessionAlias = options.sessionAlias;
     this.heartbeatIntervalMs = options.heartbeatIntervalMs
       ?? Number(process.env.FULFILLMENT_AUTOMATION_PROGRESS_HEARTBEAT_SECONDS ?? DEFAULT_HEARTBEAT_SECONDS) * 1000;
+  }
+
+  /** Code-owned UI / contract versions once detection succeeds (C1.2). */
+  setContractMeta(detectedUiVersion: string | null, pageContractVersion: string | null): void {
+    this.detectedUiVersion = detectedUiVersion;
+    this.pageContractVersion = pageContractVersion;
   }
 
   /** Non-blocking: callers should not await this. */
@@ -126,8 +134,8 @@ export class ProgressReporter {
       worker_build: this.workerBuild,
       driver_name: this.driverName,
       driver_version: this.driverVersion,
-      detected_ui_version: null,
-      page_contract_version: null,
+      detected_ui_version: this.detectedUiVersion,
+      page_contract_version: this.pageContractVersion,
       session_alias: this.sessionAlias,
     });
 

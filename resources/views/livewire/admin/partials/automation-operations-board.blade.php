@@ -14,9 +14,9 @@
                 @class([
                     'rounded-xl border p-3',
                     'border-emerald-200 bg-emerald-50/70 dark:border-emerald-900/50 dark:bg-emerald-950/30' => in_array($card->state, ['enabled', 'ready', 'clear', 'available', 'idle', 'healthy'], true),
-                    'border-amber-200 bg-amber-50/70 dark:border-amber-900/50 dark:bg-amber-950/30' => in_array($card->state, ['degraded', 'active', 'unknown', 'attention'], true),
-                    'border-red-200 bg-red-50/70 dark:border-red-900/50 dark:bg-red-950/30' => in_array($card->state, ['disabled', 'unavailable'], true),
-                    'border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900/40' => ! in_array($card->state, ['enabled', 'ready', 'clear', 'available', 'idle', 'healthy', 'degraded', 'active', 'unknown', 'attention', 'disabled', 'unavailable'], true),
+                    'border-amber-200 bg-amber-50/70 dark:border-amber-900/50 dark:bg-amber-950/30' => in_array($card->state, ['degraded', 'active', 'unknown', 'attention', 'paused_auto', 'probe_required'], true),
+                    'border-red-200 bg-red-50/70 dark:border-red-900/50 dark:bg-red-950/30' => in_array($card->state, ['disabled', 'unavailable', 'paused_manual'], true),
+                    'border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900/40' => ! in_array($card->state, ['enabled', 'ready', 'clear', 'available', 'idle', 'healthy', 'degraded', 'active', 'unknown', 'attention', 'disabled', 'unavailable', 'paused_auto', 'paused_manual', 'probe_required'], true),
                 ])
             >
                 <div class="flex items-start justify-between gap-2">
@@ -48,6 +48,7 @@
 @php
     $sections = [
         ['key' => 'working_now', 'title' => __('messages.automation_working_now'), 'items' => $ops->workingNow],
+        ['key' => 'waiting_recovery', 'title' => __('messages.automation_waiting_for_automation_recovery'), 'items' => $ops->waitingRecovery],
         ['key' => 'waiting_supplier', 'title' => __('messages.automation_waiting_for_supplier'), 'items' => $ops->waitingSupplier],
         ['key' => 'scheduled_reconcile', 'title' => __('messages.automation_scheduled_reconciliation'), 'items' => $ops->scheduledReconcile],
         ['key' => 'needs_attention', 'title' => __('messages.automation_needs_attention'), 'items' => $ops->needsAttention],
@@ -141,6 +142,11 @@
                                     @endif
                                     @if ($item->workerBuild)
                                         <div class="mt-1 text-[10px] text-zinc-400">{{ $item->workerBuild }}</div>
+                                    @endif
+                                    @if ($item->detectedUiVersion || $item->pageContractVersion || $item->adapter)
+                                        <div class="mt-1 text-[10px] text-zinc-400">
+                                            {{ collect([$item->detectedUiVersion, $item->pageContractVersion, $item->adapter])->filter()->implode(' · ') }}
+                                        </div>
                                     @endif
                                 </td>
                                 <td class="px-2 py-2 text-xs text-zinc-500"

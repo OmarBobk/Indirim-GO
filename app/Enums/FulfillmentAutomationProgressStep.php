@@ -44,6 +44,13 @@ enum FulfillmentAutomationProgressStep: string
     case SupplierOrderCancelled = 'supplier_order_cancelled';
     case SchedulingNextReconcile = 'scheduling_next_reconcile';
 
+    case UiDetecting = 'ui_detecting';
+    case UiRecognized = 'ui_recognized';
+    case UiUnsupported = 'ui_unsupported';
+    case PageContractValidating = 'page_contract_validating';
+    case PageContractValid = 'page_contract_valid';
+    case PageContractFailed = 'page_contract_failed';
+
     /**
      * @return list<string>
      */
@@ -87,6 +94,15 @@ enum FulfillmentAutomationProgressStep: string
             self::SupplierOrderCompleted,
             self::SupplierOrderCancelled,
             self::SchedulingNextReconcile => ['reconcile'],
+
+            // UI detection runs before we know which phase we're in.
+            self::UiDetecting,
+            self::UiRecognized,
+            self::UiUnsupported,
+            // Page contract checks apply to both the purchase and reconcile flows.
+            self::PageContractValidating,
+            self::PageContractValid,
+            self::PageContractFailed => ['purchase', 'reconcile'],
 
             default => ['purchase', 'reconcile'],
         };

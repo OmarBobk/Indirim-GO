@@ -17,6 +17,8 @@ import {
   getLastSuccessfulTaskAt,
   getUptimeSeconds,
 } from './workerIdentity.js';
+import { runWasimHealthProbe, type WasimProbeRequest } from './drivers/wasim/ui/probe.js';
+import { WASIM_UI_V1_ID, WASIM_DRIVER_VERSION } from './drivers/wasim/ui/versions.js';
 import type { PriceScanPayload, RunPayload } from './types.js';
 
 const require = createRequire(import.meta.url);
@@ -25,8 +27,11 @@ const app = express();
 const port = Number(process.env.PORT ?? 3100);
 const secret = process.env.FULFILLMENT_AUTOMATION_CALLBACK_SECRET ?? '';
 const maxConcurrency = Number(process.env.FULFILLMENT_AUTOMATION_MAX_CONCURRENCY ?? 1);
+const probeMinIntervalMs = Number(process.env.FULFILLMENT_AUTOMATION_PROBE_MIN_INTERVAL_MS ?? 60_000);
 
 let isReady = true;
+let lastProbeStartedAt = 0;
+let probeInFlight = false;
 
 function getPlaywrightVersion(): string {
   try {
@@ -92,7 +97,10 @@ app.get('/health', (_req, res) => {
     wasim_submit_purchase: true,
     wasim_reconcile: true,
     wasim_price_scan: true,
+    wasim_health_probe: true,
     session_clear: true,
+    wasim_ui_adapters: [WASIM_UI_V1_ID],
+    wasim_driver_version: WASIM_DRIVER_VERSION,
   });
 });
 
@@ -142,6 +150,55 @@ app.post('/v1/price-scans', (req, res) => {
   res.status(202).json({ accepted: true, scan_uuid: payload.scan_uuid });
 
   void executePriceScan(payload);
+});
+
+app.post('/v1/suppliers/wasim/probe', async (req, res) => {
+  if (verifySignedRequest(req, res) === null) {
+    return;
+  }
+
+  if (probeInFlight || getActiveCount() > 0) {
+    res.status(409).json({ message: 'Wasim session busy; probe deferred', state: 'busy' });
+
+    return;
+  }
+
+  const now = Date.now();
+
+  if (now - lastProbeStartedAt < probeMinIntervalMs) {
+    res.status(429).json({ message: 'Probe rate limited', retry_after_ms: probeMinIntervalMs - (now - lastProbeStartedAt) });
+
+    return;
+  }
+
+  const body = req.body as WasimProbeRequest;
+  const sessionKey = String(body.session_key ?? '').trim();
+
+  if (sessionKey === '') {
+    res.status(422).json({ message: 'session_key is required' });
+
+    return;
+  }
+
+  lastProbeStartedAt = now;
+  probeInFlight = true;
+
+  try {
+    const result = await runWasimHealthProbe({
+      mode: body.mode,
+      session_key: sessionKey,
+      credentials: body.credentials,
+      test_product: body.test_product ?? null,
+    });
+
+    res.json(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Probe failed';
+
+    res.status(500).json({ message, state: 'unreachable' });
+  } finally {
+    probeInFlight = false;
+  }
 });
 
 const server = app.listen(port, () => {

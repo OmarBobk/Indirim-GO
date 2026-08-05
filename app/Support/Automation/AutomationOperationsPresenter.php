@@ -91,6 +91,17 @@ final class AutomationOperationsPresenter
         );
     }
 
+    private function safeString(mixed $value): ?string
+    {
+        if (! is_string($value)) {
+            return null;
+        }
+
+        $trimmed = trim($value);
+
+        return $trimmed === '' ? null : $trimmed;
+    }
+
     private function honestSucceededPresentation(FulfillmentAutomationRun $run, ?Fulfillment $fulfillment): string
     {
         if (
@@ -117,6 +128,7 @@ final class AutomationOperationsPresenter
         $fulfillment?->loadMissing(['order', 'orderItem.product', 'orderItem.package']);
 
         $snapshot = $run?->progress_snapshot ?? [];
+        $resultPayload = is_array($run?->result_payload) ? $run->result_payload : [];
         $step = $run?->currentProgressStep();
         $phase = $forcePhase
             ?? (is_string(data_get($snapshot, 'phase')) ? (string) data_get($snapshot, 'phase') : null)
@@ -156,6 +168,14 @@ final class AutomationOperationsPresenter
             workerBuild: is_string(data_get($snapshot, 'worker_build')) ? (string) data_get($snapshot, 'worker_build') : null,
             workerInstanceId: is_string(data_get($snapshot, 'worker_instance_id')) ? (string) data_get($snapshot, 'worker_instance_id') : null,
             driverVersion: is_string(data_get($snapshot, 'driver_version')) ? (string) data_get($snapshot, 'driver_version') : null,
+            detectedUiVersion: $this->safeString(data_get($snapshot, 'detected_ui_version') ?? data_get($resultPayload, 'detected_ui_version')),
+            pageContractVersion: $this->safeString(
+                data_get($snapshot, 'page_contract_version')
+                    ?? data_get($snapshot, 'purchase_contract_version')
+                    ?? data_get($resultPayload, 'page_contract_version')
+                    ?? data_get($resultPayload, 'purchase_contract_version'),
+            ),
+            adapter: $this->safeString(data_get($snapshot, 'adapter') ?? data_get($resultPayload, 'adapter')),
             supplierOrderId: $run?->external_order_id
                 ?? (is_string(data_get($fulfillment?->meta, 'automation.supplier_order_id'))
                     ? (string) data_get($fulfillment?->meta, 'automation.supplier_order_id')
