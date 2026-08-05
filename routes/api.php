@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\V1\Catalog\CatalogHomeController;
 use App\Http\Controllers\Api\V1\Catalog\PackageIndexController;
 use App\Http\Controllers\Api\V1\Catalog\PackageShowController;
 use App\Http\Controllers\Api\V1\MeController;
+use App\Http\Controllers\Api\V1\Orders\OrderIndexController;
 use App\Http\Controllers\Api\V1\Orders\OrderShowController;
 use App\Http\Controllers\Api\V1\Purchase\CheckoutController;
 use App\Http\Controllers\Api\V1\Purchase\CheckoutQuoteController;
@@ -46,6 +47,7 @@ Route::prefix('v1')->middleware(SetApiLocale::class)->group(function (): void {
             Route::get('wallet/summary', WalletSummaryController::class)->name('api.v1.wallet.summary');
             Route::post('checkout/quote', CheckoutQuoteController::class)->name('api.v1.checkout.quote');
             Route::get('checkout/status', CheckoutStatusController::class)->name('api.v1.checkout.status');
+            Route::get('orders', OrderIndexController::class)->name('api.v1.orders.index');
             Route::get('orders/{order_number}', OrderShowController::class)
                 ->where('order_number', 'ORD-[A-Za-z0-9\-]+')
                 ->name('api.v1.orders.show');

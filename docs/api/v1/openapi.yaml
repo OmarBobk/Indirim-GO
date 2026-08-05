@@ -1,17 +1,22 @@
 openapi: 3.1.0
 info:
   title: İndirimGo Mobile API
-  version: 1.2.0
+  version: 1.3.0
   description: |
     Authoritative contract for the customer-only İndirimGo Mobile API
-    (M1 authentication + M2.1 catalog read models + M3.1 single-line purchase).
+    (M1 authentication + M2.1 catalog read models + M3.1 single-line purchase
+    + M4.1 owned order history and fulfillment status).
     Laravel is authoritative for authentication, authorization, validation,
-    catalog visibility, trusted price calculation, wallet spend checks, and
-    checkout. Flutter must never compute authoritative prices or totals.
+    catalog visibility, trusted price calculation, wallet spend checks,
+    checkout, and customer-owned order/fulfillment status projection.
+    Flutter must never compute authoritative prices or totals.
     When `prices_visible=false`, catalog money fields are null and quote/checkout
     return HTTP 409 `purchasing_unavailable` without ending the session.
     Wallet summary remains available to its owner. Checkout requires an
     `Idempotency-Key` header; only a hash of the key is stored (72-hour retention).
+    Order history money fields are historical ledger snapshots and remain present
+    even when catalog prices are hidden. Fulfillment progress is projected from
+    fulfillment rows, not from `orders.status` alone.
 
     Messages are localized from `Accept-Language`. Only `ar` and `en` are
     supported; unsupported or missing values fall back through the established
@@ -612,15 +617,70 @@ paths:
                 $ref: '#/components/schemas/ApiError'
         '429':
           $ref: '#/components/responses/TooManyRequests'
+  /orders:
+    get:
+      tags: [Orders]
+      summary: List owned customer orders
+      description: |
+        Returns a paginated list of orders owned by the authenticated customer.
+        Sorted stably by `created_at` descending, then `id` descending.
+        No search or filters. Requirement values, provider fields, claim metadata,
+        automation diagnostics, and internal pricing are never included.
+        Fulfillment progress is projected from fulfillment rows.
+      operationId: mobileListOrders
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AcceptLanguage'
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: per_page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+      responses:
+        '200':
+          description: Owned order history page (may be empty).
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: 'private, no-store'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderListSuccess'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/ForbiddenToken'
+        '422':
+          description: Validation failed for page or per_page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
   /orders/{order_number}:
     get:
       tags: [Orders]
       summary: Owned order purchase receipt
       description: |
-        Returns the minimal receipt for an order owned by the authenticated
-        customer. Missing and cross-customer orders both return 404
-        `order_not_found`. Requirement values and supplier/automation fields
-        are never included.
+        Returns the owned order receipt for the authenticated customer, including
+        additive M4.1 fulfillment projection fields. Missing and cross-customer
+        orders both return 404 `order_not_found`. Requirement values and
+        supplier/automation fields are never included. Response wrapper remains
+        `CheckoutSuccess` for M3 client compatibility.
       operationId: mobileShowOrder
       security:
         - bearerAuth: []
@@ -634,7 +694,7 @@ paths:
             pattern: '^ORD-[A-Za-z0-9\-]+$'
       responses:
         '200':
-          description: Owned receipt.
+          description: Owned receipt with fulfillment status.
           headers:
             Cache-Control:
               schema:
@@ -1502,6 +1562,101 @@ components:
           type: [integer, 'null']
         line_total:
           $ref: '#/components/schemas/Money'
+    FulfillmentStatus:
+      type: string
+      enum: [pending, queued, processing, completed, failed, cancelled]
+      description: |
+        Customer-safe aggregate fulfillment progress derived from fulfillment rows.
+        Unfinished units (queued/processing) keep the aggregate non-terminal even
+        when some units have failed.
+    CustomerOrderState:
+      type: string
+      enum: [needs_attention, in_progress, delivered, refunded, other]
+      description: Canonical customer-order classification for list badges.
+    FulfillmentSummary:
+      type: object
+      additionalProperties: false
+      required: [total, queued, processing, completed, failed, cancelled]
+      properties:
+        total:
+          type: integer
+          minimum: 0
+        queued:
+          type: integer
+          minimum: 0
+        processing:
+          type: integer
+          minimum: 0
+        completed:
+          type: integer
+          minimum: 0
+        failed:
+          type: integer
+          minimum: 0
+        cancelled:
+          type: integer
+          minimum: 0
+    OrderListItem:
+      type: object
+      additionalProperties: false
+      required:
+        - order_number
+        - created_at
+        - paid_at
+        - currency
+        - total
+        - payment_status
+        - fulfillment_status
+        - customer_state
+        - title
+        - item_count
+      properties:
+        order_number:
+          type: string
+          example: ORD-2026-000001
+        created_at:
+          type: string
+          format: date-time
+        paid_at:
+          type: [string, 'null']
+          format: date-time
+        currency:
+          type: string
+          const: USD
+        total:
+          $ref: '#/components/schemas/Money'
+        payment_status:
+          type: string
+          enum: [paid, pending_payment, processing, fulfilled, failed, refunded, cancelled]
+        fulfillment_status:
+          $ref: '#/components/schemas/FulfillmentStatus'
+        customer_state:
+          $ref: '#/components/schemas/CustomerOrderState'
+        title:
+          type: [string, 'null']
+          description: First order-item snapshot name by item id, or null when empty.
+        item_count:
+          type: integer
+          minimum: 0
+          description: Count of order items (not fulfillment units).
+    OrderListMeta:
+      type: object
+      additionalProperties: false
+      required: [pagination]
+      properties:
+        pagination:
+          $ref: '#/components/schemas/OffsetPagination'
+    OrderListSuccess:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderListItem'
+        meta:
+          $ref: '#/components/schemas/OrderListMeta'
     PurchaseReceipt:
       type: object
       additionalProperties: false
@@ -1512,15 +1667,21 @@ components:
         - currency
         - total
         - paid_at
+        - created_at
+        - fulfillment_status
+        - customer_state
+        - fulfillment_summary
         - items
       properties:
         order_number:
           type: string
         status:
           type: string
+          description: Raw order status value. Not customer delivery progress.
         payment_status:
           type: string
           enum: [paid, pending_payment, processing, fulfilled, failed, refunded, cancelled]
+          description: Payment-layer status. Legacy processing/fulfilled map to paid at runtime.
         currency:
           type: string
           const: USD
@@ -1529,6 +1690,15 @@ components:
         paid_at:
           type: [string, 'null']
           format: date-time
+        created_at:
+          type: string
+          format: date-time
+        fulfillment_status:
+          $ref: '#/components/schemas/FulfillmentStatus'
+        customer_state:
+          $ref: '#/components/schemas/CustomerOrderState'
+        fulfillment_summary:
+          $ref: '#/components/schemas/FulfillmentSummary'
         items:
           type: array
           items:
