@@ -43,10 +43,12 @@ Central map for indirimGo knowledge. Use this vault with [[Ask → Plan → Agen
 - [[Mobile M2.1 — Laravel Catalog API]] — catalog read API on `staging` (`485be1befcf99f9d4a337745ec0b4390529c79e1`, PR #40)
 - [[Mobile M2.2 — Flutter Commerce Shell]] — Flutter discovery UI on mobile `main` (`c2119116239a720638c16a0b113be34f36698a78`, PR #4)
 - [[Mobile M2.3 — Local Commerce Integration]] — Omar-accepted local Android verification (`http://10.0.2.2:8000/api/v1`)
-- [[Mobile M3.0 — Purchasing Architecture]] — accepted M3 scope (buy-now / single-line)
-- [[Mobile M3.1 Purchase API Contract]] — proposed OpenAPI 1.2.0 purchase contract
-- [[Mobile M3.1 — Laravel Purchase API]] — in review on `feature/mobile-m3.1-purchase-api`
-- Next after Omar accepts M3.1: M3.1R independent review, then Flutter M3.2 (not started)
+- [[Mobile M3.0 — Purchasing Architecture]] — accepted M3 scope (**Mobile M3 closed** after M3.3)
+- [[Mobile M3.1 Purchase API Contract]] — accepted OpenAPI 1.2.0 purchase contract
+- [[Mobile M3.1 — Laravel Purchase API]] — accepted on `staging` (`d23f961…`, PR #44)
+- [[Mobile M3.2 — Flutter Buy-Now Purchasing Flow]] — accepted on mobile `main` (`9e056f1…`, PR #5; includes recovery fix)
+- [[Mobile M3.3 — Local Purchase Integration]] — Omar-accepted local Android purchase walkthrough (`http://10.0.2.2:8000/api/v1`)
+- Next architecture candidate (not started): **Mobile M4.0 — Orders and Fulfillment Status Architecture Audit**
 
 ## Workflow
 
