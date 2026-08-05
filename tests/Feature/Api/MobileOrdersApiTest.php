@@ -31,11 +31,11 @@ function m41SeedOrder(
     array $orderAttributes = [],
     int $extraItems = 0,
 ): array {
-    static $packageOrder = 500000;
+    $nextOrder = ((int) Package::query()->max('order')) + random_int(1, 1000) + 1;
     $package = Package::factory()->create([
         'is_active' => true,
-        'order' => ++$packageOrder,
-        'slug' => 'm41-pkg-'.uniqid('', true),
+        'order' => $nextOrder,
+        'slug' => 'm41-pkg-'.str_replace('.', '', uniqid('', true)),
     ]);
     $product = Product::factory()->create([
         'package_id' => $package->id,
