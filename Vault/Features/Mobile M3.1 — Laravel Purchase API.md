@@ -1,12 +1,21 @@
 ---
-status: in_review
+status: shipped
 created: 2026-07-31
+updated: 2026-08-05
 feature: mobile-m3-1-laravel-purchase-api
 ---
 
 # Mobile M3.1 — Laravel Purchase API
 
 Customer-only single-line mobile purchasing API on Laravel `staging`.
+
+## Status
+
+**Accepted on Laravel `staging`.** Merged through PR #44 as
+`d23f961b1261a01f1adbd5eccfaae454ccfb8045`
+(`feat(api): Mobile M3.1 purchase and checkout API (#44)`).
+Real local MySQL concurrency gate: **all eight scenarios passed**.
+OpenAPI version **1.2.0**. Production deploy and `staging`→`main` remain outside this milestone.
 
 ## Goal
 
@@ -16,12 +25,14 @@ durable idempotent receipts and unknown-result recovery.
 
 ## Non-goals
 
-- Flutter implementation
+- Flutter implementation (delivered later as [[Mobile M3.2 — Flutter Buy-Now Purchasing Flow]])
 - Multi-line / server-persisted cart
 - Wallet top-ups, refunds, orders history, fulfillment tracking UI
 - Production deploy / `staging`→`main`
 
 ## Endpoints
+
+Contract: `docs/api/v1/openapi.yaml` **1.2.0** (link; do not duplicate schemas).
 
 | Method | Path | Throttle |
 | --- | --- | --- |
@@ -31,7 +42,21 @@ durable idempotent receipts and unknown-result recovery.
 | GET | `/api/v1/checkout/status` | `mobile-purchase-read` |
 | GET | `/api/v1/orders/{order_number}` | `mobile-purchase-read` |
 
-Additive: `GET /packages/{package}` now includes sanitized `requirements`.
+Additive: `GET /packages/{package}` includes sanitized `requirements`.
+
+## Recorded behaviors (accepted)
+
+- Single-line buy-now API (`items` max 1)
+- Wallet summary (`available_to_spend`, affordability inputs)
+- Quote + signed `price_fingerprint` (informational; checkout always reprices)
+- Required `Idempotency-Key` on checkout (and status recovery)
+- Atomic order / wallet debit / fulfillment row creation / attempt completion
+- Same-key replay and conflict handling; distinct keys = intentional separate purchases
+- Unknown-result status recovery via `GET /checkout/status`
+- Sanitized package requirements; Telescope redaction of `Idempotency-Key` and `requirements`
+- `prices_visible=false` → `409 purchasing_unavailable` (session retained)
+- Owned minimal receipt (`GET /orders/{order_number}` — cross-customer → 404)
+- Seventy-two-hour idempotency retention + scheduled pruning (`mobile-checkout:prune-attempts`)
 
 ## Financial path
 
@@ -63,14 +88,17 @@ Authoritative fulfillment row creation remains inside the payment transaction.
 
 ## Acceptance criteria
 
-- [ ] Draft PR on `staging` for Omar review
-- [ ] OpenAPI 1.2.0 fidelity tests green
-- [ ] Focused M3.1 Pest suite green
-- [ ] Not marked accepted until Omar review
+- [x] Merged to `staging` via PR #44 (`d23f961…`)
+- [x] OpenAPI 1.2.0 purchase contract
+- [x] Focused M3.1 suite + MySQL concurrency gate (8/8) accepted
+- [x] Accepted for Flutter M3.2 consumption
 
 ## Shipped
 
-<!-- Fill after Omar accepts -->
+- **Date:** 2026-08 (PR #44 → `staging`)
+- **Commit:** `d23f961b1261a01f1adbd5eccfaae454ccfb8045`
+- **OpenAPI:** `docs/api/v1/openapi.yaml` **1.2.0**
+- **Concurrency:** real local MySQL harness — all eight scenarios passed
 
 ## Gotchas
 
@@ -85,10 +113,10 @@ Authoritative fulfillment row creation remains inside the payment transaction.
 - SQLite cannot prove true parallel DB races; opt-in MySQL harness:
   `MOBILE_CONCURRENCY_TESTS=1` + disposable `*_concurrency` DB +
   `tests/Concurrency/MobileCheckoutConcurrencyHarnessTest.php`.
-  The harness self-spawns a cross-platform `artisan serve` child (Symfony Process)
-  with the same APP_KEY/DB env; no manual Terminal A is required.
 
 ## Related
 
 - [[Mobile M3.0 — Purchasing Architecture]]
 - [[Mobile M3.1 Purchase API Contract]]
+- [[Mobile M3.2 — Flutter Buy-Now Purchasing Flow]]
+- [[Mobile M3.3 — Local Purchase Integration]]
