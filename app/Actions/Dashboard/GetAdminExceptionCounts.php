@@ -4,19 +4,18 @@ declare(strict_types=1);
 
 namespace App\Actions\Dashboard;
 
-use App\Enums\FulfillmentAutomationRunStatus;
 use App\Enums\FulfillmentStatus;
 use App\Enums\PayoutRequestStatus;
 use App\Enums\TopupRequestStatus;
 use App\Enums\WalletTransactionType;
 use App\Models\Bug;
 use App\Models\Fulfillment;
-use App\Models\FulfillmentAutomationRun;
 use App\Models\Order;
 use App\Models\PayoutRequest;
 use App\Models\TopupRequest;
 use App\Models\User;
 use App\Models\WalletTransaction;
+use App\Support\Automation\AutomationActionRequiredQuery;
 use App\Support\Commissions\CommissionClawbackActionRequiredQuery;
 
 class GetAdminExceptionCounts
@@ -99,9 +98,7 @@ class GetAdminExceptionCounts
                     ->count()
                 : 0,
             'automation_needs_review' => $user->hasRole('admin')
-                ? FulfillmentAutomationRun::query()
-                    ->where('status', FulfillmentAutomationRunStatus::NeedsReview)
-                    ->count()
+                ? AutomationActionRequiredQuery::total()
                 : 0,
             'pending_payouts' => $user->can('manage_settlements')
                 ? PayoutRequest::query()

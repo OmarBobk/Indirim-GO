@@ -304,6 +304,7 @@ class FulfillmentAutomationService
             'credentials' => $supplier['credentials'] ?? [],
             'callback_urls' => [
                 'result' => URL::to('/internal/automation/runs/'.$run->uuid.'/result'),
+                'progress' => URL::to('/internal/automation/runs/'.$run->uuid.'/progress'),
                 'artifacts' => URL::to('/internal/automation/runs/'.$run->uuid.'/artifacts'),
             ],
             'expires_at' => now()->addSeconds((int) config('fulfillment_automation.timeouts.run_seconds', 300))->toIso8601String(),

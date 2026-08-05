@@ -8,6 +8,7 @@ use App\Enums\FulfillmentAutomationRunStatus;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
 
 class FulfillmentAutomationRun extends Model
@@ -32,6 +33,10 @@ class FulfillmentAutomationRun extends Model
         'finished_at',
         'callback_received_at',
         'meta',
+        'progress_sequence',
+        'last_heartbeat_at',
+        'current_step_started_at',
+        'progress_snapshot',
     ];
 
     /**
@@ -50,6 +55,10 @@ class FulfillmentAutomationRun extends Model
             'finished_at' => 'datetime',
             'callback_received_at' => 'datetime',
             'meta' => 'array',
+            'progress_sequence' => 'integer',
+            'last_heartbeat_at' => 'datetime',
+            'current_step_started_at' => 'datetime',
+            'progress_snapshot' => 'array',
         ];
     }
 
@@ -65,6 +74,18 @@ class FulfillmentAutomationRun extends Model
     public function fulfillment(): BelongsTo
     {
         return $this->belongsTo(Fulfillment::class);
+    }
+
+    public function progressEvents(): HasMany
+    {
+        return $this->hasMany(FulfillmentAutomationRunEvent::class, 'run_id');
+    }
+
+    public function currentProgressStep(): ?string
+    {
+        $step = data_get($this->progress_snapshot, 'step');
+
+        return is_string($step) && $step !== '' ? $step : null;
     }
 
     /**

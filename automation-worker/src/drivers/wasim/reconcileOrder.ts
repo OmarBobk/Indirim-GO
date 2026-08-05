@@ -1,6 +1,7 @@
 import type { Page } from 'playwright';
 import type { DriverResult, RunPayload } from '../../types.js';
 import type { RunLogger } from '../../logging/runLogger.js';
+import type { ProgressReporter } from '../../progress/ProgressReporter.js';
 import { openWasimOrdersPage } from './ensureOrdersPage.js';
 import {
   ensureWasimOrdersViewport,
@@ -129,6 +130,7 @@ export async function reconcileWasimOrder(
   payload: RunPayload,
   logger: RunLogger,
   screenshot: (label: string) => Promise<void>,
+  progress?: ProgressReporter,
 ): Promise<DriverResult> {
   const supplierOrderId = payload.supplier_order_id?.trim()
     ?? payload.external_order_id?.trim()
@@ -145,7 +147,9 @@ export async function reconcileWasimOrder(
 
   await ensureWasimOrdersViewport(page);
 
-  const ordersPage = await openWasimOrdersPage(page, payload, logger, screenshot);
+  progress?.step('opening_orders_page');
+
+  const ordersPage = await openWasimOrdersPage(page, payload, logger, screenshot, progress);
 
   if (!ordersPage.ok) {
     return {
@@ -156,11 +160,18 @@ export async function reconcileWasimOrder(
     };
   }
 
+  progress?.step('orders_page_loaded');
+
   try {
+    progress?.step('searching_supplier_order');
+
     const cancelled = await findOrderOnTab(page, 'cancelled', supplierOrderId, logger);
 
     if (cancelled !== null) {
       await screenshot('reconcile_cancelled');
+      progress?.step('supplier_order_found');
+      progress?.step('reading_supplier_status');
+      progress?.step('supplier_order_cancelled');
 
       return {
         outcome: 'failed',
@@ -182,6 +193,9 @@ export async function reconcileWasimOrder(
 
     if (completed !== null) {
       await screenshot('reconcile_completed');
+      progress?.step('supplier_order_found');
+      progress?.step('reading_supplier_status');
+      progress?.step('supplier_order_completed');
 
       return {
         outcome: 'success',
@@ -203,6 +217,10 @@ export async function reconcileWasimOrder(
 
     if (inProgress !== null) {
       await screenshot('reconcile_in_progress');
+      progress?.step('supplier_order_found');
+      progress?.step('reading_supplier_status');
+      progress?.step('supplier_order_pending');
+      progress?.step('scheduling_next_reconcile');
 
       return {
         outcome: 'pending_reconcile',
@@ -221,6 +239,7 @@ export async function reconcileWasimOrder(
     }
 
     await screenshot('reconcile_not_found');
+    progress?.step('scheduling_next_reconcile');
 
     return {
       outcome: 'pending_reconcile',
@@ -237,6 +256,7 @@ export async function reconcileWasimOrder(
 
     logger.log('reconcile_error', message, 'error');
     await screenshot('reconcile_tab_error');
+    progress?.step('scheduling_next_reconcile');
 
     return {
       outcome: 'pending_reconcile',

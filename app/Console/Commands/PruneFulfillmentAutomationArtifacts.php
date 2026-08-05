@@ -82,6 +82,8 @@ class PruneFulfillmentAutomationArtifacts extends Command
             $meta['artifacts_pruned_at'] = now()->toIso8601String();
             $run->update(['meta' => $meta]);
 
+            $run->progressEvents()->delete();
+
             $prunedRuns++;
         }
 

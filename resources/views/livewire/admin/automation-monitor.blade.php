@@ -138,6 +138,8 @@
         </div>
     </section>
 
+    @include('livewire.admin.partials.automation-operations-board')
+
     @include('livewire.admin.partials.automation-flow-guide')
 
     @if (! $automationEnabled)
@@ -442,7 +444,45 @@
                             <dt class="text-xs text-zinc-500 dark:text-zinc-400">{{ __('messages.automation_webhook_at') }}</dt>
                             <dd>{{ $panelRun->callback_received_at?->format('Y-m-d H:i:s') ?? '—' }}</dd>
                         </div>
+                        <div>
+                            <dt class="text-xs text-zinc-500 dark:text-zinc-400">{{ __('messages.automation_current_step') }}</dt>
+                            <dd>{{ $this->progressStepLabel($panelRun->currentProgressStep()) }}</dd>
+                        </div>
+                        <div>
+                            <dt class="text-xs text-zinc-500 dark:text-zinc-400">{{ __('messages.automation_last_heartbeat') }}</dt>
+                            <dd>{{ $panelRun->last_heartbeat_at?->format('Y-m-d H:i:s') ?? '—' }}</dd>
+                        </div>
+                        <div>
+                            <dt class="text-xs text-zinc-500 dark:text-zinc-400">{{ __('messages.automation_worker_instance') }}</dt>
+                            <dd class="break-all font-mono text-xs">{{ data_get($panelRun->progress_snapshot, 'worker_instance_id') ?? '—' }}</dd>
+                        </div>
+                        <div>
+                            <dt class="text-xs text-zinc-500 dark:text-zinc-400">{{ __('messages.automation_driver_version') }}</dt>
+                            <dd class="font-mono text-xs">{{ data_get($panelRun->progress_snapshot, 'driver_version') ?? '—' }}</dd>
+                        </div>
                     </dl>
+
+                    @php($progressEvents = $panelRun->progressEvents ?? collect())
+                    <div>
+                        <div class="mb-2 flex items-center gap-2">
+                            <flux:heading size="sm">{{ __('messages.automation_progress_timeline') }}</flux:heading>
+                            <flux:badge size="sm">{{ $progressEvents->count() }}</flux:badge>
+                        </div>
+                        @if ($progressEvents->isEmpty())
+                            <p class="text-sm text-zinc-500 dark:text-zinc-400">{{ __('messages.automation_progress_timeline_empty') }}</p>
+                        @else
+                            <ol class="space-y-2 border-s border-zinc-200 ps-3 dark:border-zinc-700">
+                                @foreach ($progressEvents as $event)
+                                    <li wire:key="progress-event-{{ $event->id }}" class="relative text-sm">
+                                        <span class="absolute -start-[0.4rem] top-1.5 size-2 rounded-full bg-cyan-500" aria-hidden="true"></span>
+                                        <div class="font-medium text-zinc-900 dark:text-zinc-100">{{ $this->progressStepLabel($event->step) }}</div>
+                                        <div class="font-mono text-[10px] text-zinc-400">#{{ $event->sequence }} · {{ $event->phase }} · {{ $event->step }}</div>
+                                        <div class="text-xs text-zinc-500">{{ $event->occurred_at?->format('Y-m-d H:i:s') }}</div>
+                                    </li>
+                                @endforeach
+                            </ol>
+                        @endif
+                    </div>
 
                     <div x-ref="screenshotsSection">
                         <div class="mb-2 flex items-center gap-2">

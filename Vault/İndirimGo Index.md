@@ -25,11 +25,11 @@ Central map for indirimGo knowledge. Use this vault with [[Ask → Plan → Agen
 - [[Customer Financial Centre]] — M6 closed (M6.8); Financial Control Centre shipped
 - [[Customer Activity]] — M5 Activity feed (shipped; Home Needs attention deferred)
 - [[M7 — Financial Risk and Admin Operations]] — Track B closed (M7.0–M7.2.4)
-- [[C1 — Automation Reliability and Supplier UI Resilience]] — Track C; **C1.0 architecture done** (2026-08-01); C1.1 next
+- [[C1 — Automation Reliability and Supplier UI Resilience]] — Track C; **C1.1 shipped** (2026-08-05); C1.2 next
 
 ## Roadmap
 
-- [[Future Roadmap - Automation and Growth]] — Track C **active** (C1.0 done → C1.1); Track D backlog; Track B closed
+- [[Future Roadmap - Automation and Growth]] — Track C **active** (C1.1 shipped → C1.2); Track D backlog; Track B closed
 - Track B complete through **M7.2.4 Historical Commission Exposure**
 
 ## Mobile

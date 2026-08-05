@@ -20,7 +20,7 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - **Optional realtime isolation:** authentication and other authoritative flows must not fail when optional Reverb/Pusher publication fails. Durable activity rows remain; `ActivityLogBroadcaster` isolates `ActivityLogChanged` transport errors with safe logs (no signed broadcaster URLs/secrets).
 - **Agent rules:** follow `.cursor/rules/laravel-boost.mdc` for stack versions, conventions, and karman.store financial guardrails.
 - **Branch reality (Aug 2026):** Checkout **`staging`** has M6 Customer Financial Centre + Mobile API through **M3.1** (purchase). **Track B (M7 commission clawbacks M7.0–M7.2.4)** is complete on branch **`local/commission-policy`** (tip includes `2352ba0`) — merge before assuming clawback code/routes exist in the running tree. Feature brief: `Vault/Features/M7 — Financial Risk and Admin Operations.md`. Permissions: `Docs/roles.md`.
-- **Track C / C1 (active architecture):** **C1.0** Automation Operations + Supplier UI Resilience architecture completed 2026-08-01 (docs/vault only — **not shipped**). Canonical note: `Vault/Features/C1 — Automation Reliability and Supplier UI Resilience.md`. Next implementable slice: **C1.1** Live Automation Operations Dashboard (progress/heartbeat + working-now). Do not begin C1.2 adapters/circuits inside C1.1. Existing automation behavior in §9 remains current production truth until C1.x ships.
+- **Track C / C1 (active):** **C1.1 shipped** 2026-08-05 — Live Automation Operations Dashboard + structured progress/heartbeat (`POST /internal/automation/runs/{uuid}/progress`, run snapshot + `fulfillment_automation_run_events`, upgraded `/admin/automation` board, richer worker `/health`, heartbeat-aware stale). Canonical note: `Vault/Features/C1 — Automation Reliability and Supplier UI Resilience.md`. **Do not begin C1.2** adapters/UI contracts/circuits inside leftover C1.1 work. Progress never mutates fulfillment/financial finality.
 
 ---
 
@@ -162,11 +162,12 @@ Use this as the primary prompt context for AI tools that will plan or implement 
   - Jobs: `ScheduleWasimOrderReconcile`, `DispatchWasimReconcileJob`, `ReserveFulfillmentAutomationReconcileRun`.
 - **Run statuses:** `reserved`, `dispatched`, `running`, `succeeded`, `failed`, `needs_review`, `cancelled` (`FulfillmentAutomationRunStatus`).
 - **Scheduled dispatch:** `fulfillment:dispatch-automation` (every minute when enabled); stale sweep: `fulfillment:sweep-stale-automation-runs`.
-- **Admin UI:** `/admin/automation` (admin role) — runs inbox (Reverb live updates, no polling), needs-review queue, worker health/build check, Wasim credential form, **clear browser session**, collapsible flow guide, purchase/reconcile detail columns.
+- **Admin UI:** `/admin/automation` (admin role) — **C1.1 operations board** (health cards, working now, waiting supplier, scheduled reconcile, needs attention, recent outcomes) + runs inbox (Reverb live updates), needs-review queue, worker health/build check, Wasim credential form, **clear browser session**, collapsible flow guide, purchase/reconcile detail + **progress timeline**, retry/cancel.
+- **Progress (C1.1):** worker HMAC `POST /internal/automation/runs/{uuid}/progress`; snapshot columns + bounded events; heartbeats do not create event rows or flood broadcasts.
 - **Wasim credentials:** `website_settings.wasim_automation_username` / `wasim_automation_password` (encrypted) override env; saving credentials calls worker **`POST /v1/sessions/clear`** for `wasim-main` session. Worker stores credential fingerprint per session and invalidates stale Playwright `storageState` when credentials change.
 - **Intervention actions:** `CancelFulfillmentAutomationRun`, `RetryFulfillmentAutomation`, admin claim cancels active runs (`ClaimFulfillment`).
-- **Worker:** `automation-worker/` Playwright service; Wasim drivers: `submitPurchase`, `reconcileOrder`, `ordersPageHelpers`; suppliers in `config/fulfillment_automation.php`.
-- **Callbacks:** `POST /internal/automation/runs/{uuid}/result|artifacts` (CSRF exempt, HMAC middleware). Worker also exposes **`POST /v1/sessions/clear`** (HMAC). Artifacts at `admin/fulfillment-automation/runs/{run}/artifact`.
+- **Worker:** `automation-worker/` Playwright service; Wasim drivers: `submitPurchase` (incl. `pre_submit` artifact), `reconcileOrder`, `ordersPageHelpers`; progress reporter + build `2026-08-01-c1.1-progress`; suppliers in `config/fulfillment_automation.php`.
+- **Callbacks:** `POST /internal/automation/runs/{uuid}/result|progress|artifacts` (CSRF exempt, HMAC middleware). Worker also exposes **`POST /v1/sessions/clear`** (HMAC). Artifacts at `admin/fulfillment-automation/runs/{run}/artifact`.
 
 ### Supplier price scanning (Wasim)
 

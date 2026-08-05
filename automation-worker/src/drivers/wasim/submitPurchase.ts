@@ -1,6 +1,7 @@
 import type { Page } from 'playwright';
 import type { DriverResult, RunPayload } from '../../types.js';
 import type { RunLogger } from '../../logging/runLogger.js';
+import type { ProgressReporter } from '../../progress/ProgressReporter.js';
 import {
   isSupplierOrderPendingReconcile,
   isSupplierOrderRejected,
@@ -26,7 +27,10 @@ export async function submitWasimPurchase(
   logger: RunLogger,
   screenshot: (label: string) => Promise<void>,
   context: ProductContext,
+  progress?: ProgressReporter,
 ): Promise<DriverResult> {
+  progress?.step('preparing_submission');
+
   const buyButton = page.locator('#product-request-buyid, a:has-text("إتمام الشراء")').first();
 
   try {
@@ -42,13 +46,19 @@ export async function submitWasimPurchase(
     };
   }
 
+  progress?.step('capturing_pre_submit_artifact');
+  await screenshot('pre_submit');
+
   logger.log('submit_purchase', 'Clicking Wasim purchase button');
+  progress?.step('submitting_purchase');
 
   await buyButton.click();
 
   const swalContainer = page.locator(
     '.swal2-container.swal2-backdrop-show .swal2-popup.swal2-show',
   ).first();
+
+  progress?.step('waiting_supplier_confirmation');
 
   try {
     await swalContainer.waitFor({ state: 'visible', timeout: 30_000 });
@@ -102,6 +112,9 @@ export async function submitWasimPurchase(
       };
     }
 
+    progress?.step('supplier_submission_accepted');
+    progress?.step('supplier_order_id_captured', undefined, { supplier_order_id: parsed.supplierOrderId });
+
     return {
       outcome: 'submitted',
       externalOrderId: parsed.supplierOrderId,
@@ -131,6 +144,9 @@ export async function submitWasimPurchase(
 
   if (isSupplierOrderPendingReconcile(parsed.supplierStatus, parsed.supplierOrderId)) {
     const replyNote = parsed.supplierReply ? ` (${parsed.supplierReply})` : '';
+
+    progress?.step('supplier_submission_accepted');
+    progress?.step('supplier_order_id_captured', undefined, { supplier_order_id: parsed.supplierOrderId });
 
     return {
       outcome: 'submitted',

@@ -1,6 +1,7 @@
 import type { Page } from 'playwright';
 import type { RunPayload } from '../../types.js';
 import type { RunLogger } from '../../logging/runLogger.js';
+import type { ProgressReporter } from '../../progress/ProgressReporter.js';
 import { isWasimHostname, resolveWasimProductUrl } from './urls.js';
 
 export function isWasimLoginPage(url: string): boolean {
@@ -91,6 +92,7 @@ async function loginFromCurrentPage(
   productUrl: string,
   logger: RunLogger,
   screenshot: (label: string) => Promise<void>,
+  progress?: ProgressReporter,
 ): Promise<{ ok: true } | { ok: false; errorCode: string; message: string }> {
   const username = payload.credentials?.username?.trim();
   const password = payload.credentials?.password;
@@ -116,6 +118,7 @@ async function loginFromCurrentPage(
   }
 
   logger.log('login', 'Submitting credentials after product redirect');
+  progress?.step('authentication_started');
 
   await submitLoginForm(page, username, password);
 
@@ -155,6 +158,7 @@ async function loginFromCurrentPage(
   }
 
   logger.log('login', `Authenticated — returned to product page ${page.url()}`);
+  progress?.step('authentication_succeeded');
 
   return { ok: true };
 }
@@ -164,6 +168,7 @@ export async function openWasimProductPage(
   payload: RunPayload,
   logger: RunLogger,
   screenshot: (label: string) => Promise<void>,
+  progress?: ProgressReporter,
 ): Promise<
   | { ok: true; productApi: string; productUrl: string; url: string }
   | { ok: false; errorCode: string; message: string }
@@ -178,9 +183,12 @@ export async function openWasimProductPage(
     };
   }
 
+  progress?.step('session_loading');
+
   const productUrl = resolveWasimProductUrl(productApi);
 
   logger.log('navigate', `Opening product target ${productUrl}`);
+  progress?.step('opening_product');
 
   const response = await page.goto(productUrl, {
     waitUntil: 'domcontentloaded',
@@ -195,9 +203,12 @@ export async function openWasimProductPage(
     logger.log('navigate', 'Network idle timeout after product page load', 'warn');
   });
 
+  progress?.step('session_checking');
+
   if (isWasimProductRequestPage(page.url(), productUrl)) {
     logger.log('navigate', 'Product page opened without login');
     await screenshot('product');
+    progress?.step('product_loaded');
 
     return {
       ok: true,
@@ -209,14 +220,16 @@ export async function openWasimProductPage(
 
   if (isWasimLoginPage(page.url())) {
     logger.log('login', `Login required — redirected to ${page.url()}`);
+    progress?.step('login_required');
 
-    const loginResult = await loginFromCurrentPage(page, payload, productUrl, logger, screenshot);
+    const loginResult = await loginFromCurrentPage(page, payload, productUrl, logger, screenshot, progress);
 
     if (!loginResult.ok) {
       return loginResult;
     }
 
     await screenshot('product');
+    progress?.step('product_loaded');
 
     return {
       ok: true,

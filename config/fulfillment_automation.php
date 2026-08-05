@@ -23,6 +23,23 @@ return [
         'signature_skew_seconds' => (int) env('FULFILLMENT_AUTOMATION_SIGNATURE_SKEW', 300),
     ],
 
+    'progress' => [
+        'heartbeat_interval_seconds' => (int) env('FULFILLMENT_AUTOMATION_PROGRESS_HEARTBEAT_SECONDS', 15),
+        'emitted_at_skew_seconds' => (int) env('FULFILLMENT_AUTOMATION_PROGRESS_SKEW_SECONDS', 300),
+        'max_payload_bytes' => (int) env('FULFILLMENT_AUTOMATION_PROGRESS_MAX_BYTES', 8192),
+        'events_per_run_limit' => (int) env('FULFILLMENT_AUTOMATION_PROGRESS_EVENTS_LIMIT', 100),
+        'worker_health_cache_seconds' => (int) env('FULFILLMENT_AUTOMATION_WORKER_HEALTH_CACHE', 15),
+    ],
+
+    'liveness' => [
+        'purchase_slow_seconds' => (int) env('FULFILLMENT_AUTOMATION_PURCHASE_SLOW_SECONDS', 180),
+        'purchase_stale_seconds' => (int) env('FULFILLMENT_AUTOMATION_PURCHASE_STALE_SECONDS', 480),
+        'reconcile_slow_seconds' => (int) env('FULFILLMENT_AUTOMATION_RECONCILE_SLOW_SECONDS', 180),
+        'reconcile_stale_seconds' => (int) env('FULFILLMENT_AUTOMATION_RECONCILE_STALE_SECONDS', 480),
+        'legacy_fallback_stale_minutes' => (int) env('FULFILLMENT_AUTOMATION_LEGACY_STALE_MINUTES', 30),
+        'scheduled_reconcile_grace_seconds' => (int) env('FULFILLMENT_AUTOMATION_RECONCILE_SCHEDULE_GRACE', 600),
+    ],
+
     'artifacts' => [
         'retention_days' => (int) env('FULFILLMENT_AUTOMATION_ARTIFACT_RETENTION_DAYS', 30),
     ],

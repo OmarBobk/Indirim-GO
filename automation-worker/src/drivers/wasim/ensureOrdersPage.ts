@@ -1,6 +1,7 @@
 import type { Page } from 'playwright';
 import type { RunPayload } from '../../types.js';
 import type { RunLogger } from '../../logging/runLogger.js';
+import type { ProgressReporter } from '../../progress/ProgressReporter.js';
 import { isWasimLoginPage } from './login.js';
 import { WASIM_ORDERS_URL, isWasimHostname } from './urls.js';
 
@@ -33,6 +34,7 @@ export async function openWasimOrdersPage(
   payload: RunPayload,
   logger: RunLogger,
   screenshot: (label: string) => Promise<void>,
+  progress?: ProgressReporter,
 ): Promise<{ ok: true } | { ok: false; errorCode: string; message: string }> {
   const username = payload.credentials?.username?.trim();
   const password = payload.credentials?.password;
@@ -56,8 +58,10 @@ export async function openWasimOrdersPage(
 
   if (isWasimLoginPage(page.url())) {
     logger.log('login', 'Login required for Wasim orders page');
+    progress?.step('login_required');
     await screenshot('login');
 
+    progress?.step('authentication_started');
     await submitLoginForm(page, username, password);
 
     try {
@@ -67,6 +71,10 @@ export async function openWasimOrdersPage(
       );
     } catch {
       // Verified below.
+    }
+
+    if (!isWasimLoginPage(page.url())) {
+      progress?.step('authentication_succeeded');
     }
   }
 

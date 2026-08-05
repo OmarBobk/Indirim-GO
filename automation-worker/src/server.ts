@@ -1,15 +1,53 @@
+import fs from 'node:fs';
+import { createRequire } from 'node:module';
+import path from 'node:path';
 import express from 'express';
 import { verifyLaravelRequest } from './auth/verifyLaravel.js';
 import { clearSessionState } from './browser/sessionStore.js';
 import { WORKER_BUILD } from './build.js';
+import { listSupportedDrivers } from './drivers/index.js';
+import { DRIVER_VERSIONS } from './progress/steps.js';
 import { executeRun } from './runs/executeRun.js';
 import { executePriceScan } from './runs/executePriceScan.js';
 import { shutdownBrowserPool } from './browser/pool.js';
+import { workerStoragePath } from './storage/workerPaths.js';
+import {
+  WORKER_INSTANCE_ID,
+  getActiveCount,
+  getLastSuccessfulTaskAt,
+  getUptimeSeconds,
+} from './workerIdentity.js';
 import type { PriceScanPayload, RunPayload } from './types.js';
+
+const require = createRequire(import.meta.url);
 
 const app = express();
 const port = Number(process.env.PORT ?? 3100);
 const secret = process.env.FULFILLMENT_AUTOMATION_CALLBACK_SECRET ?? '';
+const maxConcurrency = Number(process.env.FULFILLMENT_AUTOMATION_MAX_CONCURRENCY ?? 1);
+
+let isReady = true;
+
+function getPlaywrightVersion(): string {
+  try {
+    const packageJson = require('playwright/package.json') as { version: string };
+
+    return packageJson.version;
+  } catch {
+    return 'unknown';
+  }
+}
+
+function isSessionStoreAvailable(): boolean {
+  try {
+    const keepFilePath = workerStoragePath('sessions', '.keep');
+    fs.accessSync(path.dirname(keepFilePath), fs.constants.R_OK | fs.constants.W_OK);
+
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 app.use(
   express.json({
@@ -34,9 +72,23 @@ function verifySignedRequest(req: express.Request, res: express.Response): strin
 }
 
 app.get('/health', (_req, res) => {
+  const lastSuccessfulTaskAt = getLastSuccessfulTaskAt();
+
   res.json({
     status: 'ok',
+    ready: isReady,
     build: WORKER_BUILD,
+    instance_id: WORKER_INSTANCE_ID,
+    uptime_seconds: getUptimeSeconds(),
+    active_count: getActiveCount(),
+    configured_max_concurrency: maxConcurrency,
+    browser_available: true,
+    playwright_version: getPlaywrightVersion(),
+    session_store_available: isSessionStoreAvailable(),
+    supported_drivers: listSupportedDrivers(),
+    driver_versions: DRIVER_VERSIONS,
+    last_successful_task_at: lastSuccessfulTaskAt !== null ? lastSuccessfulTaskAt.toISOString() : null,
+    server_time: new Date().toISOString(),
     wasim_submit_purchase: true,
     wasim_reconcile: true,
     wasim_price_scan: true,
@@ -93,10 +145,11 @@ app.post('/v1/price-scans', (req, res) => {
 });
 
 const server = app.listen(port, () => {
-  console.log(JSON.stringify({ event: 'worker_started', port, build: WORKER_BUILD }));
+  console.log(JSON.stringify({ event: 'worker_started', port, build: WORKER_BUILD, instance_id: WORKER_INSTANCE_ID }));
 });
 
 process.on('SIGTERM', async () => {
+  isReady = false;
   server.close();
   await shutdownBrowserPool();
   process.exit(0);

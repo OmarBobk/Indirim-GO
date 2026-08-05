@@ -10,13 +10,13 @@ export const wasimDriver: RunDriver = {
   supplierKey: 'wasim',
 
   async execute(ctx) {
-    const { page, payload, logger } = ctx;
+    const { page, payload, logger, progress } = ctx;
 
     if (payload.automation_phase === 'reconcile') {
-      return reconcileWasimOrder(page, payload, logger, ctx.screenshot);
+      return reconcileWasimOrder(page, payload, logger, ctx.screenshot, progress);
     }
 
-    const productResult = await openWasimProductPage(page, payload, logger, ctx.screenshot);
+    const productResult = await openWasimProductPage(page, payload, logger, ctx.screenshot, progress);
 
     if (!productResult.ok) {
       return {
@@ -43,6 +43,7 @@ export const wasimDriver: RunDriver = {
         payload,
         logger,
         ctx.screenshot,
+        progress,
       );
 
       if (!priceResult.ok) {
@@ -68,7 +69,7 @@ export const wasimDriver: RunDriver = {
       unitPrice = priceResult.unitPrice;
       supplierTotal = priceResult.supplierTotal;
 
-      const fillResult = await fillPlayerId(page, payload, logger, ctx.screenshot);
+      const fillResult = await fillPlayerId(page, payload, logger, ctx.screenshot, progress);
 
       if (!fillResult.ok) {
         return {
@@ -86,7 +87,7 @@ export const wasimDriver: RunDriver = {
 
       playerId = fillResult.playerId;
     } else {
-      const customResult = await runCustomAmountProductSteps(page, payload, logger, ctx.screenshot);
+      const customResult = await runCustomAmountProductSteps(page, payload, logger, ctx.screenshot, progress);
 
       if (!customResult.ok) {
         return {
@@ -128,6 +129,6 @@ export const wasimDriver: RunDriver = {
       customQuantity,
       supplierTotal,
       productAmountMode: payload.product_amount_mode ?? 'fixed',
-    });
+    }, progress);
   },
 };

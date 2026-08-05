@@ -5,54 +5,60 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\Fulfillments\FailFulfillment;
+use App\Enums\AutomationRunLiveness;
 use App\Enums\FulfillmentAutomationRunStatus;
 use App\Models\Fulfillment;
 use App\Models\FulfillmentAutomationRun;
 use App\Services\FulfillmentAutomationService;
+use App\Support\Automation\AutomationRunLivenessClassifier;
 use Illuminate\Console\Command;
-use Illuminate\Support\Carbon;
 
 class SweepStaleFulfillmentAutomationRunsCommand extends Command
 {
-    protected $signature = 'fulfillment:sweep-stale-automation-runs {--minutes= : Stale threshold in minutes}';
+    protected $signature = 'fulfillment:sweep-stale-automation-runs {--minutes= : Legacy fallback stale threshold override in minutes}';
 
     protected $description = 'Fail fulfillments with automation runs stuck past the timeout';
 
-    public function handle(FulfillmentAutomationService $automationService): int
-    {
+    public function handle(
+        FulfillmentAutomationService $automationService,
+        AutomationRunLivenessClassifier $livenessClassifier,
+    ): int {
         if (! $automationService->isEnabled()) {
             $this->line('Fulfillment automation is disabled.');
 
             return self::SUCCESS;
         }
 
-        $minutes = $this->option('minutes');
-        $minutes = $minutes !== null && ctype_digit((string) $minutes)
-            ? (int) $minutes
-            : (int) config('fulfillment_automation.timeouts.stale_sweep_minutes', 30);
+        $minutesOption = $this->option('minutes');
 
-        $cutoff = Carbon::now()->subMinutes($minutes);
+        if ($minutesOption !== null && ctype_digit((string) $minutesOption)) {
+            config(['fulfillment_automation.liveness.legacy_fallback_stale_minutes' => (int) $minutesOption]);
+        }
 
-        $staleRuns = FulfillmentAutomationRun::query()
+        // Reserved runs are never dispatched yet, so they are excluded here by design.
+        $activeRuns = FulfillmentAutomationRun::query()
             ->whereIn('status', [
                 FulfillmentAutomationRunStatus::Dispatched,
                 FulfillmentAutomationRunStatus::Running,
             ])
-            ->where(function ($query) use ($cutoff): void {
-                $query->where('started_at', '<=', $cutoff)
-                    ->orWhere(function ($sub) use ($cutoff): void {
-                        $sub->whereNull('started_at')
-                            ->where('dispatched_at', '<=', $cutoff);
-                    });
-            })
             ->get();
 
         $swept = 0;
 
-        foreach ($staleRuns as $run) {
+        foreach ($activeRuns as $run) {
+            if ($livenessClassifier->classifyActiveWorkerRun($run) !== AutomationRunLiveness::Stale) {
+                continue;
+            }
+
             $fulfillment = Fulfillment::query()->find($run->fulfillment_id);
 
             if ($fulfillment === null) {
+                continue;
+            }
+
+            // A fulfillment already waiting on a scheduled Wasim reconcile is not
+            // "stuck" — it is intentionally idle between reconcile attempts.
+            if ($livenessClassifier->isWaitingSupplier($fulfillment)) {
                 continue;
             }
 
@@ -72,7 +78,7 @@ class SweepStaleFulfillmentAutomationRunsCommand extends Command
 
             app(FailFulfillment::class)->handle(
                 $fulfillment,
-                'Automation timed out after '.$minutes.' minutes.',
+                'Automation timed out.',
                 'automation',
                 null,
             );

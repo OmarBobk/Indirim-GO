@@ -1,256 +1,131 @@
 ---
-status: architecture
+status: shipped-partial
 created: 2026-08-01
+updated: 2026-08-05
 owner: Omar
 type: feature
-milestone: C1.0
+milestone: C1.1
 ---
 
 # C1 — Automation Reliability and Supplier UI Resilience
-
-> Architecture-only (C1.0). Not shipped. Do not treat as implementation.
 
 Related: [[Fulfillments & Automation]], [[Future Roadmap - Automation and Growth]], [[İndirimGo Index]]
 
 ## Goal
 
-Give admins a live Automation Operations Dashboard, structured run progress/heartbeats, and a Wasim driver architecture that survives supplier UI changes via versioned adapters, page contracts, unknown-UI quarantine, and circuit breakers — without moving business truth into the worker.
+Give admins a live Automation Operations Dashboard, structured run progress/heartbeats, and (later) Wasim UI adapters/contracts/circuit breakers — without moving business truth into the worker.
 
 ## Constraints
 
 - Stack: Laravel 12, Livewire 4, Tailwind 4, Flux **FREE** only
 - Laravel owns business/workflow state; worker executes browser only
-- HMAC callbacks; no worker trust for financial/fulfillment finality beyond validated result contracts
-- Backend denial: 404 by design; prefer permission-based access over role shortcuts where project is moving that way
+- HMAC callbacks; progress never mutates fulfillment/financial finality
+- C1.1 admin-only under existing admin gate
 - No AI-generated click paths in production
-- Do not add packages without approval
 
-## Non-goals (C1.0)
+## Non-goals (still deferred)
 
-- No production code, migrations, worker/selector changes
-- No dashboard UI build, adapters, circuit breakers, or C1.1 start
-- No Git / deploy / server work
+- C1.2: UI adapters, UI-version detection, page contracts, session/supplier health probes
+- C1.3: circuit breakers, auto purchase pause, resume policies
+- Second supplier, selector redesign, Git/deploy in this milestone
 
-## Architecture status (2026-08-01)
+## Architecture status (2026-08-05)
 
-**C1.0 architecture accepted for planning.** Implementation split: **C1.1 → C1.4**. Active milestone after Omar decisions: **C1.1**.
-
-### Verdict (C1.0)
-
-Existing purchase/reconcile orchestration is solid enough to extend. Observability and UI resilience are the gaps: no mid-run progress/heartbeat, weak health signals, monolithic Wasim selectors, no UI-version detection/contracts/circuit breakers. Dashboard should **upgrade** `/admin/automation`, not replace it.
-
-### Architecture scores (C1.0)
-
-| Dimension | Score | Note |
-|---|---|---|
-| Architecture | **7.5 / 10** | Clear Laravel/worker split; missing progress + adapter layers |
-| Operational safety | **5.5 / 10** | Admin inbox exists; cannot answer “what step now?” |
-| Financial safety | **8 / 10** | HMAC + idempotent ingest; cancel/refund paths exist; stale may fail too aggressively |
-| UI resilience | **3 / 10** | Selectors inline; Arabic/Swal/DataTables coupled; no adapter/contract |
-
-**C1.1 readiness:** Ready after Omar decisions in §Must decide before C1.1. Do not start adapters/circuits in C1.1.
+**C1.0** architecture done (2026-08-01).  
+**C1.1 shipped** — Live Automation Operations Dashboard + structured progress/heartbeat.  
+**Next:** C1.2 Wasim UI Adapter and Contract Health (not started).
 
 ---
 
-## Current system snapshot (audit)
+## C1.1 shipped (2026-08-05)
 
-### Ownership
+### Progress protocol
 
-- Laravel: eligibility, reserve/dispatch/ingest, fulfillments, refunds, admin UI, schedules
-- Worker (`automation-worker/`): Playwright, Wasim purchase/reconcile/price-scan, session storageState, artifact upload
-- Kill switches: env `FULFILLMENT_AUTOMATION_ENABLED`, `WebsiteSetting::automation_enabled`, package `fulfillment_provider`
+- Route: `POST /internal/automation/runs/{uuid}/progress` (HMAC, same middleware as result)
+- Payload: `progress_sequence`, `phase`, `step` (allowlisted enum), `emitted_at`, `heartbeat`, safe message/params, worker/driver metadata, nullable UI/contract versions, `session_alias`
+- Monotonic sequence; duplicate/out-of-order ignored; terminal runs no-op
+- Progress **cannot** change fulfillment status, schedule refunds, or act as price authority
+- Final result callback remains outcome authority
 
-### Purchase lifecycle (authoritative)
+### Snapshot + events
 
-1. Eligibility → `FulfillmentAutomationService::isEligible`
-2. Reserve → `ReserveFulfillmentAutomationRun` (`reserved`, idempotency `automation:fulfillment:{id}:attempt:{n}`)
-3. Start fulfillment → `StartFulfillment` (`queued` → `processing`)
-4. Dispatch → `DispatchFulfillmentAutomationRun` → worker `POST /v1/runs` (run jumps to **`running`**; `dispatched` enum rarely persisted)
-5. Worker: session → product → price check → fill → submit Swal → callback
-6. Ingest `submitted` → run **`succeeded`**, fulfillment stays **`processing`**, meta `awaiting_wasim_reconcile` + `supplier_order_id`
-7. `ScheduleWasimOrderReconcile` → delayed `DispatchWasimReconcileJob`
+- Run columns: `progress_sequence`, `last_heartbeat_at`, `current_step_started_at`, `progress_snapshot` (JSON)
+- Table `fulfillment_automation_run_events` — unique `(run_id, sequence)`; created only on **step change**
+- Heartbeats update snapshot only (no event rows)
+- Per-run event prune via `progress.events_per_run_limit` (default 100); artifact prune also deletes events
 
-### Reconcile lifecycle
+### Step registry
 
-1. `isEligibleForReconcile` (processing + awaiting + supplier_order_id)
-2. `ReserveFulfillmentAutomationReconcileRun` (idempotency `…:reconcile:{n}`)
-3. Dispatch same worker path with `automation_phase=reconcile`
-4. Outcomes: `success` → CompleteFulfillment; `failed` (e.g. cancelled + refund path); `pending_reconcile` → run succeeded + reschedule; exhaust → `requires_review` meta **without** NeedsReview run / FailFulfillment
+`FulfillmentAutomationProgressStep` (+ worker `ALLOWED_STEPS`): shared + purchase + reconcile steps (no click-level noise). EN/AR labels under `messages.automation_step_*`.
 
-### Representation gotcha
+### Heartbeat / stale
 
-`submitted` and `pending_reconcile` are **callback outcomes**, not run statuses. Waiting work lives on **fulfillment meta**, while the purchase/reconcile **run row is terminal Succeeded**. Working-now board must query meta + scheduled jobs, not only `scopeActive`.
+- Worker heartbeat ~15s while owning a run (`progress.heartbeat_interval_seconds`)
+- Config `liveness.*`: purchase/reconcile slow 180s, stale 480s; legacy fallback 30m
+- Waiting supplier / scheduled reconcile are **not** worker-stale
+- Sweeper uses heartbeat-first classification; skips Reserved; FailFulfillment only for stale Running/Dispatched
 
-### Existing admin surface
+### Dashboard
 
-`/admin/automation` (`AutomationMonitor`) — admin role: KPIs, status inbox + Reverb `admin.automation`, needs-review, worker build probe, Wasim credentials, clear session, flow guide, retry/cancel/review, artifacts. Exception badge: `automation_needs_review` only.
+- Upgraded `/admin/automation` (not replaced)
+- `GetAutomationOperationsDashboard` → DTOs → presenter → board partial
+- Health cards: global, worker, active ops, needs attention, session (unknown until C1.2), driver
+- Sections: Working now, Waiting for supplier, Scheduled reconciliation, Needs attention, Recent outcomes + existing paginated inbox
+- Honest presentation: succeeded purchase + awaiting reconcile → “Supplier accepted — awaiting reconciliation”
+- Realtime: `run_progress_changed` refreshes ops board; does not reset history pagination; heartbeats not broadcast
+- Client-side elapsed timers only (display); server owns stale classification
 
-### Observability gaps
+### Worker
 
-- No `current_step` / heartbeat / progress callback
-- Worker `/health` = build + hardcoded capability booleans
-- Session health not probed
-- No UI version / page contract / circuit state
-- Stale sweep treats long `Running` as timeout → FailFulfillment (cannot distinguish supplier wait vs worker lost — purchase wait is short; reconcile wait is **between** runs)
-- Reconcile exhaustion under-visible in needs-review badge
-- `max_concurrent_runs` / `dispatch.max_attempts` configured but unused in PHP
-- Progress only in final `log_excerpt` (free-text steps)
+- `ProgressReporter`, instance ID, richer `/health`, build `2026-08-01-c1.1-progress`
+- Instrumentation around existing Wasim flow; `pre_submit` screenshot before buy click
+- Progress failures non-blocking; may set `progress_observability_degraded` on final payload
 
-### Worker / Wasim fragility
+### Exception counts
 
-- Workflow + selectors mixed (`submitPurchase.ts`, `reconcileOrder.ts`, `ordersPageHelpers.ts`, login duplicated)
-- Fragility: Swal2 classes, Arabic copy, DataTables `#responsiveDataTable2` + responsive expand + 1920×1080 viewport, placeholder text
-- No UI detector, page contracts, adapters, heartbeat
-- Artifacts: full-page PNG, no redaction; retention config 30 days
-- Build: `WORKER_BUILD = '2026-05-29-session-credentials'`
+`automation_needs_review` badge = needs-review runs + stale active + reconcile exhausted (`AutomationActionRequiredQuery`)
 
----
+### Tests
 
-## Target architecture (approved direction)
+- `AutomationProgressCallbackTest`, `AutomationOperationsDashboardTest`
+- Regression: `FulfillmentAutomationTest`, `AutomationAdminTest`, `PruneFulfillmentAutomationArtifactsTest`
+- Worker: `npm run test:progress` + build verify
 
-### Progress protocol (C1.1)
+### Key files
 
-- Combined HMAC **progress+heartbeat** callback (smallest reliable protocol); final result callback stays separate
-- Monotonic `progress_sequence`; safe message codes; no secrets/DOM/credentials; **no fulfillment mutation** from progress
-- Storage: **mutable snapshot on run** + **bounded append-only events** for meaningful step transitions (not every heartbeat)
-- SystemEvent = mirror only
+- `app/Actions/Fulfillments/IngestFulfillmentAutomationProgress.php`
+- `app/Actions/Fulfillments/GetAutomationOperationsDashboard.php`
+- `app/Support/Automation/*`
+- `app/Enums/FulfillmentAutomationProgressStep.php`
+- `app/Livewire/Admin/AutomationMonitor.php` + `partials/automation-operations-board.blade.php`
+- `automation-worker/src/progress/*`, `workerIdentity.ts`, Wasim progress hooks
+- Migration `2026_08_01_204758_add_progress_fields_to_fulfillment_automation_runs_table.php`
 
-### Recommended snapshot fields (prove need before migrating)
+## Acceptance criteria
 
-On `fulfillment_automation_runs` (or equivalent progress JSON column): `current_step`, `current_step_started_at`, `last_heartbeat_at`, `progress_sequence`, `safe_progress_message_code`, `worker_instance_id`, `worker_build`, `driver_name`, `driver_version`, `detected_ui_version`, `page_contract_version`, optional `session_state` / health snapshot refs.
-
-Prefer one JSON progress snapshot + bounded `fulfillment_automation_run_events` over dozens of loose columns.
-
-### Working-now inclusion
-
-Active run statuses (`reserved`/`dispatched`/`running`) **plus** fulfillments with `awaiting_wasim_reconcile` (waiting supplier / scheduled reconcile) even when latest run is `succeeded`.
-
-### Health models
-
-| Layer | States (v1) |
-|---|---|
-| Worker | reachable / ready / degraded / unavailable |
-| Session | unknown / authenticated / authentication_required / expired / invalid / clearing / unavailable |
-| Supplier purchase vs reconcile | healthy / degraded / authentication_required / unsupported_ui / maintenance / unreachable / contract_failed / circuit_open — **independent** |
-| Circuit (C1.3) | enabled / paused_auto / paused_manual / probe_required |
-
-Purchase circuit open → stop new purchase dispatch; keep reconcile if healthy; do not cancel accepted/submitted; do not auto-fail queued.
-
-### Supplier-driver split (C1.2)
-
-- Stable Wasim business workflow (ensureAuthenticated, openProduct, readPrice, …)
-- Versioned UI adapters (`WasimUiV1`, `WasimUiV2`, …) owning selectors
-- UI detector (multi-signature) → recognized / ambiguous / unknown / login / maintenance
-- Page-contract validators pre-submit / pre-reconcile act
-- Unknown/ambiguous → stop before purchase; artifacts; quarantine; consider circuit
-
-### Selector priority
-
-data attributes → form names → labels → a11y roles → stable URLs → semantic relationships → allowlisted text → CSS last resort → no nth-child as primary.
-
-### AI policy
-
-Allowed offline: sanitized artifact analysis, selector suggestions, fixture generation. **Forbidden runtime:** LLM choosing clicks/selectors, autonomous unknown-UI retry, sending secrets to LLMs.
-
-### Permissions
-
-Prefer small dedicated set if leaving admin-role gate: `view_automation_operations`, `manage_automation_operations` (session + circuit under manage). Avoid explosion. Current admin-only is acceptable interim if Omar keeps it.
-
----
-
-## Milestone split
-
-### C1.1 — Live Automation Operations Dashboard
-
-**In:** progress/heartbeat protocol + snapshot (+ optional bounded events), health header, working-now board, selective realtime on `admin.automation`, worker/session/build display, upgrade `/admin/automation`.
-
-**Out:** adapters, UI detector, contracts, circuit breaker, selector rewrites, Wasim UI changes.
-
-**Laravel:** callback ingest for progress, read models, Livewire board, config thresholds, possibly migration for snapshot/events.
-
-**Worker:** emit progress/heartbeat only (minimal); no selector/adapter rewrite.
-
-**Stop:** admin can see working-now step + elapsed + heartbeat without opening free-text logs; health header answers kill-switch/worker reachability/build.
-
-### C1.2 — Wasim UI Adapter and Contract Health
-
-**In:** workflow/adapter split, old+new adapters as needed, detector, purchase/reconcile contracts, non-mutating health probe, driver/UI/contract version metadata, fixture tests.
-
-**Out:** circuit auto-pause (may report unsupported_ui), full dashboard redesign, second supplier.
-
-### C1.3 — Circuit Breaker and Recovery
-
-**In:** persisted supplier health, purchase/reconcile circuits, triggers, auto pause, admin resume + probe gate, alerts, runbook.
-
-**Out:** new adapters, AI runtime.
-
-### C1.4 — Production Acceptance and Hardening
-
-**In:** E2E, UI-change simulation, outages, concurrency/idempotency, artifact retention, runbook, closure review.
-
-**Out:** new product features.
-
----
-
-## Must decide before C1.1
-
-1. Upgrade `/admin/automation` vs replace — **rec: upgrade**
-2. Working-now cards vs table vs hybrid — **rec: hybrid** (table + detail drawer)
-3. Customer identifiers on active board — **rec: order number + package only; no player IDs**
-4. Screenshot before final submit — **rec: yes, private, retention-bound**
-5. Progress storage — **rec: snapshot + bounded events**
-6. Heartbeat model — **rec: per-run heartbeat via progress callback; worker `/health` for process liveness**
-7. Permissions — **rec: keep admin-only for C1.1; add dedicated perms in C1.3 if needed**
-8. Stale purchase threshold — **rec: configurable; default slower than run_seconds but distinct from supplier-wait (reconcile)**
-
-Full decision sheet lives in C1.0 Agent report (chat).
-
-## Can defer past C1.1
-
-- UI adapters / detector / contracts (C1.2)
-- Circuit breaker / resume probe gate (C1.3)
-- Price-scan circuit
-- Sanitized HTML artifacts vs screenshot-only
-- Simultaneous old+new UI support depth
-- Half-open auto resume complexity
-- Enforcing unused `max_concurrent_runs` (useful hardening; not dashboard-blocking)
-
-## Acceptance criteria (architecture)
-
-- [x] Current lifecycle + data model audited
-- [x] Dashboard information + working-now contracts defined
-- [x] Progress/heartbeat/storage/stale semantics designed
-- [x] Worker/session/supplier health models designed
-- [x] Adapter/detector/contract/circuit/AI/security/test/deploy strategy designed
-- [x] C1.1–C1.4 split + Omar decision sheet
-- [ ] Omar decisions recorded (open)
-- [ ] C1.1 implementation (not started)
-
-## Open questions
-
-See Omar decision sheet (20 items) in C1.0 report.
-
-## Shipped
-
-Not shipped — architecture only (2026-08-01).
+- [x] C1.0 architecture
+- [x] Progress registry + HMAC callback
+- [x] Snapshot + bounded events
+- [x] Worker progress/heartbeat + richer health
+- [x] Heartbeat-aware stale + waiting/scheduled visibility
+- [x] Dashboard health header + working-now board
+- [x] Selective realtime
+- [x] Pre-submit artifact
+- [x] Tests + Pint + worker/frontend build
+- [ ] C1.2 adapters/contracts (not started)
+- [ ] C1.3 circuits (not started)
 
 ## Gotchas
 
-- Do not derive “current step” from `log_excerpt` free text
-- Do not treat `succeeded` run as “done” when `awaiting_wasim_reconcile`
-- Do not mark scheduled reconcile wait as worker-stale
-- Progress must not mutate fulfillment status
-- Vault domain note previously said automation never fails fulfillments — **outdated** (ingest failure + stale sweep call `FailFulfillment`)
-- `Dispatched` status mostly unused in persistence
-- Worker capability flags on `/health` are hardcoded `true`
+- `submitted` / awaiting reconcile still terminalizes the **run** as Succeeded; board derives waiting/scheduled from fulfillment meta + `next_reconcile_at`
+- Do not derive current step from `log_excerpt`
+- Progress sequence starts at 1 (worker increments before send)
+- Session health card intentionally unknown until C1.2
+- Pre-submit screenshots may still show player ID on page — private admin artifact; no HTML capture in C1.1
+- Restart automation-worker after deploy so `/health` build matches `2026-08-01-c1.1-progress`
 
-## Key files (audit)
+## Open questions / C1.2 exclusions
 
-- `config/fulfillment_automation.php`, `routes/automation.php`, `routes/channels.php`, `routes/console.php`
-- `app/Services/FulfillmentAutomationService.php`
-- `app/Actions/Fulfillments/{Reserve,Dispatch,Ingest,ScheduleWasim,Cancel,Retry}*`, `ReserveFulfillmentAutomationReconcileRun`
-- `app/Jobs/DispatchFulfillmentAutomationJob.php`, `DispatchWasimReconcileJob`
-- `app/Livewire/Admin/AutomationMonitor.php`
-- `app/Models/FulfillmentAutomationRun.php`
-- `automation-worker/src/server.ts`, `drivers/wasim/*`, `build.ts`
-- Tests: `FulfillmentAutomationTest`, `AutomationAdminTest`
+- UI adapters, detector, page contracts, non-mutating supplier probes
+- Circuit breakers / auto pause / probe-gated resume
+- Dedicated automation permissions (still admin-only)
