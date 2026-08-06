@@ -5,7 +5,7 @@ declare(strict_types=1);
 use Illuminate\Support\Facades\Route;
 use Symfony\Component\Yaml\Yaml;
 
-test('the authoritative OpenAPI contract documents the complete M1 M2.1 and M3.1 surface', function () {
+test('the authoritative OpenAPI contract documents the complete M1 M2.1 M3.1 and M4.1 surface', function () {
     $contractPath = base_path('docs/api/v1/openapi.yaml');
     $contract = file_get_contents($contractPath);
 
@@ -14,7 +14,7 @@ test('the authoritative OpenAPI contract documents the complete M1 M2.1 and M3.1
         ->and($contract)
         ->toContain(
             'openapi: 3.1.0',
-            'version: 1.2.0',
+            'version: 1.3.0',
             '  /auth/login:',
             '  /auth/two-factor-challenge:',
             '  /auth/logout:',
@@ -26,6 +26,7 @@ test('the authoritative OpenAPI contract documents the complete M1 M2.1 and M3.1
             '  /checkout/quote:',
             '  /checkout:',
             '  /checkout/status:',
+            '  /orders:',
             '  /orders/{order_number}:',
             'Accept-Language',
             'Idempotency-Key',
@@ -50,6 +51,10 @@ test('the authoritative OpenAPI contract documents the complete M1 M2.1 and M3.1
             'requirements_schema',
             'PackageRequirementField',
             'MoneyDisplay',
+            'FulfillmentSummary',
+            'CustomerOrderState',
+            'fulfillment_status',
+            'customer_state',
             'profile_photo_url',
             'بيانات الاعتماد هذه غير متطابقة مع سجلاتنا.',
             'الحزمة غير موجودة.',
@@ -70,6 +75,7 @@ test('implemented mobile routes and middleware remain aligned with OpenAPI', fun
         'api.v1.checkout.quote' => ['POST', 'api/v1/checkout/quote'],
         'api.v1.checkout' => ['POST', 'api/v1/checkout'],
         'api.v1.checkout.status' => ['GET', 'api/v1/checkout/status'],
+        'api.v1.orders.index' => ['GET', 'api/v1/orders'],
         'api.v1.orders.show' => ['GET', 'api/v1/orders/{order_number}'],
     ];
 
@@ -85,6 +91,7 @@ test('implemented mobile routes and middleware remain aligned with OpenAPI', fun
     $protectedMiddleware = Route::getRoutes()->getByName('api.v1.me')?->gatherMiddleware() ?? [];
     $catalogMiddleware = Route::getRoutes()->getByName('api.v1.catalog.home')?->gatherMiddleware() ?? [];
     $purchaseReadMiddleware = Route::getRoutes()->getByName('api.v1.wallet.summary')?->gatherMiddleware() ?? [];
+    $ordersIndexMiddleware = Route::getRoutes()->getByName('api.v1.orders.index')?->gatherMiddleware() ?? [];
     $purchaseWriteMiddleware = Route::getRoutes()->getByName('api.v1.checkout')?->gatherMiddleware() ?? [];
 
     expect($protectedMiddleware)
@@ -94,6 +101,8 @@ test('implemented mobile routes and middleware remain aligned with OpenAPI', fun
         ->and($catalogMiddleware)
         ->toContain('throttle:mobile-catalog')
         ->and($purchaseReadMiddleware)
+        ->toContain('throttle:mobile-purchase-read')
+        ->and($ordersIndexMiddleware)
         ->toContain('throttle:mobile-purchase-read')
         ->and($purchaseWriteMiddleware)
         ->toContain('throttle:mobile-purchase-write');
@@ -116,6 +125,7 @@ test('OpenAPI requests responses security and user fields match the implementati
         '/checkout/quote',
         '/checkout',
         '/checkout/status',
+        '/orders',
         '/orders/{order_number}',
     ])->and(array_keys($paths['/auth/login']['post']['responses']))->toBe([
         200,
@@ -140,6 +150,12 @@ test('OpenAPI requests responses security and user fields match the implementati
         403,
         404,
         429,
+    ])->and(array_keys($paths['/orders']['get']['responses']))->toBe([
+        200,
+        401,
+        403,
+        422,
+        429,
     ])->and(array_keys($paths['/checkout']['post']['responses']))->toContain(200, 202, 409, 422, 429)
         ->and($schemas['CheckoutQuoteRequest']['properties']['items']['maxItems'])->toBe(1)
         ->and($schemas['CheckoutQuoteRequest']['properties']['items']['minItems'])->toBe(1)
@@ -151,7 +167,22 @@ test('OpenAPI requests responses security and user fields match the implementati
             'required',
             'max_length',
             'options',
-        ]);
+        ])
+        ->and($schemas['PurchaseReceipt']['required'])->toContain(
+            'created_at',
+            'fulfillment_status',
+            'customer_state',
+            'fulfillment_summary',
+        )
+        ->and($schemas['FulfillmentSummary']['required'])->toBe([
+            'total',
+            'queued',
+            'processing',
+            'completed',
+            'failed',
+            'cancelled',
+        ])
+        ->and($schemas['OrderListItem']['required'])->toContain('order_number', 'fulfillment_status', 'customer_state');
 
     expect($schemas['LoginRequest']['required'])->toBe(['username', 'password'])
         ->and(array_keys($schemas['LoginRequest']['properties']))->toBe([
@@ -166,6 +197,7 @@ test('OpenAPI requests responses security and user fields match the implementati
         ->and($paths['/packages/{package}']['get']['security'])->toBe([['bearerAuth' => []]])
         ->and($paths['/wallet/summary']['get']['security'])->toBe([['bearerAuth' => []]])
         ->and($paths['/checkout']['post']['security'])->toBe([['bearerAuth' => []]])
+        ->and($paths['/orders']['get']['security'])->toBe([['bearerAuth' => []]])
         ->and($specification['components']['securitySchemes']['bearerAuth']['scheme'])->toBe('bearer')
         ->and($schemas['Token']['properties']['token_type']['const'])->toBe('Bearer')
         ->and($schemas['Token']['properties']['expires_at']['description'])
