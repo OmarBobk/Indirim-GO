@@ -21,8 +21,16 @@ class ScheduleWasimOrderReconcile
             return;
         }
 
-        $fulfillmentId = $fulfillment->id;
         $delaySeconds = $this->automationService->reconcileDelaySeconds($attemptNumber);
+        $nextReconcileAt = now()->addSeconds($delaySeconds);
+
+        $meta = $fulfillment->meta ?? [];
+        $meta['automation'] = array_merge($meta['automation'] ?? [], [
+            'next_reconcile_at' => $nextReconcileAt->toIso8601String(),
+        ]);
+        $fulfillment->update(['meta' => $meta]);
+
+        $fulfillmentId = $fulfillment->id;
 
         DB::afterCommit(function () use ($fulfillmentId, $delaySeconds): void {
             DispatchWasimReconcileJob::dispatch($fulfillmentId)

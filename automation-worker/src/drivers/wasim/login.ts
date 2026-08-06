@@ -1,89 +1,35 @@
 import type { Page } from 'playwright';
 import type { RunPayload } from '../../types.js';
 import type { RunLogger } from '../../logging/runLogger.js';
-import { isWasimHostname, resolveWasimProductUrl } from './urls.js';
+import type { ProgressReporter } from '../../progress/ProgressReporter.js';
+import { resolveWasimProductUrl } from './urls.js';
+import { resolveWasimUiForPage } from './ui/resolveAdapter.js';
+import type { SafeDiagnostics, WasimUiAdapter } from './ui/types.js';
+import {
+  extractProductIdFromUrl,
+  isWasimLoginPage,
+  isWasimProductRequestPage,
+} from './pageState.js';
 
-export function isWasimLoginPage(url: string): boolean {
-  try {
-    const parsed = new URL(url);
+export { extractProductIdFromUrl, isWasimLoginPage, isWasimProductRequestPage };
 
-    return isWasimHostname(parsed.hostname)
-      && parsed.pathname.replace(/\/$/, '').toLowerCase().includes('/identity/account/login');
-  } catch {
-    return false;
-  }
-}
+export type OpenProductSuccess = {
+  ok: true;
+  productApi: string;
+  productUrl: string;
+  url: string;
+  adapter: WasimUiAdapter;
+  uiVersion: string;
+  purchaseContractVersion: string;
+};
 
-export function extractProductIdFromUrl(url: string): string | null {
-  try {
-    return new URL(url).searchParams.get('productId');
-  } catch {
-    return null;
-  }
-}
-
-export function isWasimProductRequestPage(url: string, targetProductUrl?: string): boolean {
-  try {
-    const parsed = new URL(url);
-
-    if (!isWasimHostname(parsed.hostname)) {
-      return false;
-    }
-
-    const path = parsed.pathname.replace(/\/$/, '').toLowerCase();
-
-    if (!path.includes('/customer/home/productrequest')) {
-      return false;
-    }
-
-    if (targetProductUrl === undefined) {
-      return true;
-    }
-
-    const expectedProductId = extractProductIdFromUrl(targetProductUrl);
-    const currentProductId = extractProductIdFromUrl(url);
-
-    if (expectedProductId !== null && currentProductId !== null) {
-      return expectedProductId === currentProductId;
-    }
-
-    return url.split('?')[0] === targetProductUrl.split('?')[0];
-  } catch {
-    return false;
-  }
-}
-
-async function isLoginFormVisible(page: Page, timeoutMs = 5_000): Promise<boolean> {
-  const emailField = page.locator(
-    '#Input_Email, input[name="Input.Email"], input[placeholder="name@example.com"]',
-  ).first();
-
-  try {
-    await emailField.waitFor({ state: 'visible', timeout: timeoutMs });
-
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function submitLoginForm(
-  page: Page,
-  username: string,
-  password: string,
-): Promise<void> {
-  const emailField = page.locator(
-    '#Input_Email, input[name="Input.Email"], input[placeholder="name@example.com"]',
-  ).first();
-  const passwordField = page.locator(
-    '#Input_Password, input[name="Input.Password"], input[placeholder="password"]',
-  ).first();
-  const submitButton = page.getByRole('button', { name: 'دخول' });
-
-  await emailField.fill(username);
-  await passwordField.fill(password);
-  await submitButton.click();
-}
+export type OpenProductFailure = {
+  ok: false;
+  errorCode: string;
+  message: string;
+  outcome?: 'failed' | 'needs_review';
+  diagnostics?: SafeDiagnostics;
+};
 
 async function loginFromCurrentPage(
   page: Page,
@@ -91,7 +37,9 @@ async function loginFromCurrentPage(
   productUrl: string,
   logger: RunLogger,
   screenshot: (label: string) => Promise<void>,
-): Promise<{ ok: true } | { ok: false; errorCode: string; message: string }> {
+  adapter: WasimUiAdapter,
+  progress?: ProgressReporter,
+): Promise<{ ok: true } | OpenProductFailure> {
   const username = payload.credentials?.username?.trim();
   const password = payload.credentials?.password;
 
@@ -105,19 +53,21 @@ async function loginFromCurrentPage(
 
   await screenshot('login');
 
-  const loginFormVisible = await isLoginFormVisible(page);
+  const loginFormVisible = await adapter.isLoginFormVisible(page);
 
   if (!loginFormVisible) {
     return {
       ok: false,
       errorCode: 'login_form_missing',
       message: 'Wasim redirected to login but the login form was not visible.',
+      outcome: 'needs_review',
     };
   }
 
   logger.log('login', 'Submitting credentials after product redirect');
+  progress?.step('authentication_started');
 
-  await submitLoginForm(page, username, password);
+  await adapter.submitLogin(page, username, password);
 
   try {
     await page.waitForURL(
@@ -129,17 +79,13 @@ async function loginFromCurrentPage(
   }
 
   if (isWasimLoginPage(page.url())) {
-    const validationError = await page
-      .locator('.validation-summary-errors, .text-danger, [asp-validation-summary]')
-      .first()
-      .textContent()
-      .catch(() => null);
+    const validationError = await adapter.readAuthValidationText(page);
 
     await screenshot('login_failed');
 
     return {
       ok: false,
-      errorCode: 'login_failed',
+      errorCode: 'authentication_failed',
       message: validationError?.trim() || 'Login did not return to the Wasim product page.',
     };
   }
@@ -149,12 +95,30 @@ async function loginFromCurrentPage(
 
     return {
       ok: false,
-      errorCode: 'product_page_unreachable',
+      errorCode: 'authenticated_contract_failed',
       message: `Expected Wasim product page but landed on ${page.url()}`,
+      outcome: 'needs_review',
+    };
+  }
+
+  const postLogin = await resolveWasimUiForPage(page, logger, progress, { allowLoginRequired: false });
+
+  if (!postLogin.ok || postLogin.detection.kind !== 'recognized' || !postLogin.detection.purchaseCapable) {
+    await screenshot('ui_unsupported');
+
+    return {
+      ok: false,
+      errorCode: postLogin.ok ? 'unsupported_ui' : postLogin.failureCode,
+      message: 'Wasim UI was not recognized after authentication; purchase submit blocked.',
+      outcome: 'needs_review',
+      diagnostics: postLogin.ok
+        ? await postLogin.adapter.collectSafeDiagnostics(page, 'unsupported_ui')
+        : postLogin.diagnostics,
     };
   }
 
   logger.log('login', `Authenticated — returned to product page ${page.url()}`);
+  progress?.step('authentication_succeeded');
 
   return { ok: true };
 }
@@ -164,10 +128,8 @@ export async function openWasimProductPage(
   payload: RunPayload,
   logger: RunLogger,
   screenshot: (label: string) => Promise<void>,
-): Promise<
-  | { ok: true; productApi: string; productUrl: string; url: string }
-  | { ok: false; errorCode: string; message: string }
-> {
+  progress?: ProgressReporter,
+): Promise<OpenProductSuccess | OpenProductFailure> {
   const productApi = payload.product_api?.trim();
 
   if (!productApi) {
@@ -178,9 +140,12 @@ export async function openWasimProductPage(
     };
   }
 
+  progress?.step('session_loading');
+
   const productUrl = resolveWasimProductUrl(productApi);
 
   logger.log('navigate', `Opening product target ${productUrl}`);
+  progress?.step('opening_product');
 
   const response = await page.goto(productUrl, {
     waitUntil: 'domcontentloaded',
@@ -195,34 +160,99 @@ export async function openWasimProductPage(
     logger.log('navigate', 'Network idle timeout after product page load', 'warn');
   });
 
-  if (isWasimProductRequestPage(page.url(), productUrl)) {
+  progress?.step('session_checking');
+
+  const resolved = await resolveWasimUiForPage(page, logger, progress, { allowLoginRequired: true });
+
+  if (!resolved.ok) {
+    await screenshot('ui_unsupported');
+
+    return {
+      ok: false,
+      errorCode: resolved.failureCode,
+      message: `Wasim UI quarantine: ${resolved.failureCode}. Purchase submit blocked.`,
+      outcome: 'needs_review',
+      diagnostics: resolved.diagnostics,
+    };
+  }
+
+  const { adapter, detection } = resolved;
+
+  if (detection.kind === 'recognized' && detection.purchaseCapable) {
+    const identity = await adapter.validateProductIdentity(page, productApi, productUrl);
+
+    if (!identity.ok) {
+      await screenshot('product_identity_failed');
+
+      return {
+        ok: false,
+        errorCode: identity.failureCode ?? 'product_identity_mismatch',
+        message: 'Wasim product identity contract failed; purchase submit blocked.',
+        outcome: 'needs_review',
+        diagnostics: await adapter.collectSafeDiagnostics(page, identity.failureCode ?? 'product_identity_mismatch'),
+      };
+    }
+
     logger.log('navigate', 'Product page opened without login');
     await screenshot('product');
+    progress?.step('product_loaded');
 
     return {
       ok: true,
       productApi,
       productUrl,
       url: page.url(),
+      adapter,
+      uiVersion: adapter.uiVersion,
+      purchaseContractVersion: adapter.purchaseContractVersion,
     };
   }
 
-  if (isWasimLoginPage(page.url())) {
+  if (detection.kind === 'login_required' || isWasimLoginPage(page.url())) {
     logger.log('login', `Login required — redirected to ${page.url()}`);
+    progress?.step('login_required');
 
-    const loginResult = await loginFromCurrentPage(page, payload, productUrl, logger, screenshot);
+    const loginResult = await loginFromCurrentPage(
+      page,
+      payload,
+      productUrl,
+      logger,
+      screenshot,
+      adapter,
+      progress,
+    );
 
     if (!loginResult.ok) {
       return loginResult;
     }
 
+    const postLogin = await resolveWasimUiForPage(page, logger, progress, { allowLoginRequired: false });
+
+    if (!postLogin.ok || postLogin.detection.kind !== 'recognized') {
+      await screenshot('ui_unsupported');
+
+      return {
+        ok: false,
+        errorCode: postLogin.ok ? 'unsupported_ui' : postLogin.failureCode,
+        message: 'Wasim UI quarantine after login; purchase submit blocked.',
+        outcome: 'needs_review',
+        diagnostics: postLogin.ok
+          ? await postLogin.adapter.collectSafeDiagnostics(page, 'unsupported_ui')
+          : postLogin.diagnostics,
+      };
+    }
+
     await screenshot('product');
+    progress?.step('product_loaded');
 
     return {
       ok: true,
       productApi,
       productUrl,
       url: page.url(),
+      adapter: postLogin.adapter,
+      uiVersion: postLogin.adapter.uiVersion,
+      purchaseContractVersion: postLogin.adapter.purchaseContractVersion,
     };
   }
 

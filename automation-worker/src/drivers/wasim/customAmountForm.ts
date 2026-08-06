@@ -1,6 +1,7 @@
 import type { Page } from 'playwright';
 import type { RunPayload } from '../../types.js';
 import type { RunLogger } from '../../logging/runLogger.js';
+import type { ProgressReporter } from '../../progress/ProgressReporter.js';
 import { assertLineTotalCoversSupplierTotal, type PriceCheckFailure } from './priceCheck.js';
 import { fillPlayerId } from './productForm.js';
 
@@ -19,6 +20,7 @@ export async function fillCustomAmountQuantity(
   payload: RunPayload,
   logger: RunLogger,
   screenshot: (label: string) => Promise<void>,
+  progress?: ProgressReporter,
 ): Promise<{ ok: true; quantity: number } | { ok: false; errorCode: string; message: string }> {
   const quantity = resolveCustomAmount(payload);
 
@@ -29,6 +31,8 @@ export async function fillCustomAmountQuantity(
       message: 'Custom-amount fulfillment is missing custom_amount.amount in worker payload.',
     };
   }
+
+  progress?.step('filling_requirements');
 
   const quantityField = page.locator(
     '#product-request-quantity, input[name="quantity"], input[placeholder="الكمية"]',
@@ -56,6 +60,7 @@ export async function fillCustomAmountQuantity(
   await waitForSupplierTotalRecalculation(page);
 
   await screenshot('quantity_filled');
+  progress?.step('requirements_filled');
 
   return {
     ok: true,
@@ -96,6 +101,7 @@ export async function runCustomAmountProductSteps(
   payload: RunPayload,
   logger: RunLogger,
   screenshot: (label: string) => Promise<void>,
+  progress?: ProgressReporter,
 ): Promise<
   | {
     ok: true;
@@ -106,13 +112,13 @@ export async function runCustomAmountProductSteps(
   }
   | PriceCheckFailure
 > {
-  const quantityResult = await fillCustomAmountQuantity(page, payload, logger, screenshot);
+  const quantityResult = await fillCustomAmountQuantity(page, payload, logger, screenshot, progress);
 
   if (!quantityResult.ok) {
     return quantityResult;
   }
 
-  const priceResult = await assertLineTotalCoversSupplierTotal(page, payload, logger, screenshot);
+  const priceResult = await assertLineTotalCoversSupplierTotal(page, payload, logger, screenshot, progress);
 
   if (!priceResult.ok) {
     return {
@@ -121,7 +127,7 @@ export async function runCustomAmountProductSteps(
     };
   }
 
-  const playerResult = await fillPlayerId(page, payload, logger, screenshot);
+  const playerResult = await fillPlayerId(page, payload, logger, screenshot, progress);
 
   if (!playerResult.ok) {
     return playerResult;

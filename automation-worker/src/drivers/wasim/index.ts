@@ -10,23 +10,24 @@ export const wasimDriver: RunDriver = {
   supplierKey: 'wasim',
 
   async execute(ctx) {
-    const { page, payload, logger } = ctx;
+    const { page, payload, logger, progress } = ctx;
 
     if (payload.automation_phase === 'reconcile') {
-      return reconcileWasimOrder(page, payload, logger, ctx.screenshot);
+      return reconcileWasimOrder(page, payload, logger, ctx.screenshot, progress);
     }
 
-    const productResult = await openWasimProductPage(page, payload, logger, ctx.screenshot);
+    const productResult = await openWasimProductPage(page, payload, logger, ctx.screenshot, progress);
 
     if (!productResult.ok) {
       return {
-        outcome: 'failed',
+        outcome: productResult.outcome ?? 'failed',
         errorCode: productResult.errorCode,
         message: productResult.message,
         deliveredPayload: {
           checkpoint: 'product',
           url: page.url(),
           product_api: payload.product_api ?? null,
+          ...(productResult.diagnostics ? { ui_diagnostics: productResult.diagnostics } : {}),
         },
       };
     }
@@ -43,6 +44,7 @@ export const wasimDriver: RunDriver = {
         payload,
         logger,
         ctx.screenshot,
+        progress,
       );
 
       if (!priceResult.ok) {
@@ -55,6 +57,9 @@ export const wasimDriver: RunDriver = {
             url: page.url(),
             product_api: productResult.productApi,
             product_url: productResult.productUrl,
+            adapter_id: productResult.adapter.adapterId,
+            detected_ui_version: productResult.uiVersion,
+            purchase_contract_version: productResult.purchaseContractVersion,
             ...(priceResult.supplierTotal !== undefined
               ? {
                 supplier_total: priceResult.supplierTotal,
@@ -68,7 +73,7 @@ export const wasimDriver: RunDriver = {
       unitPrice = priceResult.unitPrice;
       supplierTotal = priceResult.supplierTotal;
 
-      const fillResult = await fillPlayerId(page, payload, logger, ctx.screenshot);
+      const fillResult = await fillPlayerId(page, payload, logger, ctx.screenshot, progress);
 
       if (!fillResult.ok) {
         return {
@@ -80,13 +85,16 @@ export const wasimDriver: RunDriver = {
             url: page.url(),
             product_api: productResult.productApi,
             product_url: productResult.productUrl,
+            adapter_id: productResult.adapter.adapterId,
+            detected_ui_version: productResult.uiVersion,
+            purchase_contract_version: productResult.purchaseContractVersion,
           },
         };
       }
 
       playerId = fillResult.playerId;
     } else {
-      const customResult = await runCustomAmountProductSteps(page, payload, logger, ctx.screenshot);
+      const customResult = await runCustomAmountProductSteps(page, payload, logger, ctx.screenshot, progress);
 
       if (!customResult.ok) {
         return {
@@ -102,6 +110,9 @@ export const wasimDriver: RunDriver = {
             url: page.url(),
             product_api: productResult.productApi,
             product_url: productResult.productUrl,
+            adapter_id: productResult.adapter.adapterId,
+            detected_ui_version: productResult.uiVersion,
+            purchase_contract_version: productResult.purchaseContractVersion,
             ...(customResult.supplierTotal !== undefined
               ? {
                 supplier_total: customResult.supplierTotal,
@@ -128,6 +139,9 @@ export const wasimDriver: RunDriver = {
       customQuantity,
       supplierTotal,
       productAmountMode: payload.product_amount_mode ?? 'fixed',
-    });
+      adapter: productResult.adapter,
+      uiVersion: productResult.uiVersion,
+      purchaseContractVersion: productResult.purchaseContractVersion,
+    }, progress);
   },
 };

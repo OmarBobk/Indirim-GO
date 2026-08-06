@@ -23,6 +23,7 @@ export type RunPayload = {
   callback_urls: {
     result: string;
     artifacts: string;
+    progress?: string;
   };
   expires_at: string;
 };

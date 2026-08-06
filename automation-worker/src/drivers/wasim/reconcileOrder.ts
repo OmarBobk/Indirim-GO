@@ -1,6 +1,7 @@
 import type { Page } from 'playwright';
 import type { DriverResult, RunPayload } from '../../types.js';
 import type { RunLogger } from '../../logging/runLogger.js';
+import type { ProgressReporter } from '../../progress/ProgressReporter.js';
 import { openWasimOrdersPage } from './ensureOrdersPage.js';
 import {
   ensureWasimOrdersViewport,
@@ -40,7 +41,7 @@ async function loadOrdersTab(page: Page, tab: OrderTab, logger: RunLogger): Prom
   logger.log('reconcile_tab', `Loaded Wasim orders tab=${tab}`);
 }
 
-async function searchOrderInTable(page: Page, supplierOrderId: string): Promise<number | null> {
+async function searchOrderInTable(page: Page, supplierOrderId: string): Promise<number[] | 'duplicate'> {
   const search = page.locator('input[aria-controls="responsiveDataTable2"]').first();
 
   await search.scrollIntoViewIfNeeded().catch(() => undefined);
@@ -52,17 +53,22 @@ async function searchOrderInTable(page: Page, supplierOrderId: string): Promise<
   const rows = page.locator('#responsiveDataTable2 tbody tr');
 
   const count = await rows.count();
+  const matches: number[] = [];
 
   for (let index = 0; index < count; index += 1) {
     const row = rows.nth(index);
     const text = (await row.innerText().catch(() => '')).replace(/\s+/g, ' ');
 
     if (text.includes(supplierOrderId)) {
-      return index;
+      matches.push(index);
     }
   }
 
-  return null;
+  if (matches.length > 1) {
+    return 'duplicate';
+  }
+
+  return matches;
 }
 
 async function readExpandedDetails(page: Page, rowIndex: number): Promise<{
@@ -101,15 +107,20 @@ async function findOrderOnTab(
   tab: OrderTab,
   supplierOrderId: string,
   logger: RunLogger,
-): Promise<FoundOrder | null> {
+): Promise<FoundOrder | null | 'duplicate'> {
   await loadOrdersTab(page, tab, logger);
 
-  const rowIndex = await searchOrderInTable(page, supplierOrderId);
+  const matches = await searchOrderInTable(page, supplierOrderId);
 
-  if (rowIndex === null) {
+  if (matches === 'duplicate') {
+    return 'duplicate';
+  }
+
+  if (matches.length === 0) {
     return null;
   }
 
+  const rowIndex = matches[0]!;
   const details = await readExpandedDetails(page, rowIndex);
 
   logger.log(
@@ -129,6 +140,7 @@ export async function reconcileWasimOrder(
   payload: RunPayload,
   logger: RunLogger,
   screenshot: (label: string) => Promise<void>,
+  progress?: ProgressReporter,
 ): Promise<DriverResult> {
   const supplierOrderId = payload.supplier_order_id?.trim()
     ?? payload.external_order_id?.trim()
@@ -145,22 +157,55 @@ export async function reconcileWasimOrder(
 
   await ensureWasimOrdersViewport(page);
 
-  const ordersPage = await openWasimOrdersPage(page, payload, logger, screenshot);
+  progress?.step('opening_orders_page');
+
+  const ordersPage = await openWasimOrdersPage(page, payload, logger, screenshot, progress);
 
   if (!ordersPage.ok) {
     return {
-      outcome: 'failed',
+      outcome: ordersPage.outcome ?? 'failed',
       errorCode: ordersPage.errorCode,
       message: ordersPage.message,
-      deliveredPayload: { checkpoint: 'reconcile', phase: 'reconcile' },
+      deliveredPayload: {
+        checkpoint: 'reconcile',
+        phase: 'reconcile',
+        ...(ordersPage.diagnostics ? { ui_diagnostics: ordersPage.diagnostics } : {}),
+      },
     };
   }
 
+  progress?.setContractMeta(ordersPage.uiVersion, ordersPage.ordersContractVersion);
+  progress?.step('orders_page_loaded');
+
   try {
+    progress?.step('searching_supplier_order');
+
     const cancelled = await findOrderOnTab(page, 'cancelled', supplierOrderId, logger);
+
+    if (cancelled === 'duplicate') {
+      await screenshot('reconcile_duplicate');
+
+      return {
+        outcome: 'needs_review',
+        errorCode: 'supplier_order_duplicate_match',
+        message: 'Multiple Wasim orders matched the supplier order id on cancelled tab.',
+        deliveredPayload: {
+          checkpoint: 'reconcile_duplicate',
+          phase: 'reconcile',
+          supplier_order_id: supplierOrderId,
+          reconcile_tab: 'cancelled',
+          adapter_id: ordersPage.adapter.adapterId,
+          detected_ui_version: ordersPage.uiVersion,
+          orders_contract_version: ordersPage.ordersContractVersion,
+        },
+      };
+    }
 
     if (cancelled !== null) {
       await screenshot('reconcile_cancelled');
+      progress?.step('supplier_order_found');
+      progress?.step('reading_supplier_status');
+      progress?.step('supplier_order_cancelled');
 
       return {
         outcome: 'failed',
@@ -180,8 +225,30 @@ export async function reconcileWasimOrder(
 
     const completed = await findOrderOnTab(page, 'completed', supplierOrderId, logger);
 
+    if (completed === 'duplicate') {
+      await screenshot('reconcile_duplicate');
+
+      return {
+        outcome: 'needs_review',
+        errorCode: 'supplier_order_duplicate_match',
+        message: 'Multiple Wasim orders matched the supplier order id on completed tab.',
+        deliveredPayload: {
+          checkpoint: 'reconcile_duplicate',
+          phase: 'reconcile',
+          supplier_order_id: supplierOrderId,
+          reconcile_tab: 'completed',
+          adapter_id: ordersPage.adapter.adapterId,
+          detected_ui_version: ordersPage.uiVersion,
+          orders_contract_version: ordersPage.ordersContractVersion,
+        },
+      };
+    }
+
     if (completed !== null) {
       await screenshot('reconcile_completed');
+      progress?.step('supplier_order_found');
+      progress?.step('reading_supplier_status');
+      progress?.step('supplier_order_completed');
 
       return {
         outcome: 'success',
@@ -201,8 +268,31 @@ export async function reconcileWasimOrder(
 
     const inProgress = await findOrderOnTab(page, 'new', supplierOrderId, logger);
 
+    if (inProgress === 'duplicate') {
+      await screenshot('reconcile_duplicate');
+
+      return {
+        outcome: 'needs_review',
+        errorCode: 'supplier_order_duplicate_match',
+        message: 'Multiple Wasim orders matched the supplier order id on new tab.',
+        deliveredPayload: {
+          checkpoint: 'reconcile_duplicate',
+          phase: 'reconcile',
+          supplier_order_id: supplierOrderId,
+          reconcile_tab: 'new',
+          adapter_id: ordersPage.adapter.adapterId,
+          detected_ui_version: ordersPage.uiVersion,
+          orders_contract_version: ordersPage.ordersContractVersion,
+        },
+      };
+    }
+
     if (inProgress !== null) {
       await screenshot('reconcile_in_progress');
+      progress?.step('supplier_order_found');
+      progress?.step('reading_supplier_status');
+      progress?.step('supplier_order_pending');
+      progress?.step('scheduling_next_reconcile');
 
       return {
         outcome: 'pending_reconcile',
@@ -221,6 +311,7 @@ export async function reconcileWasimOrder(
     }
 
     await screenshot('reconcile_not_found');
+    progress?.step('scheduling_next_reconcile');
 
     return {
       outcome: 'pending_reconcile',
@@ -237,6 +328,7 @@ export async function reconcileWasimOrder(
 
     logger.log('reconcile_error', message, 'error');
     await screenshot('reconcile_tab_error');
+    progress?.step('scheduling_next_reconcile');
 
     return {
       outcome: 'pending_reconcile',

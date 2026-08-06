@@ -5,8 +5,16 @@ declare(strict_types=1);
 namespace App\Livewire\Admin;
 
 use App\Actions\Fulfillments\CancelFulfillmentAutomationRun;
+use App\Actions\Fulfillments\GetAutomationOperationsDashboard;
+use App\Actions\Fulfillments\PauseAutomationSupplierCircuit;
 use App\Actions\Fulfillments\ResolveFulfillmentAutomationReview;
+use App\Actions\Fulfillments\ResumeAutomationSupplierCircuit;
 use App\Actions\Fulfillments\RetryFulfillmentAutomation;
+use App\Actions\Fulfillments\RunWasimHealthProbe;
+use App\DTOs\Automation\AutomationOperationsDashboardDTO;
+use App\Enums\AutomationCircuitCapability;
+use App\Enums\AutomationCircuitPauseReason;
+use App\Enums\FulfillmentAutomationProgressStep;
 use App\Enums\FulfillmentAutomationRunStatus;
 use App\Models\FulfillmentAutomationRun;
 use App\Models\WebsiteSetting;
@@ -21,6 +29,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\On;
@@ -82,6 +91,90 @@ final class AutomationMonitor extends Component
         }
 
         $this->success(__('messages.automation_wasim_session_cleared'));
+    }
+
+    public function pauseWasimCircuit(string $capability, string $reason): void
+    {
+        abort_unless(auth()->user()?->hasRole('admin'), 403);
+
+        $capabilityEnum = AutomationCircuitCapability::tryFrom($capability);
+        $reasonEnum = AutomationCircuitPauseReason::tryFrom($reason);
+
+        if ($capabilityEnum === null || $reasonEnum === null) {
+            $this->error(__('messages.automation_circuit_invalid_request'));
+
+            return;
+        }
+
+        try {
+            app(PauseAutomationSupplierCircuit::class)->handle(
+                auth()->user(),
+                'wasim',
+                $capabilityEnum,
+                $reasonEnum,
+            );
+        } catch (Throwable $exception) {
+            report($exception);
+            $this->error(__('messages.automation_circuit_pause_failed'));
+
+            return;
+        }
+
+        unset($this->operationsDashboard);
+        $this->success(__('messages.automation_circuit_paused'));
+    }
+
+    public function resumeWasimCircuit(string $capability): void
+    {
+        abort_unless(auth()->user()?->hasRole('admin'), 403);
+
+        $capabilityEnum = AutomationCircuitCapability::tryFrom($capability);
+
+        if ($capabilityEnum === null) {
+            $this->error(__('messages.automation_circuit_invalid_request'));
+
+            return;
+        }
+
+        try {
+            app(ResumeAutomationSupplierCircuit::class)->handle(
+                auth()->user(),
+                'wasim',
+                $capabilityEnum,
+                confirmed: true,
+            );
+        } catch (ValidationException $exception) {
+            $this->error(collect($exception->errors())->flatten()->first() ?: __('messages.automation_circuit_resume_failed'));
+
+            return;
+        } catch (Throwable $exception) {
+            report($exception);
+            $this->error(__('messages.automation_circuit_resume_failed'));
+
+            return;
+        }
+
+        unset($this->operationsDashboard);
+        $this->success(__('messages.automation_circuit_resumed'));
+    }
+
+    public function runWasimHealthProbe(): void
+    {
+        abort_unless(auth()->user()?->hasRole('admin'), 403);
+
+        unset($this->operationsDashboard);
+
+        $snapshot = app(RunWasimHealthProbe::class)->handle(force: true);
+        $state = $snapshot['last_result']['state'] ?? null;
+
+        if ($state === 'healthy') {
+            $this->success(__('messages.automation_wasim_probe_succeeded'));
+
+            return;
+        }
+
+        $label = is_string($state) ? __('messages.automation_wasim_probe_state_'.$state) : __('messages.automation_wasim_probe_failed');
+        $this->error(__('messages.automation_wasim_probe_failed').' — '.$label);
     }
 
     public function saveWasimCredentials(): void
@@ -152,7 +245,45 @@ final class AutomationMonitor extends Component
     #[On('automation-run-updated')]
     public function refreshFromBroadcast(array $payload = []): void
     {
-        unset($this->stats, $this->runs, $this->runGroups, $this->selectedRun, $this->selectedRunIsGlobalLatest);
+        $type = is_string($payload['type'] ?? null) ? (string) $payload['type'] : null;
+
+        unset($this->operationsDashboard, $this->stats, $this->selectedRun, $this->selectedRunIsGlobalLatest);
+
+        // Keep paginated history stable for progress-only / artifact events.
+        if (! in_array($type, ['run_progress_changed', 'artifact'], true)) {
+            unset($this->runs, $this->runGroups);
+        }
+    }
+
+    #[Computed]
+    public function operationsDashboard(): AutomationOperationsDashboardDTO
+    {
+        return app(GetAutomationOperationsDashboard::class)->handle();
+    }
+
+    public function progressStepLabel(?string $step): string
+    {
+        if ($step === null || $step === '') {
+            return __('messages.automation_progress_unavailable');
+        }
+
+        $enum = FulfillmentAutomationProgressStep::tryFrom($step);
+
+        return $enum !== null ? __($enum->labelKey()) : __('messages.automation_progress_unavailable');
+    }
+
+    public function presentationLabel(string $presentation): string
+    {
+        return match ($presentation) {
+            'supplier_accepted_awaiting_reconcile' => __('messages.automation_supplier_accepted_awaiting'),
+            'scheduled_reconcile' => __('messages.automation_scheduled_reconciliation'),
+            'reconcile_exhausted' => __('messages.automation_reconciliation_exhausted'),
+            'needs_review' => __('messages.automation_tab_needs_review'),
+            'succeeded' => __('messages.succeeded'),
+            'failed' => __('messages.failed'),
+            'working_now' => __('messages.automation_working_now'),
+            default => $presentation,
+        };
     }
 
     public function selectRun(string $uuid, bool $focusScreenshots = false): void
@@ -406,6 +537,7 @@ final class AutomationMonitor extends Component
                 'fulfillment.order:id,order_number,user_id,created_at',
                 'fulfillment.order.user:id,username',
                 'fulfillment.orderItem.package:id,name',
+                'progressEvents' => fn ($q) => $q->orderByDesc('sequence')->limit(40),
             ])
             ->where('uuid', $this->selectedRunUuid)
             ->first();

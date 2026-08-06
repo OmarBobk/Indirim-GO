@@ -10,3 +10,7 @@ const drivers: Record<string, RunDriver> = {
 export function resolveDriver(driverKey: string): RunDriver | null {
   return drivers[driverKey] ?? null;
 }
+
+export function listSupportedDrivers(): string[] {
+  return Object.keys(drivers);
+}

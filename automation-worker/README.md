@@ -7,12 +7,49 @@ Playwright execution runtime for İndirimGo browser fulfillments. Laravel owns a
 - `PORT` (default `3100`)
 - `FULFILLMENT_AUTOMATION_CALLBACK_SECRET` (must match Laravel)
 - `PLAYWRIGHT_HEADLESS` (`true` default)
+- `FULFILLMENT_AUTOMATION_PROGRESS_HEARTBEAT_SECONDS` (default `15`) — heartbeat interval for the progress beacon
+- `FULFILLMENT_AUTOMATION_MAX_CONCURRENCY` (default `1`) — reported on `/health` for operator dashboards; not enforced by the worker itself
 
 ## Endpoints
 
 ### `GET /health`
 
-Returns `{ "status": "ok" }`.
+Returns worker identity, capacity, driver/UI support info, e.g.:
+
+```json
+{
+  "status": "ok",
+  "ready": true,
+  "build": "2026-08-05-c1.2-ui-adapters",
+  "instance_id": "…",
+  "uptime_seconds": 42,
+  "active_count": 0,
+  "configured_max_concurrency": 1,
+  "browser_available": true,
+  "playwright_version": "1.52.0",
+  "session_store_available": true,
+  "supported_drivers": ["wasim", "acme"],
+  "driver_versions": { "wasim": "wasim-1.1.0", "acme": "acme-1.0.0" },
+  "last_successful_task_at": null,
+  "server_time": "2026-08-05T00:00:00.000Z",
+  "wasim_submit_purchase": true,
+  "wasim_reconcile": true,
+  "wasim_price_scan": true,
+  "wasim_health_probe": true,
+  "session_clear": true,
+  "wasim_ui_adapters": ["wasim-ui-v1"],
+  "wasim_driver_version": "wasim-1.1.0"
+}
+```
+
+### `POST /v1/suppliers/wasim/probe` (C1.2)
+
+HMAC-signed, non-mutating Wasim session/UI/contract probe.
+
+- Uses the same Wasim session lock as live runs (409 if a run is active; rate-limited)
+- Never fills requirements, never clicks purchase, never creates supplier orders
+- Modes: `full` (default), `session`, `purchase_contract`, `reconcile_contract`
+- Optional `test_product.product_api` from Laravel config — if absent, product slice reports `not_configured`
 
 ### `POST /v1/runs`
 
@@ -35,10 +72,18 @@ Request body:
   "custom_amount": null,
   "callback_urls": {
     "result": "https://app/internal/automation/runs/{uuid}/result",
-    "artifacts": "https://app/internal/automation/runs/{uuid}/artifacts"
+    "artifacts": "https://app/internal/automation/runs/{uuid}/artifacts",
+    "progress": "https://app/internal/automation/runs/{uuid}/progress"
   }
 }
 ```
+
+`callback_urls.progress` is optional. When present, the worker posts a signed
+progress beacon (current step + a ~15s heartbeat) to that URL as the run
+advances through `ALLOWED_STEPS` (see `src/progress/steps.ts`, which mirrors
+`App\Enums\FulfillmentAutomationProgressStep`). Progress delivery is
+best-effort: failures are logged and counted but never fail the run itself.
+When absent, no progress requests are made.
 
 Response: `202 Accepted` immediately; execution continues async.
 
@@ -82,14 +127,14 @@ Verify the **compiled files** (build can succeed while an old Node process keeps
 
 ```bash
 grep wasim_submit_purchase dist/server.js   # must print a match
-npm run build                                # prints "Build OK: 2026-06-04-wasim-submit"
+npm run build                                # prints "Build OK: 2026-08-05-c1.2-ui-adapters"
 ```
 
 Restart the worker, then verify the **live process**:
 
 ```bash
 curl -s http://127.0.0.1:3100/health
-# must include: "build":"2026-06-04-wasim-submit","wasim_submit_purchase":true
+# must include: "build":"2026-08-05-c1.2-ui-adapters","wasim_submit_purchase":true,"wasim_health_probe":true
 ```
 
 If `dist/server.js` has `wasim_submit_purchase` but `curl` still returns only `{"status":"ok"}`, the old process was **not restarted** (pm2/systemd/manual `node` still running).
@@ -106,12 +151,18 @@ If runs still show `flow_incomplete`, you are viewing an old run — **retry** t
 
 Screenshots are captured in memory, uploaded to Laravel immediately (`storage/app/private/fulfillment-automation/{run_uuid}/`), and are not kept on the worker disk. Legacy folders under `automation-worker/storage/screenshots/` are removed when a run starts. Prune old Laravel copies with `php artisan fulfillment:prune-automation-artifacts`.
 
+## Operations
+
+See repo root `Docs/AUTOMATION_OPERATIONS_RUNBOOK.md` for daily checks, circuit pause/resume, rollback, and acceptance gates (C1.4).
+
 ## Drivers
 
 | Driver | Supplier | Status |
 |--------|----------|--------|
-| `wasim` | Wasim Store | Product page → form fill → margin check → purchase → parse Swal result |
+| `wasim` | Wasim Store | **C1.2** `wasim-ui-v1` adapter + detection/contracts; purchase → reconcile; price scan reuses open/login; **C1.3** circuits enforced in Laravel |
 | `acme` | Test placeholder | Simulated success for automated tests |
+
+Wasim UI layer lives under `src/drivers/wasim/ui/`. Only proven adapters are registered — unknown/ambiguous UI stops before the buy click. Fixture selfcheck: `npm run test:ui-adapter`.
 
 Add `src/drivers/{name}/index.ts` and register in `src/drivers/index.ts`.
 Register the supplier in Laravel `config/fulfillment_automation.php` and set the package to `browser:{supplier_key}`.

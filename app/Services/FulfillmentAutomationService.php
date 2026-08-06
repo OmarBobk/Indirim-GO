@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Enums\AutomationCircuitCapability;
 use App\Enums\FulfillmentAutomationRunStatus;
 use App\Enums\FulfillmentStatus;
 use App\Enums\OrderStatus;
@@ -13,6 +14,7 @@ use App\Models\FulfillmentAutomationRun;
 use App\Models\Order;
 use App\Models\WalletTransaction;
 use App\Models\WebsiteSetting;
+use App\Support\Automation\AutomationCircuitGate;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\URL;
 use Throwable;
@@ -48,6 +50,10 @@ class FulfillmentAutomationService
         $supplierKey = $fulfillment->browserSupplierKey();
 
         if ($supplierKey === null || ! $this->supplierConfig($supplierKey)) {
+            return false;
+        }
+
+        if ($supplierKey === 'wasim' && ! app(AutomationCircuitGate::class)->isDispatchAllowed('wasim', AutomationCircuitCapability::Purchase)) {
             return false;
         }
 
@@ -199,6 +205,10 @@ class FulfillmentAutomationService
             return false;
         }
 
+        if (! app(AutomationCircuitGate::class)->isDispatchAllowed('wasim', AutomationCircuitCapability::Reconcile)) {
+            return false;
+        }
+
         if ($fulfillment->status !== FulfillmentStatus::Processing) {
             return false;
         }
@@ -227,6 +237,10 @@ class FulfillmentAutomationService
     public function shouldScheduleReconcile(Fulfillment $fulfillment, ?int $attemptNumber = null): bool
     {
         if (! (bool) data_get($fulfillment->meta, 'automation.awaiting_wasim_reconcile', false)) {
+            return false;
+        }
+
+        if (! app(AutomationCircuitGate::class)->isDispatchAllowed('wasim', AutomationCircuitCapability::Reconcile)) {
             return false;
         }
 
@@ -304,6 +318,7 @@ class FulfillmentAutomationService
             'credentials' => $supplier['credentials'] ?? [],
             'callback_urls' => [
                 'result' => URL::to('/internal/automation/runs/'.$run->uuid.'/result'),
+                'progress' => URL::to('/internal/automation/runs/'.$run->uuid.'/progress'),
                 'artifacts' => URL::to('/internal/automation/runs/'.$run->uuid.'/artifacts'),
             ],
             'expires_at' => now()->addSeconds((int) config('fulfillment_automation.timeouts.run_seconds', 300))->toIso8601String(),

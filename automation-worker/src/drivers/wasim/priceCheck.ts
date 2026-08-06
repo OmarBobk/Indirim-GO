@@ -1,6 +1,7 @@
 import type { Page } from 'playwright';
 import type { RunPayload } from '../../types.js';
 import type { RunLogger } from '../../logging/runLogger.js';
+import type { ProgressReporter } from '../../progress/ProgressReporter.js';
 import { parseMoneyString } from '../../utils/parseMoney.js';
 
 export type PriceCheckFailure = {
@@ -41,10 +42,13 @@ export function resolveLineTotal(payload: RunPayload): number | null {
 export async function readSupplierTotalFromPage(
   page: Page,
   screenshot: (label: string) => Promise<void>,
+  progress?: ProgressReporter,
 ): Promise<
   | { ok: true; supplierTotal: number; displayedRaw: string }
   | { ok: false; errorCode: string; message: string }
 > {
+  progress?.step('reading_supplier_price');
+
   const totalPriceField = page.locator(
     '#product-request-TotalPrice, input[name="TotalPrice"], input[placeholder="الاجمالي"]',
   ).first();
@@ -77,6 +81,8 @@ export async function readSupplierTotalFromPage(
     };
   }
 
+  progress?.step('supplier_price_read');
+
   return {
     ok: true,
     supplierTotal,
@@ -92,6 +98,7 @@ async function assertOrderAmountCoversSupplierTotal(
   missingMessage: string,
   logger: RunLogger,
   screenshot: (label: string) => Promise<void>,
+  progress?: ProgressReporter,
 ): Promise<PriceCheckSuccess | PriceCheckFailure> {
   if (orderAmount === null) {
     return {
@@ -101,7 +108,7 @@ async function assertOrderAmountCoversSupplierTotal(
     };
   }
 
-  const supplierResult = await readSupplierTotalFromPage(page, screenshot);
+  const supplierResult = await readSupplierTotalFromPage(page, screenshot, progress);
 
   if (!supplierResult.ok) {
     return supplierResult;
@@ -113,6 +120,8 @@ async function assertOrderAmountCoversSupplierTotal(
     'price_check',
     `Comparing ${amountLabel} ${orderAmount} with Wasim total ${supplierTotal}`,
   );
+
+  progress?.step('validating_supplier_price');
 
   if (orderAmount <= supplierTotal) {
     await screenshot('margin_insufficient');
@@ -127,6 +136,7 @@ async function assertOrderAmountCoversSupplierTotal(
   }
 
   await screenshot('price_check_ok');
+  progress?.step('supplier_price_validated');
 
   return {
     ok: true,
@@ -140,6 +150,7 @@ export async function assertUnitPriceCoversSupplierTotal(
   payload: RunPayload,
   logger: RunLogger,
   screenshot: (label: string) => Promise<void>,
+  progress?: ProgressReporter,
 ): Promise<
   | { ok: true; unitPrice: number; supplierTotal: number }
   | PriceCheckFailure
@@ -152,6 +163,7 @@ export async function assertUnitPriceCoversSupplierTotal(
     'Worker payload is missing order item unit_price for margin check.',
     logger,
     screenshot,
+    progress,
   );
 
   if (!result.ok) {
@@ -170,6 +182,7 @@ export async function assertLineTotalCoversSupplierTotal(
   payload: RunPayload,
   logger: RunLogger,
   screenshot: (label: string) => Promise<void>,
+  progress?: ProgressReporter,
 ): Promise<
   | { ok: true; lineTotal: number; supplierTotal: number }
   | PriceCheckFailure
@@ -182,6 +195,7 @@ export async function assertLineTotalCoversSupplierTotal(
     'Worker payload is missing order item line_total for margin check.',
     logger,
     screenshot,
+    progress,
   );
 
   if (!result.ok) {

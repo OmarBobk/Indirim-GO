@@ -15,6 +15,10 @@ Route::prefix('internal/automation')
             ->middleware(VerifyFulfillmentAutomationSignature::class)
             ->name('automation.runs.result');
 
+        Route::post('runs/{uuid}/progress', [FulfillmentAutomationCallbackController::class, 'progress'])
+            ->middleware(VerifyFulfillmentAutomationSignature::class)
+            ->name('automation.runs.progress');
+
         Route::post('runs/{uuid}/artifacts', [FulfillmentAutomationCallbackController::class, 'artifacts'])
             ->middleware(VerifyFulfillmentAutomationArtifactSignature::class)
             ->name('automation.runs.artifacts');

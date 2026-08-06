@@ -138,6 +138,8 @@
         </div>
     </section>
 
+    @include('livewire.admin.partials.automation-operations-board')
+
     @include('livewire.admin.partials.automation-flow-guide')
 
     @if (! $automationEnabled)
@@ -252,10 +254,58 @@
                     >
                         {{ __('messages.automation_wasim_clear_session') }}
                     </flux:button>
+                    <flux:button
+                        type="button"
+                        variant="ghost"
+                        wire:click="runWasimHealthProbe"
+                        wire:loading.attr="disabled"
+                        wire:target="runWasimHealthProbe"
+                    >
+                        {{ __('messages.automation_wasim_run_probe') }}
+                    </flux:button>
                 </div>
                 <flux:text class="text-xs text-zinc-500 dark:text-zinc-400">
                     {{ __('messages.automation_wasim_clear_session_hint') }}
                 </flux:text>
+                <flux:text class="text-xs text-zinc-500 dark:text-zinc-400">
+                    {{ __('messages.automation_wasim_run_probe_hint') }}
+                </flux:text>
+
+                <div class="mt-4 space-y-3 rounded-xl border border-zinc-200 p-3 dark:border-zinc-700">
+                    <flux:heading size="sm">{{ __('messages.automation_circuit_controls_heading') }}</flux:heading>
+                    <flux:text class="text-xs text-zinc-500 dark:text-zinc-400">
+                        {{ __('messages.automation_circuit_controls_hint') }}
+                    </flux:text>
+                    @foreach (['purchase', 'reconcile', 'price_scan'] as $capability)
+                        <div class="flex flex-wrap items-center gap-2" wire:key="circuit-controls-{{ $capability }}">
+                            <span class="min-w-[9rem] text-sm font-medium text-zinc-800 dark:text-zinc-200">
+                                {{ __('messages.automation_circuit_capability_'.$capability) }}
+                            </span>
+                            <flux:button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                wire:click="pauseWasimCircuit('{{ $capability }}', 'investigation')"
+                                wire:loading.attr="disabled"
+                                wire:target="pauseWasimCircuit"
+                                wire:confirm="{{ __('messages.automation_circuit_pause_confirm') }}"
+                            >
+                                {{ __('messages.automation_circuit_pause') }}
+                            </flux:button>
+                            <flux:button
+                                type="button"
+                                size="sm"
+                                variant="primary"
+                                wire:click="resumeWasimCircuit('{{ $capability }}')"
+                                wire:loading.attr="disabled"
+                                wire:target="resumeWasimCircuit"
+                                wire:confirm="{{ __('messages.automation_circuit_resume_confirm') }}"
+                            >
+                                {{ __('messages.automation_circuit_resume') }}
+                            </flux:button>
+                        </div>
+                    @endforeach
+                </div>
             </form>
         </details>
     </section>
@@ -264,7 +314,7 @@
     <section class="relative overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
         <div
             wire:loading.delay
-            wire:target="toggleAutomation, saveWasimCredentials, clearWasimBrowserSession, retryRun, cancelRun, markReviewSucceeded, markReviewFailed"
+            wire:target="toggleAutomation, saveWasimCredentials, clearWasimBrowserSession, runWasimHealthProbe, pauseWasimCircuit, resumeWasimCircuit, retryRun, cancelRun, markReviewSucceeded, markReviewFailed"
             class="absolute inset-0 z-10 bg-white/60 dark:bg-zinc-900/60"
         >
             <div class="p-6 space-y-2">
@@ -277,7 +327,7 @@
         <div
             class="overflow-x-auto"
             wire:loading.remove.delay
-            wire:target="toggleAutomation, saveWasimCredentials, clearWasimBrowserSession, retryRun, cancelRun, markReviewSucceeded, markReviewFailed"
+            wire:target="toggleAutomation, saveWasimCredentials, clearWasimBrowserSession, runWasimHealthProbe, pauseWasimCircuit, resumeWasimCircuit, retryRun, cancelRun, markReviewSucceeded, markReviewFailed"
         >
             @if ($this->runs->count() === 0)
                 <div class="flex flex-col items-center gap-3 p-12 text-center">
@@ -442,7 +492,45 @@
                             <dt class="text-xs text-zinc-500 dark:text-zinc-400">{{ __('messages.automation_webhook_at') }}</dt>
                             <dd>{{ $panelRun->callback_received_at?->format('Y-m-d H:i:s') ?? '—' }}</dd>
                         </div>
+                        <div>
+                            <dt class="text-xs text-zinc-500 dark:text-zinc-400">{{ __('messages.automation_current_step') }}</dt>
+                            <dd>{{ $this->progressStepLabel($panelRun->currentProgressStep()) }}</dd>
+                        </div>
+                        <div>
+                            <dt class="text-xs text-zinc-500 dark:text-zinc-400">{{ __('messages.automation_last_heartbeat') }}</dt>
+                            <dd>{{ $panelRun->last_heartbeat_at?->format('Y-m-d H:i:s') ?? '—' }}</dd>
+                        </div>
+                        <div>
+                            <dt class="text-xs text-zinc-500 dark:text-zinc-400">{{ __('messages.automation_worker_instance') }}</dt>
+                            <dd class="break-all font-mono text-xs">{{ data_get($panelRun->progress_snapshot, 'worker_instance_id') ?? '—' }}</dd>
+                        </div>
+                        <div>
+                            <dt class="text-xs text-zinc-500 dark:text-zinc-400">{{ __('messages.automation_driver_version') }}</dt>
+                            <dd class="font-mono text-xs">{{ data_get($panelRun->progress_snapshot, 'driver_version') ?? '—' }}</dd>
+                        </div>
                     </dl>
+
+                    @php($progressEvents = $panelRun->progressEvents ?? collect())
+                    <div>
+                        <div class="mb-2 flex items-center gap-2">
+                            <flux:heading size="sm">{{ __('messages.automation_progress_timeline') }}</flux:heading>
+                            <flux:badge size="sm">{{ $progressEvents->count() }}</flux:badge>
+                        </div>
+                        @if ($progressEvents->isEmpty())
+                            <p class="text-sm text-zinc-500 dark:text-zinc-400">{{ __('messages.automation_progress_timeline_empty') }}</p>
+                        @else
+                            <ol class="space-y-2 border-s border-zinc-200 ps-3 dark:border-zinc-700">
+                                @foreach ($progressEvents as $event)
+                                    <li wire:key="progress-event-{{ $event->id }}" class="relative text-sm">
+                                        <span class="absolute -start-[0.4rem] top-1.5 size-2 rounded-full bg-cyan-500" aria-hidden="true"></span>
+                                        <div class="font-medium text-zinc-900 dark:text-zinc-100">{{ $this->progressStepLabel($event->step) }}</div>
+                                        <div class="font-mono text-[10px] text-zinc-400">#{{ $event->sequence }} · {{ $event->phase }} · {{ $event->step }}</div>
+                                        <div class="text-xs text-zinc-500">{{ $event->occurred_at?->format('Y-m-d H:i:s') }}</div>
+                                    </li>
+                                @endforeach
+                            </ol>
+                        @endif
+                    </div>
 
                     <div x-ref="screenshotsSection">
                         <div class="mb-2 flex items-center gap-2">

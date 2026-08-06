@@ -1,6 +1,7 @@
 import type { Page } from 'playwright';
 import type { RunPayload } from '../../types.js';
 import type { RunLogger } from '../../logging/runLogger.js';
+import type { ProgressReporter } from '../../progress/ProgressReporter.js';
 import { resolvePlayerId } from './requirements.js';
 
 export function isFixedQuantityMode(payload: RunPayload): boolean {
@@ -14,6 +15,7 @@ export async function fillPlayerId(
   payload: RunPayload,
   logger: RunLogger,
   screenshot: (label: string) => Promise<void>,
+  progress?: ProgressReporter,
 ): Promise<{ ok: true; playerId: string } | { ok: false; errorCode: string; message: string }> {
   const playerId = resolvePlayerId(payload.requirements ?? {});
 
@@ -24,6 +26,8 @@ export async function fillPlayerId(
       message: 'Product requires a player id in order requirements (key: id).',
     };
   }
+
+  progress?.step('filling_requirements');
 
   const playerIdField = page.locator(
     '#product-request-playrid, input[name="playerId"], input[placeholder="معرف اللاعب"]',
@@ -45,6 +49,7 @@ export async function fillPlayerId(
 
   await playerIdField.fill(playerId);
   await screenshot('player_id_filled');
+  progress?.step('requirements_filled');
 
   return {
     ok: true,
