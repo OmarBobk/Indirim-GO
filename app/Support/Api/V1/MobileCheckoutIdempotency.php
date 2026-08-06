@@ -129,12 +129,23 @@ final class MobileCheckoutIdempotency
                 ];
             }
 
-            if ($locked->status === MobileCheckoutAttemptStatus::Completed && is_array($locked->receipt)) {
-                return [
-                    'attempt' => $locked,
-                    'receipt' => $locked->receipt,
-                    'state' => 'completed',
-                ];
+            if ($locked->status === MobileCheckoutAttemptStatus::Completed) {
+                $fresh = $this->freshReceiptForAttempt($locked, $user, $receiptBuilder);
+                if ($fresh !== null) {
+                    return [
+                        'attempt' => $locked,
+                        'receipt' => $fresh,
+                        'state' => 'completed',
+                    ];
+                }
+
+                if (is_array($locked->receipt)) {
+                    return [
+                        'attempt' => $locked,
+                        'receipt' => $locked->receipt,
+                        'state' => 'completed',
+                    ];
+                }
             }
 
             $replay = $this->reconcileLinkedOrRecoverableOrder($locked, $user, $receiptBuilder);
@@ -279,8 +290,15 @@ final class MobileCheckoutIdempotency
             );
         }
 
-        if ($existing->status === MobileCheckoutAttemptStatus::Completed && is_array($existing->receipt)) {
-            return ['attempt' => $existing, 'replay' => true, 'receipt' => $existing->receipt];
+        if ($existing->status === MobileCheckoutAttemptStatus::Completed) {
+            $fresh = $this->freshReceiptForAttempt($existing, $user, $receiptBuilder);
+            if ($fresh !== null) {
+                return ['attempt' => $existing, 'replay' => true, 'receipt' => $fresh];
+            }
+
+            if (is_array($existing->receipt)) {
+                return ['attempt' => $existing, 'replay' => true, 'receipt' => $existing->receipt];
+            }
         }
 
         $recovered = $this->reconcileLinkedOrRecoverableOrder($existing, $user, $receiptBuilder);
@@ -361,14 +379,38 @@ final class MobileCheckoutIdempotency
             return null;
         }
 
-        $receipt = is_array($attempt->receipt) ? $attempt->receipt : null;
-        if ($receipt === null) {
-            $receipt = $receiptBuilder($order->loadMissing('items'), $user);
-        }
+        $receipt = $receiptBuilder($order->loadMissing(['items.fulfillments']), $user);
 
         $this->markCompleted($attempt, (int) $order->id, $receipt);
 
         return $receipt;
+    }
+
+    /**
+     * Rebuild the current owned-order receipt when a linked order still exists.
+     *
+     * @param  callable(Order, User): array<string, mixed>  $receiptBuilder
+     * @return array<string, mixed>|null
+     */
+    private function freshReceiptForAttempt(
+        MobileCheckoutAttempt $attempt,
+        User $user,
+        callable $receiptBuilder,
+    ): ?array {
+        if ($attempt->order_id === null) {
+            return null;
+        }
+
+        $order = Order::query()
+            ->whereKey($attempt->order_id)
+            ->where('user_id', $user->id)
+            ->first();
+
+        if ($order === null) {
+            return null;
+        }
+
+        return $receiptBuilder($order->loadMissing(['items.fulfillments']), $user);
     }
 
     private function isStaleProcessing(MobileCheckoutAttempt $attempt): bool
