@@ -9,7 +9,6 @@ let coalesceTimer = null;
 let lastHiddenAt = 0;
 let lastReconcileAt = 0;
 let reconcileInFlight = false;
-let initialized = false;
 
 /**
  * @param {Record<string, unknown>|null} existing
@@ -103,12 +102,6 @@ export function scheduleReconciliation(source) {
 }
 
 export function initCustomerActivityInvalidation() {
-    if (initialized) {
-        return;
-    }
-
-    initialized = true;
-
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'hidden') {
             lastHiddenAt = Date.now();
@@ -134,11 +127,10 @@ export function initCustomerActivityInvalidation() {
 export function bindEchoReconnect(echo) {
     const connection = echo?.connector?.pusher?.connection;
 
-    if (!connection || typeof connection.bind !== 'function' || connection.__activityReconnectBound) {
+    if (!connection || typeof connection.bind !== 'function') {
         return;
     }
 
-    connection.__activityReconnectBound = true;
     connection.bind('connected', () => {
         scheduleReconciliation('reconnect');
     });

@@ -31,15 +31,6 @@
     $usdTryRate = $preferredCurrency === 'TRY'
         ? \App\Models\WebsiteSetting::getUsdTryRate()
         : null;
-    $financialRealtimeMessages = [
-        'updated' => __('messages.financial_information_updated'),
-        'transactions' => __('messages.financial_transactions_updated'),
-        'topup' => __('messages.financial_topup_updated'),
-        'refund' => __('messages.financial_refund_updated'),
-        'earnings' => __('messages.financial_earnings_updated'),
-        'offline' => __('messages.financial_offline_notice'),
-        'reconnected' => __('messages.financial_reconnected_updated'),
-    ];
 @endphp
 <script>
     window.Laravel = window.Laravel || {};
@@ -53,7 +44,6 @@
     window.Laravel.amountIntegerMask = @json($amountIntegerMask);
     window.Laravel.preferredCurrency = @json($preferredCurrency);
     window.Laravel.usdTryRate = @json($usdTryRate);
-    window.Laravel.financialRealtimeMessages = @json($financialRealtimeMessages);
 </script>
 @vite(['resources/css/app.css', 'resources/js/app.js'])
 @fluxAppearance

@@ -33,7 +33,8 @@ test('wallet page highlights available to spend for prepaid balance', function (
         ->assertSee(__('messages.wallet_available_to_spend'))
         ->assertSeeHtml('data-test="wallet-available-to-spend"')
         ->assertSeeHtml('data-test="wallet-prepaid-balance"')
-        ->assertSeeHtml('data-test="financial-overview"')
+        ->assertSeeHtml('data-wallet-tone="positive"')
+        ->assertSeeHtml('text-emerald-700')
         ->assertSee($available)
         ->assertSee(__('messages.wallet_prepaid_balance'))
         ->assertDontSee(__('messages.wallet_credit_section'))
@@ -56,11 +57,10 @@ test('wallet page shows credit limit beside prepaid balance when facility is act
         ->test('pages::frontend.wallet')
         ->assertSeeHtml('data-test="wallet-prepaid-balance"')
         ->assertSee($money->format(10.00, 'USD', 2))
-        ->assertSeeHtml('data-test="wallet-credit-limit"')
-        ->assertSeeHtml('data-test="wallet-available-credit"')
+        ->assertSeeHtml('data-test="wallet-credit-limit-summary"')
         ->assertSee($money->format(100.00, 'USD', 2))
         ->assertSee($money->format(110.00, 'USD', 2))
-        ->assertDontSee(__('messages.wallet_credit_section'));
+        ->assertSee(__('messages.wallet_credit_section'));
 });
 
 test('header shows green prepaid balance and credit limit hint when facility is active', function () {
@@ -220,7 +220,7 @@ test('mobile top bar shows wallet amount chrome for authenticated customers', fu
         ->assertSee($balance);
 });
 
-test('wallet page shows owed amount and credit remaining when overdrawn with active credit', function () {
+test('wallet page shows owed amount and credit facility when overdrawn with active credit', function () {
     $user = User::factory()->create();
     $wallet = Wallet::forUser($user);
     $wallet->update([
@@ -238,16 +238,17 @@ test('wallet page shows owed amount and credit remaining when overdrawn with act
         ->assertSee(__('messages.wallet_you_owe'))
         ->assertSeeHtml('data-test="wallet-outstanding-debt"')
         ->assertSee($money->format(40.00, 'USD', 2))
+        ->assertSee(__('messages.wallet_you_owe_hint'))
         ->assertSee($money->format(60.00, 'USD', 2))
+        ->assertSee(__('messages.wallet_credit_section'))
+        ->assertSee(__('messages.wallet_credit_status_active'))
         ->assertSee(__('messages.wallet_available_credit_label'))
-        ->assertSee(__('messages.wallet_prepaid_balance'))
-        ->assertDontSee(__('messages.wallet_credit_section'))
-        ->assertDontSee(__('messages.wallet_credit_status_active'))
-        ->assertDontSee(__('messages.wallet_credit_terms_net', ['days' => 30]))
-        ->assertDontSeeHtml('data-test="wallet-credit-facility"');
+        ->assertSee(__('messages.wallet_credit_terms_net', ['days' => 30]))
+        ->assertSeeHtml('data-test="wallet-credit-facility"')
+        ->assertDontSee(__('messages.wallet_prepaid_balance'));
 });
 
-test('wallet page hides credit fields when facility is suspended', function () {
+test('wallet page shows paused credit without implying overdraft is allowed', function () {
     $user = User::factory()->create();
     $wallet = Wallet::forUser($user);
     $wallet->update([
@@ -262,10 +263,11 @@ test('wallet page hides credit fields when facility is suspended', function () {
 
     Livewire::actingAs($user)
         ->test('pages::frontend.wallet')
-        ->assertDontSee(__('messages.wallet_credit_section'))
-        ->assertDontSee(__('messages.wallet_credit_status_suspended'))
-        ->assertDontSeeHtml('data-test="wallet-credit-limit"')
-        ->assertDontSeeHtml('data-test="wallet-available-credit"')
+        ->assertSee(__('messages.wallet_credit_section'))
+        ->assertSee(__('messages.wallet_credit_status_suspended'))
+        ->assertSee(__('messages.wallet_credit_suspended_hint'))
+        ->assertDontSee(__('messages.wallet_credit_active_hint'))
+        ->assertDontSee(__('messages.wallet_available_credit_label'))
         ->assertSee($money->format(20.00, 'USD', 2))
         ->assertDontSee($money->format(170.00, 'USD', 2));
 });

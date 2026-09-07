@@ -5,14 +5,11 @@ declare(strict_types=1);
 namespace App\Actions\Orders;
 
 use App\Actions\Fulfillments\CreateFulfillmentsForOrder;
-use App\DTOs\WalletPosting;
 use App\Enums\CommissionStatus;
 use App\Enums\CustomerActivityInvalidationReason;
-use App\Enums\CustomerFinancialInvalidationReason;
 use App\Enums\OrderStatus;
 use App\Enums\WalletTransactionDirection;
 use App\Enums\WalletTransactionType;
-use App\Exceptions\InsufficientWalletBalanceException;
 use App\Exceptions\WalletSpendDeniedException;
 use App\Models\Commission;
 use App\Models\Order;
@@ -22,12 +19,8 @@ use App\Models\WalletTransaction;
 use App\Models\WebsiteSetting;
 use App\Services\OperationalIntelligenceService;
 use App\Services\SystemEventService;
-use App\Services\WalletLedger;
 use App\Services\WalletSpendPolicy;
 use App\Support\CustomerActivityBroadcaster;
-use App\Support\CustomerFinancialBroadcaster;
-use App\Support\Financial\ReceiptSnapshot;
-use App\Support\LedgerMoney;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -36,12 +29,10 @@ class PayOrderWithWallet
 {
     public function __construct(
         private readonly WalletSpendPolicy $spendPolicy = new WalletSpendPolicy,
-        private readonly WalletLedger $ledger = new WalletLedger,
     ) {}
 
     /**
-     * Debit the wallet via WalletLedger after locking the order and wallet.
-     * Lock order: order → wallet (kernel re-locks wallet).
+     * Debit the wallet only after posting a ledger transaction.
      */
     public function handle(Order $order, Wallet $wallet, bool $useTransaction = true): Order
     {
@@ -71,8 +62,6 @@ class PayOrderWithWallet
                 ->firstOrFail();
 
             $idempotencyKey = 'purchase:order:'.$lockedOrder->id;
-            $amount = LedgerMoney::normalizePositive((string) $lockedOrder->total);
-
             $existingTransaction = WalletTransaction::query()
                 ->where('idempotency_key', $idempotencyKey)
                 ->lockForUpdate()
@@ -82,7 +71,6 @@ class PayOrderWithWallet
                 $existingTransaction = WalletTransaction::query()
                     ->where('reference_type', Order::class)
                     ->where('reference_id', $lockedOrder->id)
-                    ->where('type', WalletTransactionType::Purchase)
                     ->lockForUpdate()
                     ->first();
             }
@@ -103,68 +91,43 @@ class PayOrderWithWallet
             }
 
             try {
-                $this->spendPolicy->assertCanDebit($lockedWallet, $amount);
+                $this->spendPolicy->assertCanDebit($lockedWallet, (string) $lockedOrder->total);
             } catch (WalletSpendDeniedException $exception) {
                 throw ValidationException::withMessages([
                     'wallet' => $exception->getMessage(),
                 ]);
             }
 
-            $pending = $existingTransaction !== null && $existingTransaction->status === WalletTransaction::STATUS_PENDING
-                ? $existingTransaction
-                : null;
-
-            try {
-                $productLabel = $lockedOrder->items()
-                    ->orderBy('id')
-                    ->limit(3)
-                    ->pluck('name')
-                    ->filter(fn (mixed $name): bool => is_string($name) && trim($name) !== '')
-                    ->map(fn (string $name): string => mb_substr(trim($name), 0, 80))
-                    ->implode(', ');
-
-                $result = $this->ledger->post(new WalletPosting(
-                    wallet: $lockedWallet,
-                    type: WalletTransactionType::Purchase,
-                    direction: WalletTransactionDirection::Debit,
-                    amount: $amount,
-                    idempotencyKey: $idempotencyKey,
-                    meta: array_merge([
+            if ($existingTransaction === null) {
+                $existingTransaction = WalletTransaction::create([
+                    'wallet_id' => $lockedWallet->id,
+                    'type' => WalletTransactionType::Purchase,
+                    'direction' => WalletTransactionDirection::Debit,
+                    'amount' => $lockedOrder->total,
+                    'status' => WalletTransaction::STATUS_POSTED,
+                    'reference_type' => Order::class,
+                    'reference_id' => $lockedOrder->id,
+                    'idempotency_key' => $idempotencyKey,
+                    'meta' => [
                         'order_number' => $lockedOrder->order_number,
-                    ], ReceiptSnapshot::wrap([
-                        'order_number' => (string) $lockedOrder->order_number,
-                        'product_label' => $productLabel !== '' ? $productLabel : null,
-                        'currency' => 'USD',
-                    ])),
-                    referenceType: Order::class,
-                    referenceId: (int) $lockedOrder->id,
-                    pendingTransaction: $pending,
-                    minimumAllowedBalance: $lockedWallet->minimumAllowedBalance(),
-                ));
-            } catch (InsufficientWalletBalanceException $exception) {
-                throw ValidationException::withMessages([
-                    'wallet' => $exception->getMessage(),
+                    ],
                 ]);
+            } elseif ($existingTransaction->status === WalletTransaction::STATUS_PENDING) {
+                $existingTransaction->status = WalletTransaction::STATUS_POSTED;
+                $existingTransaction->idempotency_key = $idempotencyKey;
+                $existingTransaction->save();
             }
 
-            $postedTransaction = $result->transaction;
-            $lockedWallet = $result->wallet;
-
-            if (! $result->wasReplayed) {
-                CustomerFinancialBroadcaster::dispatch(
-                    (int) $lockedOrder->user_id,
-                    CustomerFinancialInvalidationReason::TransactionPosted,
-                );
-            }
+            $lockedWallet->decrement('balance', $lockedOrder->total);
 
             $lockedOrder->fill([
                 'status' => OrderStatus::Paid,
-                'paid_at' => $lockedOrder->paid_at ?? now(),
+                'paid_at' => now(),
             ])->save();
 
             (new CreateFulfillmentsForOrder)->handle($lockedOrder);
 
-            $this->logOrderPaid($lockedOrder, $lockedWallet, $postedTransaction);
+            $this->logOrderPaid($lockedOrder, $lockedWallet, $existingTransaction);
             $this->queueReferralCommissionAfterCommit($lockedOrder);
             $this->invalidateCustomerActivityOnPaid($lockedOrder);
 
@@ -174,15 +137,15 @@ class PayOrderWithWallet
                 $lockedOrder,
                 $orderUser,
                 [
-                    'amount' => $amount,
+                    'amount' => (float) $lockedOrder->total,
                     'wallet_id' => $lockedWallet->id,
-                    'transaction_id' => $postedTransaction->id,
+                    'transaction_id' => $existingTransaction->id,
                 ],
                 'info',
                 true,
             );
 
-            $postedTxId = $postedTransaction->id;
+            $postedTxId = $existingTransaction->id;
             DB::afterCommit(function () use ($postedTxId): void {
                 $tx = WalletTransaction::query()->find($postedTxId);
                 if ($tx !== null) {
@@ -239,10 +202,8 @@ class PayOrderWithWallet
         $commissionRatePercent = $this->resolveCommissionRatePercent($salespersonId);
         $commissionMultiplier = bcdiv($commissionRatePercent, '100', 4);
 
-        $createdCommission = false;
-
         foreach ($order->items as $item) {
-            $lineTotal = LedgerMoney::normalize((string) $item->line_total);
+            $lineTotal = number_format((float) $item->line_total, 2, '.', '');
             $quantity = max(1, (int) $item->quantity);
             $unitTotal = bcdiv($lineTotal, (string) $quantity, 2);
 
@@ -250,7 +211,7 @@ class PayOrderWithWallet
                 $orderTotal = $unitTotal;
                 $commissionAmount = bcmul($orderTotal, $commissionMultiplier, 2);
 
-                $createdCommission = $this->createCommissionForFulfillment(
+                $this->createCommissionForFulfillment(
                     $order->id,
                     (int) $fulfillment->id,
                     $salespersonId,
@@ -259,15 +220,8 @@ class PayOrderWithWallet
                     $orderTotal,
                     $commissionAmount,
                     $commissionRatePercent
-                ) || $createdCommission;
+                );
             }
-        }
-
-        if ($createdCommission) {
-            CustomerFinancialBroadcaster::dispatch(
-                $salespersonId,
-                CustomerFinancialInvalidationReason::CommissionStateChanged,
-            );
         }
     }
 
@@ -280,7 +234,7 @@ class PayOrderWithWallet
         string $orderTotal,
         string $commissionAmount,
         string $commissionRatePercent
-    ): bool {
+    ): void {
         try {
             Commission::query()->create([
                 'order_id' => $orderId,
@@ -294,15 +248,11 @@ class PayOrderWithWallet
                 'status' => CommissionStatus::Pending,
                 'paid_at' => null,
             ]);
-
-            return true;
         } catch (QueryException $exception) {
             // Duplicate fulfillment_id (unique) can happen under race; keep idempotent.
             if ($exception->getCode() !== '23000') {
                 throw $exception;
             }
-
-            return false;
         }
     }
 
@@ -316,13 +266,9 @@ class PayOrderWithWallet
             return $defaultRate;
         }
 
-        try {
-            $normalized = LedgerMoney::normalize((string) $customRate);
-        } catch (\InvalidArgumentException) {
-            return $defaultRate;
-        }
+        $normalized = number_format((float) $customRate, 2, '.', '');
 
-        if (LedgerMoney::compare($normalized, LedgerMoney::ZERO) !== 1 || LedgerMoney::compare($normalized, '100.00') === 1) {
+        if ((float) $normalized <= 0 || (float) $normalized > 100) {
             return $defaultRate;
         }
 

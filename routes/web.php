@@ -8,10 +8,7 @@ use App\Http\Controllers\BuyNowCustomAmountQuoteController;
 use App\Http\Controllers\TopupProofController;
 use App\Livewire\Admin\AssistantChat;
 use App\Livewire\Admin\AutomationMonitor;
-use App\Livewire\Admin\CommissionClawbackShow;
-use App\Livewire\Admin\CommissionClawbacksIndex;
 use App\Livewire\Admin\CommissionsTable;
-use App\Livewire\Admin\HistoricalCommissionExposureIndex;
 use App\Livewire\Admin\PayoutRequestsTable;
 use App\Models\User;
 use Illuminate\Support\Facades\Route;
@@ -55,16 +52,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::livewire('/profile', 'pages::frontend.profile')->name('profile');
     Route::livewire('/profile/edit', 'pages::frontend.profile-edit')->name('profile.edit-information');
     Route::livewire('/wallet', 'pages::frontend.wallet')->name('wallet');
-    Route::livewire('/wallet/transactions', 'pages::frontend.wallet-transactions')->name('wallet.transactions.index');
-    Route::livewire('/wallet/transactions/{transaction}', 'pages::frontend.wallet-transaction-detail')->name('wallet.transactions.show');
-    Route::livewire('/wallet/topups', 'pages::frontend.wallet-topups')->name('wallet.topups.index');
-    Route::livewire('/wallet/topups/{topup}', 'pages::frontend.wallet-topup-detail')->name('wallet.topups.show');
     Route::livewire('/wallet/topup', 'pages::frontend.wallet-topup')->name('wallet.topup');
-    Route::livewire('/wallet/refunds', 'pages::frontend.wallet-refunds')->name('wallet.refunds.index');
-    Route::livewire('/wallet/refunds/{refund}', 'pages::frontend.wallet-refund-detail')->name('wallet.refunds.show');
-    Route::livewire('/wallet/earnings', 'pages::frontend.wallet-earnings')
-        ->middleware('can:view_referrals')
-        ->name('wallet.earnings.index');
     Route::livewire('/loyalty', 'pages::frontend.loyalty')->name('loyalty');
     Route::livewire('/referral-link', 'pages::frontend.referral-link')
         ->middleware('can:view_referrals')
@@ -138,15 +126,6 @@ Route::middleware(['auth', 'verified', 'backend'])->group(function () {
     Route::livewire('/admin/payout-requests', PayoutRequestsTable::class)
         ->middleware('can:manage_settlements')
         ->name('admin.payout-requests');
-    Route::livewire('/admin/commission-clawbacks', CommissionClawbacksIndex::class)
-        ->middleware('can:view_commission_clawbacks')
-        ->name('admin.commission-clawbacks.index');
-    Route::livewire('/admin/commission-clawbacks/historical-exposure', HistoricalCommissionExposureIndex::class)
-        ->middleware('can:view_historical_commission_exposure')
-        ->name('admin.commission-clawbacks.historical-exposure');
-    Route::livewire('/admin/commission-clawbacks/{clawback}', CommissionClawbackShow::class)
-        ->middleware('can:view_commission_clawbacks')
-        ->name('admin.commission-clawbacks.show');
     Route::livewire('/admin/notifications', 'pages::backend.notifications.index')->name('admin.notifications.index');
 });
 

@@ -6,7 +6,6 @@ namespace App\Actions\Orders;
 
 use App\Actions\Fulfillments\AppendFulfillmentLog;
 use App\Enums\CustomerActivityInvalidationReason;
-use App\Enums\CustomerFinancialInvalidationReason;
 use App\Enums\FulfillmentLogLevel;
 use App\Enums\FulfillmentStatus;
 use App\Enums\ProductAmountMode;
@@ -23,9 +22,6 @@ use App\Services\NotificationRecipientService;
 use App\Services\SystemEventService;
 use App\Support\AdminOpsBroadcaster;
 use App\Support\CustomerActivityBroadcaster;
-use App\Support\CustomerFinancialBroadcaster;
-use App\Support\LedgerMoney;
-use App\Support\WalletTransactionPublicRef;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -104,7 +100,7 @@ class RefundOrderItem
 
             $refundAmount = $this->refundAmountForFulfillment($lockedItem);
 
-            if (LedgerMoney::compare($refundAmount, LedgerMoney::ZERO) !== 1) {
+            if ($refundAmount <= 0) {
                 throw ValidationException::withMessages([
                     'order_item' => __('messages.refund_not_allowed'),
                 ]);
@@ -116,38 +112,27 @@ class RefundOrderItem
                 ]);
             }
 
-            $transaction = WalletTransactionPublicRef::withUniqueRetry(function (string $publicRef) use (
-                $wallet,
-                $refundAmount,
-                $lockedFulfillment,
-                $order,
-                $lockedItem,
-                $actorId,
-                $note,
-            ): WalletTransaction {
-                return WalletTransaction::create([
-                    'wallet_id' => $wallet->id,
-                    'type' => WalletTransactionType::Refund,
-                    'direction' => WalletTransactionDirection::Credit,
-                    'amount' => $refundAmount,
-                    'status' => WalletTransaction::STATUS_PENDING,
-                    'public_ref' => $publicRef,
-                    'reference_type' => Fulfillment::class,
-                    'reference_id' => $lockedFulfillment->id,
-                    'meta' => array_filter([
-                        'state' => 'refund_requested',
-                        'requested_at' => now()->toIso8601String(),
-                        'requester_id' => $actorId,
-                        'order_id' => $order->id,
-                        'order_number' => $order->order_number,
-                        'order_item_id' => $lockedItem->id,
-                        'fulfillment_id' => $lockedFulfillment->id,
-                        'user_id' => $order->user_id,
-                        'currency' => 'USD',
-                        'note' => $note,
-                    ], fn ($value) => $value !== null && $value !== ''),
-                ]);
-            });
+            $transaction = WalletTransaction::create([
+                'wallet_id' => $wallet->id,
+                'type' => WalletTransactionType::Refund,
+                'direction' => WalletTransactionDirection::Credit,
+                'amount' => $refundAmount,
+                'status' => WalletTransaction::STATUS_PENDING,
+                'reference_type' => Fulfillment::class,
+                'reference_id' => $lockedFulfillment->id,
+                'meta' => array_filter([
+                    'state' => 'refund_requested',
+                    'requested_at' => now()->toIso8601String(),
+                    'requester_id' => $actorId,
+                    'order_id' => $order->id,
+                    'order_number' => $order->order_number,
+                    'order_item_id' => $lockedItem->id,
+                    'fulfillment_id' => $lockedFulfillment->id,
+                    'user_id' => $order->user_id,
+                    'currency' => 'USD',
+                    'note' => $note,
+                ], fn ($value) => $value !== null && $value !== ''),
+            ]);
 
             activity()
                 ->inLog('payments')
@@ -170,7 +155,6 @@ class RefundOrderItem
             $fulfillmentMeta['refund'] = array_filter([
                 'status' => WalletTransaction::STATUS_PENDING,
                 'wallet_transaction_id' => $transaction->id,
-                'public_ref' => $transaction->public_ref,
                 'requested_by' => $actorId,
                 'requested_at' => now()->toIso8601String(),
                 'note' => $note,
@@ -222,10 +206,6 @@ class RefundOrderItem
                         $orderOwnerId,
                         CustomerActivityInvalidationReason::RefundStateChanged,
                     );
-                    CustomerFinancialBroadcaster::dispatch(
-                        $orderOwnerId,
-                        CustomerFinancialInvalidationReason::RefundStateChanged,
-                    );
                 }
             });
 
@@ -239,25 +219,25 @@ class RefundOrderItem
      * Custom-amount lines store a per-custom-unit price that often rounds to 0.00 at 2dp; the paid total is line_total.
      * Fixed lines with quantity > 1 use one fulfillment per unit, so refund one unit's share (unit_price, or line_total / qty fallback).
      */
-    private function refundAmountForFulfillment(OrderItem $item): string
+    private function refundAmountForFulfillment(OrderItem $item): float
     {
         $mode = $item->amount_mode ?? ProductAmountMode::Fixed;
-        $lineTotal = LedgerMoney::normalize((string) $item->line_total);
-        $unitPrice = LedgerMoney::normalize((string) $item->unit_price);
+        $lineTotal = (float) $item->line_total;
+        $unitPrice = (float) $item->unit_price;
         $quantity = max(1, (int) $item->quantity);
 
         if ($mode === ProductAmountMode::Custom) {
-            return $lineTotal;
+            return round($lineTotal, 2);
         }
 
-        if (LedgerMoney::compare($unitPrice, LedgerMoney::ZERO) === 1) {
-            return $unitPrice;
+        if ($unitPrice > 0) {
+            return round($unitPrice, 2);
         }
 
-        if (LedgerMoney::compare($lineTotal, LedgerMoney::ZERO) === 1) {
-            return bcdiv($lineTotal, (string) $quantity, 2);
+        if ($lineTotal > 0) {
+            return round($lineTotal / $quantity, 2);
         }
 
-        return LedgerMoney::ZERO;
+        return 0.0;
     }
 }
