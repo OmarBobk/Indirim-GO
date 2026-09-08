@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: İndirimGo Mobile API
-  version: 1.3.0
+  version: 1.4.0
   description: |
     Authoritative contract for the customer-only İndirimGo Mobile API
     (M1 authentication + M2.1 catalog read models + M3.1 single-line purchase
@@ -17,6 +17,12 @@ info:
     Order history money fields are historical ledger snapshots and remain present
     even when catalog prices are hidden. Fulfillment progress is projected from
     fulfillment rows, not from `orders.status` alone.
+
+    **M4.5.1:** `GET /orders` accepts optional `q` (literal substring of
+    `order_number` and historical `order_items.name` snapshots) and optional
+    `customer_state` (`needs_attention`, `in_progress`, `delivered`,
+    `refunded`). Response fields, pagination, Money envelopes, and ownership
+    are unchanged. `other` is not a filter.
 
     Messages are localized from `Accept-Language`. Only `ar` and `en` are
     supported; unsupported or missing values fall back through the established
@@ -624,9 +630,21 @@ paths:
       description: |
         Returns a paginated list of orders owned by the authenticated customer.
         Sorted stably by `created_at` descending, then `id` descending.
-        No search or filters. Requirement values, provider fields, claim metadata,
-        automation diagnostics, and internal pricing are never included.
+        Requirement values, provider fields, claim metadata, automation
+        diagnostics, and internal pricing are never included.
         Fulfillment progress is projected from fulfillment rows.
+
+        Optional `q` performs a literal substring search of `orders.order_number`
+        and historical `order_items.name` snapshots. It never searches the live
+        package name, requirement values, provider data, or pricing fields.
+        LIKE metacharacters `%`, `_`, and `\` are treated as literals.
+
+        Optional `customer_state` filters the list to one of `needs_attention`,
+        `in_progress`, `delivered`, or `refunded`. Omit it to return every
+        owned order (the Flutter “All” option). `other` is not a filter value.
+
+        Search and `customer_state` compose. Ordering is not changed to
+        prioritize needs-attention rows. Cache-Control is `private, no-store`.
       operationId: mobileListOrders
       security:
         - bearerAuth: []
@@ -647,6 +665,34 @@ paths:
             minimum: 1
             maximum: 50
             default: 20
+        - name: q
+          in: query
+          required: false
+          description: |
+            Optional literal substring search of the authenticated customer's
+            `order_number` values and historical `order_items.name` snapshots.
+            Surrounding whitespace is trimmed. Empty after trimming is treated
+            as omitted. Minimum 2 characters, maximum 100. `%`, `_`, and `\`
+            match literally. Never searches the current live package name.
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 100
+        - name: customer_state
+          in: query
+          required: false
+          description: |
+            Optional coarse customer-state filter. Allowed values are
+            `needs_attention`, `in_progress`, `delivered`, and `refunded`.
+            Omit this parameter to return all owned orders. `other` is not
+            accepted.
+          schema:
+            type: string
+            enum:
+              - needs_attention
+              - in_progress
+              - delivered
+              - refunded
       responses:
         '200':
           description: Owned order history page (may be empty).
@@ -664,7 +710,11 @@ paths:
         '403':
           $ref: '#/components/responses/ForbiddenToken'
         '422':
-          description: Validation failed for page or per_page.
+          description: |
+            Validation failed for `page`, `per_page`, `q`, or `customer_state`.
+            `q` shorter than 2 or longer than 100 characters, and
+            `customer_state` values outside the documented enum (including
+            `other`), return this shape.
           content:
             application/json:
               schema:
