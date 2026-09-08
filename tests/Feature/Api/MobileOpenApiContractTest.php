@@ -14,7 +14,7 @@ test('the authoritative OpenAPI contract documents the complete M1 M2.1 M3.1 and
         ->and($contract)
         ->toContain(
             'openapi: 3.1.0',
-            'version: 1.3.0',
+            'version: 1.4.0',
             '  /auth/login:',
             '  /auth/two-factor-challenge:',
             '  /auth/logout:',
@@ -59,6 +59,8 @@ test('the authoritative OpenAPI contract documents the complete M1 M2.1 M3.1 and
             'بيانات الاعتماد هذه غير متطابقة مع سجلاتنا.',
             'الحزمة غير موجودة.',
             '72 hours',
+            'historical `order_items.name`',
+            'needs_attention',
         );
 });
 
@@ -183,6 +185,23 @@ test('OpenAPI requests responses security and user fields match the implementati
             'cancelled',
         ])
         ->and($schemas['OrderListItem']['required'])->toContain('order_number', 'fulfillment_status', 'customer_state');
+
+    $orderListParameters = collect($paths['/orders']['get']['parameters'])
+        ->filter(fn (array $parameter): bool => isset($parameter['name']))
+        ->keyBy('name');
+
+    expect($orderListParameters->keys()->all())->toBe(['page', 'per_page', 'q', 'customer_state'])
+        ->and($orderListParameters['q']['schema']['minLength'])->toBe(2)
+        ->and($orderListParameters['q']['schema']['maxLength'])->toBe(100)
+        ->and($orderListParameters['customer_state']['schema']['enum'])->toBe([
+            'needs_attention',
+            'in_progress',
+            'delivered',
+            'refunded',
+        ])
+        ->and($orderListParameters['customer_state']['schema']['enum'])->not->toContain('other', 'all')
+        ->and($paths['/orders']['get']['description'])->toContain('historical `order_items.name`')
+        ->and($paths['/orders/{order_number}']['get']['parameters'])->not->toContain(['name' => 'q']);
 
     expect($schemas['LoginRequest']['required'])->toBe(['username', 'password'])
         ->and(array_keys($schemas['LoginRequest']['properties']))->toBe([

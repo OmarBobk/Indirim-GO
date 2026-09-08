@@ -6,6 +6,7 @@ use App\Enums\FulfillmentStatus;
 use App\Enums\OrderItemStatus;
 use App\Enums\OrderStatus;
 use App\Enums\ProductAmountMode;
+use App\Models\Category;
 use App\Models\Fulfillment;
 use App\Models\Order;
 use App\Models\OrderItem;
@@ -30,12 +31,20 @@ function m41SeedOrder(
     array $unitStatuses = [FulfillmentStatus::Queued],
     array $orderAttributes = [],
     int $extraItems = 0,
+    string $itemName = 'Alpha Line',
 ): array {
-    $nextOrder = ((int) Package::query()->max('order')) + random_int(1, 1000) + 1;
+    $nextPackageOrder = ((int) Package::query()->max('order')) + 1;
+    $nextCategoryOrder = ((int) Category::query()->max('order')) + 1;
     $package = Package::factory()->create([
         'is_active' => true,
-        'order' => $nextOrder,
+        'order' => $nextPackageOrder,
         'slug' => 'm41-pkg-'.str_replace('.', '', uniqid('', true)),
+        'category_id' => Category::factory()->create([
+            'is_active' => true,
+            'parent_id' => null,
+            'order' => $nextCategoryOrder,
+            'slug' => 'm41-cat-'.str_replace('.', '', uniqid('', true)),
+        ]),
     ]);
     $product = Product::factory()->create([
         'package_id' => $package->id,
@@ -65,7 +74,7 @@ function m41SeedOrder(
         'order_id' => $order->id,
         'product_id' => $product->id,
         'package_id' => $package->id,
-        'name' => 'Alpha Line',
+        'name' => $itemName,
         'unit_price' => 10,
         'entry_price' => 5,
         'quantity' => max(1, count($unitStatuses)),
@@ -464,4 +473,325 @@ test('historical totals remain visible when catalog prices are hidden', function
     $this->getJson('/api/v1/orders', m31Headers($token))
         ->assertOk()
         ->assertJsonPath('data.0.total.amount', '10.00');
+});
+
+test('search finds an owned order by full order number', function (): void {
+    $user = m31Customer();
+    $match = m41SeedOrder($user)['order'];
+    m41SeedOrder($user);
+    $token = m31Token($user);
+
+    $this->getJson('/api/v1/orders?q='.$match->order_number, m31Headers($token))
+        ->assertOk()
+        ->assertJsonPath('meta.pagination.total', 1)
+        ->assertJsonPath('data.0.order_number', $match->order_number);
+});
+
+test('search finds an owned order by partial order number', function (): void {
+    $user = m31Customer();
+    $match = m41SeedOrder($user)['order'];
+    m41SeedOrder($user);
+    $token = m31Token($user);
+    $partial = substr($match->order_number, -6);
+
+    $this->getJson('/api/v1/orders?q='.$partial, m31Headers($token))
+        ->assertOk()
+        ->assertJsonPath('meta.pagination.total', 1)
+        ->assertJsonPath('data.0.order_number', $match->order_number);
+});
+
+test('search finds an owned order by historical item snapshot name', function (): void {
+    $user = m31Customer();
+    $match = m41SeedOrder($user, itemName: 'Unique Snapshot Title')['order'];
+    m41SeedOrder($user, itemName: 'Unrelated Line');
+    $token = m31Token($user);
+
+    $this->getJson('/api/v1/orders?q='.urlencode('Unique Snapshot'), m31Headers($token))
+        ->assertOk()
+        ->assertJsonPath('meta.pagination.total', 1)
+        ->assertJsonPath('data.0.order_number', $match->order_number)
+        ->assertJsonPath('data.0.title', 'Unique Snapshot Title');
+});
+
+test('live package rename does not affect historical snapshot search', function (): void {
+    $user = m31Customer();
+    $seed = m41SeedOrder($user, itemName: 'Searchable Snapshot');
+    Package::query()->whereKey($seed['item']->package_id)->update([
+        'name' => 'Renamed Live Package',
+    ]);
+    $token = m31Token($user);
+
+    $this->getJson('/api/v1/orders?q='.urlencode('Searchable Snapshot'), m31Headers($token))
+        ->assertOk()
+        ->assertJsonPath('meta.pagination.total', 1)
+        ->assertJsonPath('data.0.order_number', $seed['order']->order_number);
+
+    $this->getJson('/api/v1/orders?q='.urlencode('Renamed Live'), m31Headers($token))
+        ->assertOk()
+        ->assertJsonPath('meta.pagination.total', 0)
+        ->assertJsonPath('data', []);
+});
+
+test('search never returns another customer matching order', function (): void {
+    $owner = m31Customer();
+    $other = m31Customer();
+    $owned = m41SeedOrder($owner, itemName: 'Shared Snapshot Name')['order'];
+    m41SeedOrder($other, itemName: 'Shared Snapshot Name');
+    $token = m31Token($owner);
+
+    $this->getJson('/api/v1/orders?q='.urlencode('Shared Snapshot'), m31Headers($token))
+        ->assertOk()
+        ->assertJsonPath('meta.pagination.total', 1)
+        ->assertJsonPath('data.0.order_number', $owned->order_number);
+});
+
+test('search treats percent underscore and backslash as literals', function (): void {
+    $user = m31Customer();
+    $percent = m41SeedOrder($user, itemName: 'Pack %% Special')['order'];
+    $underscore = m41SeedOrder($user, itemName: 'Pack a_b Exact')['order'];
+    $backslash = m41SeedOrder($user, itemName: 'Pack path\\safe')['order'];
+    m41SeedOrder($user, itemName: 'Unrelated Pack');
+    $token = m31Token($user);
+
+    $this->getJson('/api/v1/orders?q='.urlencode('%%'), m31Headers($token))
+        ->assertOk()
+        ->assertJsonPath('meta.pagination.total', 1)
+        ->assertJsonPath('data.0.order_number', $percent->order_number);
+
+    $this->getJson('/api/v1/orders?q='.urlencode('a_b'), m31Headers($token))
+        ->assertOk()
+        ->assertJsonPath('meta.pagination.total', 1)
+        ->assertJsonPath('data.0.order_number', $underscore->order_number);
+
+    $this->getJson('/api/v1/orders?q='.urlencode('path\\safe'), m31Headers($token))
+        ->assertOk()
+        ->assertJsonPath('meta.pagination.total', 1)
+        ->assertJsonPath('data.0.order_number', $backslash->order_number);
+});
+
+test('two matching line items do not duplicate the parent order', function (): void {
+    $user = m31Customer();
+    $seed = m41SeedOrder($user, extraItems: 1, itemName: 'Dup Snapshot Title');
+    OrderItem::query()->where('order_id', $seed['order']->id)->update(['name' => 'Dup Snapshot Title']);
+    $token = m31Token($user);
+
+    $this->getJson('/api/v1/orders?q='.urlencode('Dup Snapshot'), m31Headers($token))
+        ->assertOk()
+        ->assertJsonPath('meta.pagination.total', 1)
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.order_number', $seed['order']->order_number)
+        ->assertJsonPath('data.0.item_count', 2);
+});
+
+test('q and customer_state compose without changing sort', function (): void {
+    $user = m31Customer();
+    $stamp = now()->subMinute();
+    $olderMatch = m41SeedOrder($user, [FulfillmentStatus::Completed], [
+        'created_at' => $stamp,
+        'updated_at' => $stamp,
+    ], itemName: 'Compose Token')['order'];
+    $newerMatch = m41SeedOrder($user, [FulfillmentStatus::Queued], [
+        'created_at' => $stamp->copy()->addMinute(),
+        'updated_at' => $stamp->copy()->addMinute(),
+    ], itemName: 'Compose Token')['order'];
+    m41SeedOrder($user, [FulfillmentStatus::Completed], itemName: 'Other Title');
+    $token = m31Token($user);
+
+    $delivered = $this->getJson(
+        '/api/v1/orders?q='.urlencode('Compose Token').'&customer_state=delivered',
+        m31Headers($token),
+    );
+    $delivered->assertOk()
+        ->assertJsonPath('meta.pagination.total', 1)
+        ->assertJsonPath('data.0.order_number', $olderMatch->order_number)
+        ->assertJsonPath('data.0.customer_state', 'delivered');
+
+    $searchOnly = $this->getJson('/api/v1/orders?q='.urlencode('Compose Token'), m31Headers($token));
+    $searchOnly->assertOk()
+        ->assertJsonPath('meta.pagination.total', 2)
+        ->assertJsonPath('data.0.order_number', $newerMatch->order_number)
+        ->assertJsonPath('data.1.order_number', $olderMatch->order_number);
+});
+
+test('each allowed customer_state filter matches the response classification', function (): void {
+    $user = m31Customer();
+    $needsAttention = m41SeedOrder($user, [FulfillmentStatus::Failed, FulfillmentStatus::Queued])['order'];
+    $inProgress = m41SeedOrder($user, [FulfillmentStatus::Queued])['order'];
+    $delivered = m41SeedOrder($user, [FulfillmentStatus::Completed])['order'];
+    $refunded = m41SeedOrder($user, [FulfillmentStatus::Completed], [
+        'status' => OrderStatus::Refunded,
+    ])['order'];
+    $cancelled = m41SeedOrder($user, [FulfillmentStatus::Cancelled], [
+        'status' => OrderStatus::Cancelled,
+    ])['order'];
+    $token = m31Token($user);
+
+    $unfiltered = $this->getJson('/api/v1/orders', m31Headers($token));
+    $unfiltered->assertOk()->assertJsonPath('meta.pagination.total', 5);
+
+    $filters = [
+        'needs_attention' => $needsAttention,
+        'in_progress' => $inProgress,
+        'delivered' => $delivered,
+        'refunded' => $refunded,
+    ];
+
+    foreach ($filters as $state => $order) {
+        $response = $this->getJson('/api/v1/orders?customer_state='.$state, m31Headers($token));
+        $response->assertOk()
+            ->assertJsonPath('meta.pagination.total', 1)
+            ->assertJsonPath('data.0.order_number', $order->order_number)
+            ->assertJsonPath('data.0.customer_state', $state);
+    }
+
+    $allNumbers = collect($unfiltered->json('data'))->pluck('order_number')->all();
+    expect($allNumbers)->toContain($cancelled->order_number);
+});
+
+test('q of length 1 returns localized 422', function (): void {
+    $user = m31Customer();
+    $token = m31Token($user);
+
+    $this->getJson('/api/v1/orders?q=a', m31Headers($token))
+        ->assertStatus(422)
+        ->assertJsonPath('message', __('messages.mobile_api.validation_failed'))
+        ->assertJsonValidationErrors(['q']);
+
+    $this->getJson('/api/v1/orders?q=a', array_merge(m31Headers($token), [
+        'Accept-Language' => 'ar',
+    ]))
+        ->assertStatus(422)
+        ->assertJsonPath('message', 'البيانات المقدمة غير صالحة.')
+        ->assertJsonValidationErrors(['q']);
+});
+
+test('q of length 100 is accepted and 101 is rejected', function (): void {
+    $user = m31Customer();
+    $token = m31Token($user);
+
+    $this->getJson('/api/v1/orders?q='.str_repeat('a', 100), m31Headers($token))
+        ->assertOk()
+        ->assertJsonPath('data', []);
+
+    $this->getJson('/api/v1/orders?q='.str_repeat('a', 101), m31Headers($token))
+        ->assertStatus(422)
+        ->assertJsonPath('message', __('messages.mobile_api.validation_failed'))
+        ->assertJsonValidationErrors(['q']);
+});
+
+test('whitespace-only q behaves as omitted', function (): void {
+    $user = m31Customer();
+    m41SeedOrder($user);
+    m41SeedOrder($user);
+    $token = m31Token($user);
+
+    $this->getJson('/api/v1/orders?q='.urlencode('   '), m31Headers($token))
+        ->assertOk()
+        ->assertJsonPath('meta.pagination.total', 2)
+        ->assertJsonCount(2, 'data');
+});
+
+test('invalid customer_state returns localized 422', function (string $value): void {
+    $user = m31Customer();
+    $token = m31Token($user);
+
+    $this->getJson('/api/v1/orders?customer_state='.$value, m31Headers($token))
+        ->assertStatus(422)
+        ->assertJsonPath('message', __('messages.mobile_api.validation_failed'))
+        ->assertJsonValidationErrors(['customer_state']);
+})->with([
+    'other',
+    'all',
+    'bogus',
+]);
+
+test('search pagination metadata and stable ordering remain unchanged', function (): void {
+    $user = m31Customer();
+    $stamp = now()->subMinute();
+    $first = m41SeedOrder($user, [FulfillmentStatus::Queued], [
+        'created_at' => $stamp,
+        'updated_at' => $stamp,
+    ], itemName: 'Paged Snapshot')['order'];
+    $second = m41SeedOrder($user, [FulfillmentStatus::Queued], [
+        'created_at' => $stamp,
+        'updated_at' => $stamp,
+    ], itemName: 'Paged Snapshot')['order'];
+    $newer = m41SeedOrder($user, [FulfillmentStatus::Queued], [
+        'created_at' => $stamp->copy()->addMinute(),
+        'updated_at' => $stamp->copy()->addMinute(),
+    ], itemName: 'Paged Snapshot')['order'];
+    $token = m31Token($user);
+
+    $pageTwo = $this->getJson(
+        '/api/v1/orders?q='.urlencode('Paged Snapshot').'&per_page=1&page=2',
+        m31Headers($token),
+    );
+    $pageTwo->assertOk()
+        ->assertJsonPath('meta.pagination.page', 2)
+        ->assertJsonPath('meta.pagination.per_page', 1)
+        ->assertJsonPath('meta.pagination.total', 3)
+        ->assertJsonPath('meta.pagination.last_page', 3)
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.order_number', $second->order_number);
+
+    $numbers = collect(
+        $this->getJson('/api/v1/orders?q='.urlencode('Paged Snapshot'), m31Headers($token))->json('data'),
+    )->pluck('order_number')->all();
+
+    expect($numbers)->toBe([
+        $newer->order_number,
+        $second->order_number,
+        $first->order_number,
+    ]);
+});
+
+test('default list without q or customer_state remains backward compatible', function (): void {
+    $user = m31Customer();
+    m41SeedOrder($user, [FulfillmentStatus::Queued]);
+    m41SeedOrder($user, [FulfillmentStatus::Completed]);
+    m41SeedOrder($user, [FulfillmentStatus::Failed, FulfillmentStatus::Queued]);
+    $token = m31Token($user);
+
+    $this->getJson('/api/v1/orders', m31Headers($token))
+        ->assertOk()
+        ->assertJsonPath('meta.pagination.page', 1)
+        ->assertJsonPath('meta.pagination.per_page', 20)
+        ->assertJsonPath('meta.pagination.total', 3)
+        ->assertJsonCount(3, 'data')
+        ->assertJsonStructure([
+            'data' => [[
+                'order_number',
+                'created_at',
+                'paid_at',
+                'currency',
+                'total' => ['amount', 'currency', 'display' => ['currency', 'formatted']],
+                'payment_status',
+                'fulfillment_status',
+                'customer_state',
+                'title',
+                'item_count',
+            ]],
+            'meta' => ['pagination' => ['page', 'per_page', 'total', 'last_page']],
+        ]);
+});
+
+test('search results exclude existing sensitive-field test values', function (): void {
+    $user = m31Customer();
+    m41SeedOrder($user, itemName: 'Privacy Snapshot');
+    $token = m31Token($user);
+
+    $response = $this->getJson('/api/v1/orders?q='.urlencode('Privacy Snapshot'), m31Headers($token));
+    $response->assertOk()->assertJsonCount(1, 'data');
+
+    $json = json_encode($response->json());
+    foreach (m41ForbiddenSubstrings() as $needle) {
+        expect($json)->not->toContain($needle);
+    }
+    m31AssertNoSensitiveKeys($response->json('data'), array_merge(m31SensitiveKeys(), [
+        'provider',
+        'last_error',
+        'claimed_by',
+        'claimed_at',
+        'meta',
+    ]));
 });

@@ -18,6 +18,8 @@ class OrderIndexController extends Controller
                 $request->user(),
                 $request->pageNumber(),
                 $request->perPage(),
+                $request->searchQuery(),
+                $request->customerState(),
             ))
             ->header('Cache-Control', 'private, no-store');
     }
