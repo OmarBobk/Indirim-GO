@@ -6,6 +6,7 @@ use App\Enums\FulfillmentStatus;
 use App\Enums\OrderItemStatus;
 use App\Enums\OrderStatus;
 use App\Enums\ProductAmountMode;
+use App\Models\Category;
 use App\Models\Fulfillment;
 use App\Models\Order;
 use App\Models\OrderItem;
@@ -32,11 +33,18 @@ function m41SeedOrder(
     int $extraItems = 0,
     string $itemName = 'Alpha Line',
 ): array {
-    $nextOrder = ((int) Package::query()->max('order')) + random_int(1, 1000) + 1;
+    $nextPackageOrder = ((int) Package::query()->max('order')) + 1;
+    $nextCategoryOrder = ((int) Category::query()->max('order')) + 1;
     $package = Package::factory()->create([
         'is_active' => true,
-        'order' => $nextOrder,
+        'order' => $nextPackageOrder,
         'slug' => 'm41-pkg-'.str_replace('.', '', uniqid('', true)),
+        'category_id' => Category::factory()->create([
+            'is_active' => true,
+            'parent_id' => null,
+            'order' => $nextCategoryOrder,
+            'slug' => 'm41-cat-'.str_replace('.', '', uniqid('', true)),
+        ]),
     ]);
     $product = Product::factory()->create([
         'package_id' => $package->id,

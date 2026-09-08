@@ -65,7 +65,7 @@ Extend the owned-orders list with optional `q` and `customer_state` so Flutter c
   - `docs/api/v1/openapi.yaml`
   - `tests/Feature/Api/MobileOrdersApiTest.php`
   - `tests/Feature/Api/MobileOpenApiContractTest.php`
-- **Tests:** `php artisan test --compact tests/Feature/Api/MobileOrdersApiTest.php` and `tests/Feature/Api` (fill results after run)
+- **Tests:** `php artisan test --compact tests/Feature/Api/MobileOrdersApiTest.php` → 45 passed (344 assertions). `php artisan test --compact tests/Feature/Api` → 184 passed (1843 assertions). `vendor/bin/pint --test` pass. `git diff --check origin/staging` clean.
 
 ## Gotchas
 
