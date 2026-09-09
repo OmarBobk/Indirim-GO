@@ -20,7 +20,7 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - **Optional realtime isolation:** authentication, fulfillment, and other authoritative flows must not fail when optional Reverb/Pusher publication fails. Use after-commit safe broadcasters (`ActivityLogBroadcaster`, `FulfillmentListBroadcaster`, `AdminOpsBroadcaster`, `BroadcastAutomationRunChanged`); durable state remains.
 - **Agent rules:** follow `.cursor/rules/laravel-boost.mdc` for stack versions, conventions, and karman.store financial guardrails.
 - **Track B (M7):** commission clawbacks M7.0–M7.2.4 are ancestral on `local/track-c1` / integrated release trees (routes `/admin/commission-clawbacks*`). Feature brief: `Vault/Features/M7 — Financial Risk and Admin Operations.md`. Permissions: `Docs/roles.md`.
-- **Track C / C1:** C1.1–C1.3 + **C1.2.1** orders compatibility + C1.4A/B acceptance on `local/track-c1`. Live controlled purchase accepted; refund posted; Reverb isolated; worker build `2026-09-09-c1.4b-artifact-privacy`. Production release ops use this tree; do not invent `wasim-ui-v2`. Canonical: `Vault/Features/C1 — Automation Reliability and Supplier UI Resilience.md`. Runbook: `Docs/AUTOMATION_OPERATIONS_RUNBOOK.md`.
+- **Track C / C1:** **Production release complete** (2026-09-10) on `local/track-c1` @ `ecb3683` (+ staging FF). Worker `2026-09-09-c1.4b-artifact-privacy`; probe healthy; circuits enabled. Do not invent `wasim-ui-v2`. Canonical: `Vault/Features/C1 — Automation Reliability and Supplier UI Resilience.md`. Runbook: `Docs/AUTOMATION_OPERATIONS_RUNBOOK.md`.
 - **Mobile:** M3 purchase closed; staging mobile order history/search (incl. #50) integrated into the C1 release tree. Contract: `docs/api/v1/openapi.yaml`.
 
 ---

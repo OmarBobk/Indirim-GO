@@ -32,25 +32,27 @@ Order line fulfillment: admin manual flow + Node/Playwright automation worker.
 - Dispatch gating; queued stay queued; no refund/cancel on open
 - Dashboard circuit cards + Waiting for automation recovery + pause/resume
 
-## C1.4 (acceptance — CLOSED ready for production release)
+## C1.4 (acceptance — CLOSED) + production release (2026-09-10)
 
 - C1.2.1 2026-09-07: orders signatures tab-aware; live probe healthy
 - C1.4A 2026-09-08: controlled purchase accepted; reconcile pending→Cancelled; refund pending once; circuits stayed enabled
 - C1.4B 2026-09-09: refund posted; Reverb isolation; privacy masking; concurrency harness; worker `2026-09-09-c1.4b-artifact-privacy`
+- **Production release 2026-09-10:** packaged + staging mobile integrated; worker env-loaded; probe healthy; circuits enabled; `local/track-c1` @ `ecb3683`
 - Do not invent `wasim-ui-v2`
 
 ## Key files
 
 - `app/Actions/Fulfillments/*` (progress, ops dashboard, probe, circuit Observe/Pause/Resume)
 - `app/Support/Automation/*` (`WasimHealthProbeStore`, `AutomationCircuitPolicy`, `AutomationCircuitGate`)
+- `app/Support/FulfillmentListBroadcaster.php`, `app/Support/AdminOpsBroadcaster.php`
 - `app/Models/AutomationSupplierCircuit.php`
 - `app/Services/FulfillmentAutomationService.php`
 - `Docs/AUTOMATION_OPERATIONS_RUNBOOK.md`
-- `automation-worker/` (`src/progress/*`, `src/drivers/wasim/ui/*`)
+- `automation-worker/` (`src/progress/*`, `src/drivers/wasim/ui/*`, `src/browser/maskSensitiveScreenshot.ts`)
 
 ## Track C status
 
-- [[C1 — Automation Reliability and Supplier UI Resilience]] — code through C1.3; **C1.4 not closed**
+- [[C1 — Automation Reliability and Supplier UI Resilience]] — **production release complete**; do not start C2 until Omar authorizes
 - [[Future Roadmap - Automation and Growth]] — C1 → C2 → C3 → C4
 
 ## Related

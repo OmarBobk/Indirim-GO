@@ -17,7 +17,7 @@ Related: [[Fulfillments & Automation]], [[Orders & Checkout]], [[Refunds & Settl
 | Track | Focus | Status |
 |---|---|---|
 | **B** | Financial risk + admin ops | **Closed** (M7.0–M7.2.4) |
-| **C** | Fulfilment / supplier automation | **C1 closed — ready for production release** (2026-09-09) |
+| **C** | Fulfilment / supplier automation | **C1 production release complete** (2026-09-10) |
 | **D** | Growth / conversion | Backlog — recommended next if conversion dominates |
 
 Suggested order inside each track below. Adjust from real ops bottlenecks and conversion data.
@@ -28,7 +28,7 @@ Suggested order inside each track below. Adjust from real ops bottlenecks and co
 
 **Closed:** Track B — Financial Risk and Admin Operations (through M7.2.4 historical exposure report-only)
 
-**Active release:** Track C — C1 packaged for production (see [[C1 — Automation Reliability and Supplier UI Resilience]]). Do not start C2 until production release completes.
+**Active:** Track C — **C1 production release complete** (see [[C1 — Automation Reliability and Supplier UI Resilience]]). Do not start C2 until Omar authorizes.
 
 **Also available:** Track D (growth) if conversion dominates — Omar chooses priority between C1 delivery and D1.
 

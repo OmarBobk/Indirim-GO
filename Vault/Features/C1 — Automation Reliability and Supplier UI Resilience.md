@@ -1,10 +1,10 @@
 ---
 status: shipped
 created: 2026-08-01
-updated: 2026-09-09
+updated: 2026-09-10
 owner: Omar
 type: feature
-milestone: C1.4B
+milestone: C1 Production Release
 ---
 
 # C1 — Automation Reliability and Supplier UI Resilience
@@ -23,11 +23,20 @@ Give admins a live Automation Operations Dashboard, structured run progress/hear
 - Admin-only under existing admin gate
 - No AI-generated click paths / runtime LLM selector repair
 
-## Architecture status (2026-09-09)
+## Architecture status (2026-09-10)
 
-**C1.0–C1.3 code** on `local/track-c1` (HEAD `0cd86fc` + uncommitted C1.2.1/C1.4A/C1.4B).  
-**C1.4A controlled purchase PASSED.**  
-**C1.4B: READY FOR PRODUCTION RELEASE** (deploy itself not authorized here).
+**C1 PRODUCTION RELEASE COMPLETE** on `local/track-c1` @ `ecb3683` (also fast-forwarded toward `staging`).  
+Worker build `2026-09-09-c1.4b-artifact-privacy`; adapter `wasim-ui-v1`; live non-purchase probe healthy; circuits resumed.
+
+### C1 production release (2026-09-10)
+
+- Packaged C1.2.1 + privacy + Reverb isolation; merged staging mobile (#47–#50); remote `local/track-c1` reconciled
+- Deployed Laravel caches/migration + worker with `.env`-loaded process (HMAC match required — bare `node dist/server.js` without env → `hmac_unauthorized`)
+- Probe: authenticated, `wasim-ui-v1`, purchase/reconcile healthy, `test_product_state=price_readable`, `failure_codes=[]`
+- Circuits resumed via Actions: purchase / reconcile / price_scan = `enabled`
+- Dashboard health cards: worker ready; circuits enabled; pre-existing needs-attention backlog (fulfillments ≤164), not a release spike
+- Push: `origin/local/track-c1` @ `ecb3683`; `Docs/doc.md` left uncommitted
+- Residual test debt (not release blockers): `CommissionClawbackTest` failures on this tree; intermittent `AutomationOperationsDashboardTest` unique constraint; broad refund/clawback filter OOM at 128M
 
 ### C1.4B final closure (2026-09-09)
 
@@ -37,7 +46,7 @@ Give admins a live Automation Operations Dashboard, structured run progress/hear
 - Privacy: player + balance chrome mask; worker build `2026-09-09-c1.4b-artifact-privacy`; historical controlled PNGs deleted (decision A); `private-evidence/` gitignored
 - Prune dry-run OK (30-day); MySQL concurrency harness 6/6 on `karman_store_concurrency`
 - Reverb process up; `AutomationRunChanged` broadcast OK; `private-admin.automation` auth HTTP 200
-- Residual: end-of-session Wasim probes `unreachable` (worker `/health` OK); logged-in Echo UI eyeball still needs Omar session; production deploy not done
+- Residual at closure: Wasim probes could be `unreachable` if worker started without env; fixed in production release by loading `automation-worker/.env` into the process
 
 ### C1.4A controlled acceptance (2026-09-08)
 
@@ -55,8 +64,9 @@ Give admins a live Automation Operations Dashboard, structured run progress/hear
 - [x] Reverb outage cannot break authoritative automation
 - [x] Artifact privacy for future captures + historical decision A
 - [x] MySQL concurrency harness + focused regression
-- [ ] Production/staging deploy + commit packaging of dirty C1.2.1/C1.4 tree
+- [x] Production/staging deploy + commit packaging of dirty C1.2.1/C1.4 tree
 - [x] C1 closed as **READY FOR PRODUCTION RELEASE**
+- [x] Production release: probe healthy + circuits resumed
 
 ## Gotchas
 
@@ -64,8 +74,9 @@ Give admins a live Automation Operations Dashboard, structured run progress/hear
 - Optional realtime must use afterCommit + try/catch broadcasters — never throw from StartFulfillment
 - Wallet commit `0cd86fc` removed clawback admin routes while leaving sidebar links — restore before admin UI acceptance
 - Do not merge Track B again during C1; clawback behavior already ancestral on this branch
-- Worker restart required to pick up privacy build on `/health`
+- Worker must load `FULFILLMENT_AUTOMATION_CALLBACK_SECRET` from env at process start (no dotenv in worker) or probes fail `hmac_unauthorized`
+- Never run purchase with worker older than C1.2.1 orders compatibility
 
-## Next milestone (after C1 production release)
+## Next milestone
 
-Production release ops only — do not start C2 unless Omar authorizes.
+Omar chooses next pressure (ops vs growth). **Do not start C2** until explicitly authorized. First-live-order: monitor Working now / heartbeat / adapter / contracts / masking / supplier order ID / Waiting supplier / reconcile / circuits — pause on unknown UI.
