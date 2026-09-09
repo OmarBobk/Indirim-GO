@@ -17,7 +17,7 @@ Related: [[Fulfillments & Automation]], [[Orders & Checkout]], [[Refunds & Settl
 | Track | Focus | Status |
 |---|---|---|
 | **B** | Financial risk + admin ops | **Closed** (M7.0–M7.2.4) |
-| **C** | Fulfilment / supplier automation | **Active** — C1.3 code shipped; **C1.4 not closed** (2026-08-06) |
+| **C** | Fulfilment / supplier automation | **C1 closed — ready for production release** (2026-09-09) |
 | **D** | Growth / conversion | Backlog — recommended next if conversion dominates |
 
 Suggested order inside each track below. Adjust from real ops bottlenecks and conversion data.
@@ -28,7 +28,7 @@ Suggested order inside each track below. Adjust from real ops bottlenecks and co
 
 **Closed:** Track B — Financial Risk and Admin Operations (through M7.2.4 historical exposure report-only)
 
-**Active:** Track C — C1 Automation Reliability (see [[C1 — Automation Reliability and Supplier UI Resilience]]).
+**Active release:** Track C — C1 packaged for production (see [[C1 — Automation Reliability and Supplier UI Resilience]]). Do not start C2 until production release completes.
 
 **Also available:** Track D (growth) if conversion dominates — Omar chooses priority between C1 delivery and D1.
 
@@ -53,7 +53,7 @@ Suggested order: **C1 → C2 → C3 → C4**
 | **C1.1** | Live Automation Operations Dashboard + progress/heartbeat | **Shipped** 2026-08-05 |
 | **C1.2** | Wasim UI adapters + page contracts + health probe | **Shipped** 2026-08-05; **C1.2.1** orders compat 2026-09-07 |
 | **C1.3** | Circuit breakers / auto pause / probe-gated resume | **Shipped (code)** 2026-08-05 |
-| **C1.4** | Production acceptance + hardening | **C1.4A PASSED** 2026-09-08 (Cancelled terminal); deploy/Reverb remain |
+| **C1.4** | Production acceptance + hardening | **C1.4B CLOSED — READY FOR PRODUCTION RELEASE** 2026-09-09 |
 
 **Do not** invent a second Wasim UI adapter without live fixtures. Do not start C2 until C1 is closed (A) or safely paused (B) with an explicit business decision.
 

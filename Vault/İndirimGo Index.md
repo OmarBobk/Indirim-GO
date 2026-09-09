@@ -25,11 +25,11 @@ Central map for indirimGo knowledge. Use this vault with [[Ask → Plan → Agen
 - [[Customer Financial Centre]] — M6 closed (M6.8); Financial Control Centre shipped
 - [[Customer Activity]] — M5 Activity feed (shipped; Home Needs attention deferred)
 - [[M7 — Financial Risk and Admin Operations]] — Track B closed (M7.0–M7.2.4)
-- [[C1 — Automation Reliability and Supplier UI Resilience]] — Track C; **C1.4A PASSED** (2026-09-08): controlled purchase + reconcile (terminal Cancelled); C1 not fully closed
+- [[C1 — Automation Reliability and Supplier UI Resilience]] — Track C; **C1.4B CLOSED — READY FOR PRODUCTION RELEASE** (2026-09-09)
 
 ## Roadmap
 
-- [[Future Roadmap - Automation and Growth]] — Track C **active** (C1.4 acceptance open / not closed); Track D backlog; Track B closed
+- [[Future Roadmap - Automation and Growth]] — Track C **C1 ready for production release**; Track D backlog; Track B closed
 - Track B complete through **M7.2.4 Historical Commission Exposure**
 
 ## Mobile
@@ -44,10 +44,12 @@ Central map for indirimGo knowledge. Use this vault with [[Ask → Plan → Agen
 - [[Mobile M2.1 — Laravel Catalog API]] — catalog read API on `staging` (`485be1befcf99f9d4a337745ec0b4390529c79e1`, PR #40)
 - [[Mobile M2.2 — Flutter Commerce Shell]] — Flutter discovery UI on mobile `main` (`c2119116239a720638c16a0b113be34f36698a78`, PR #4)
 - [[Mobile M2.3 — Local Commerce Integration]] — Omar-accepted local Android verification (`http://10.0.2.2:8000/api/v1`)
-- [[Mobile M3.0 — Purchasing Architecture]] — accepted M3 scope (buy-now / single-line)
-- [[Mobile M3.1 Purchase API Contract]] — proposed OpenAPI 1.2.0 purchase contract
-- [[Mobile M3.1 — Laravel Purchase API]] — in review on `feature/mobile-m3.1-purchase-api`
-- Next after Omar accepts M3.1: M3.1R independent review, then Flutter M3.2 (not started)
+- [[Mobile M3.0 — Purchasing Architecture]] — accepted M3 scope (**Mobile M3 closed** after M3.3)
+- [[Mobile M3.1 Purchase API Contract]] — accepted OpenAPI 1.2.0 purchase contract
+- [[Mobile M3.1 — Laravel Purchase API]] — accepted on `staging` (`d23f961…`, PR #44)
+- [[Mobile M3.2 — Flutter Buy-Now Purchasing Flow]] — accepted on mobile `main` (`9e056f1…`, PR #5; includes recovery fix)
+- [[Mobile M3.3 — Local Purchase Integration]] — Omar-accepted local Android purchase walkthrough (`http://10.0.2.2:8000/api/v1`)
+- Next architecture candidate (not started): **Mobile M4.0 — Orders and Fulfillment Status Architecture Audit**
 
 ## Workflow
 

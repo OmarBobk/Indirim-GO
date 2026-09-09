@@ -32,11 +32,12 @@ Order line fulfillment: admin manual flow + Node/Playwright automation worker.
 - Dispatch gating; queued stay queued; no refund/cancel on open
 - Dashboard circuit cards + Waiting for automation recovery + pause/resume
 
-## C1.4 (acceptance — NOT CLOSED)
+## C1.4 (acceptance — CLOSED ready for production release)
 
 - C1.2.1 2026-09-07: orders signatures tab-aware; live probe healthy
 - C1.4A 2026-09-08: controlled purchase accepted; reconcile pending→Cancelled; refund pending once; circuits stayed enabled
-- Next: C1.2.x orders signatures from private evidence — not `wasim-ui-v2`
+- C1.4B 2026-09-09: refund posted; Reverb isolation; privacy masking; concurrency harness; worker `2026-09-09-c1.4b-artifact-privacy`
+- Do not invent `wasim-ui-v2`
 
 ## Key files
 

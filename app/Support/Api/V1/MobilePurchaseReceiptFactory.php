@@ -12,6 +12,10 @@ use App\Support\LedgerMoney;
 
 final class MobilePurchaseReceiptFactory
 {
+    public function __construct(
+        private readonly MobileCustomerOrderStatusProjector $projector,
+    ) {}
+
     /**
      * @return array{
      *     order_number: string,
@@ -20,6 +24,17 @@ final class MobilePurchaseReceiptFactory
      *     currency: string,
      *     total: array{amount: string, currency: string, display: array{currency: string, formatted: string}},
      *     paid_at: string|null,
+     *     created_at: string,
+     *     fulfillment_status: string,
+     *     customer_state: string,
+     *     fulfillment_summary: array{
+     *         total: int,
+     *         queued: int,
+     *         processing: int,
+     *         completed: int,
+     *         failed: int,
+     *         cancelled: int
+     *     },
      *     items: list<array{
      *         product_id: int|null,
      *         package_id: int|null,
@@ -33,13 +48,11 @@ final class MobilePurchaseReceiptFactory
      */
     public function fromOrder(Order $order, User $user): array
     {
-        $order->loadMissing('items');
+        $order->loadMissing(['items.fulfillments']);
         $money = MobileMoneyFactory::forUser($user);
-        $isPaid = $order->status === OrderStatus::Paid
-            || $order->status === OrderStatus::Processing
-            || $order->status === OrderStatus::Fulfilled;
+        $projection = $this->projector->project($order);
 
-        $items = $order->items->map(function ($item) use ($money): array {
+        $items = $order->items->sortBy('id')->values()->map(function ($item) use ($money): array {
             $mode = $item->amount_mode instanceof ProductAmountMode
                 ? $item->amount_mode->value
                 : (string) ($item->amount_mode ?? ProductAmountMode::Fixed->value);
@@ -55,13 +68,21 @@ final class MobilePurchaseReceiptFactory
             ];
         })->values()->all();
 
+        $status = $order->status instanceof OrderStatus
+            ? $order->status->value
+            : (string) $order->status;
+
         return [
             'order_number' => (string) $order->order_number,
-            'status' => $order->status->value,
-            'payment_status' => $isPaid ? 'paid' : $order->status->value,
+            'status' => $status,
+            'payment_status' => $projection['payment_status'],
             'currency' => (string) $order->currency,
             'total' => $money->fromUsdDecimal(LedgerMoney::normalize((string) $order->total)),
             'paid_at' => $order->paid_at?->toIso8601String(),
+            'created_at' => $order->created_at?->toIso8601String() ?? now()->toIso8601String(),
+            'fulfillment_status' => $projection['fulfillment_status'],
+            'customer_state' => $projection['customer_state'],
+            'fulfillment_summary' => $projection['fulfillment_summary'],
             'items' => $items,
         ];
     }

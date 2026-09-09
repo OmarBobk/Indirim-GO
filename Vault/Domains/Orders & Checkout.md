@@ -17,6 +17,7 @@ Storefront purchase flow: cart, buy-now, checkout, pay with wallet.
 ## Features
 
 - [[Customer Activity]] — order status in timeline
+- [[Mobile M4.5.1 — Laravel Order Search]] — mobile `GET /api/v1/orders` `q` + `customer_state`
 
 ## Related
 
