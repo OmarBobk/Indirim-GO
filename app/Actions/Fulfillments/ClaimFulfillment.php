@@ -6,9 +6,9 @@ namespace App\Actions\Fulfillments;
 
 use App\Actions\Fulfillments\Concerns\TransitionsFulfillmentToProcessing;
 use App\Enums\FulfillmentStatus;
-use App\Events\FulfillmentListChanged;
 use App\Models\Fulfillment;
 use App\Models\User;
+use App\Support\FulfillmentListBroadcaster;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -76,10 +76,7 @@ class ClaimFulfillment
                 ['source' => 'claim']
             );
 
-            $fulfillmentId = $lockedFulfillment->id;
-            DB::afterCommit(static function () use ($fulfillmentId): void {
-                event(new FulfillmentListChanged($fulfillmentId, 'claimed'));
-            });
+            FulfillmentListBroadcaster::dispatch($lockedFulfillment->id, 'claimed');
 
             return $lockedFulfillment->refresh();
         });

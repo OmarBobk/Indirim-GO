@@ -6,9 +6,9 @@ namespace App\Actions\Fulfillments;
 
 use App\Actions\Fulfillments\Concerns\TransitionsFulfillmentToProcessing;
 use App\Enums\FulfillmentStatus;
-use App\Events\FulfillmentListChanged;
 use App\Models\Fulfillment;
 use App\Models\User;
+use App\Support\FulfillmentListBroadcaster;
 use Illuminate\Support\Facades\DB;
 
 class StartFulfillment
@@ -37,10 +37,7 @@ class StartFulfillment
 
             $this->transitionToProcessing($lockedFulfillment, $actor, $actorId, $meta);
 
-            $fulfillmentId = $lockedFulfillment->id;
-            DB::afterCommit(static function () use ($fulfillmentId): void {
-                event(new FulfillmentListChanged($fulfillmentId, 'processing'));
-            });
+            FulfillmentListBroadcaster::dispatch($lockedFulfillment->id, 'processing');
 
             return $lockedFulfillment->refresh();
         });

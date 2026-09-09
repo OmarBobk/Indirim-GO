@@ -6,7 +6,6 @@ namespace App\Actions\Fulfillments;
 
 use App\Enums\FulfillmentLogLevel;
 use App\Enums\FulfillmentStatus;
-use App\Events\FulfillmentListChanged;
 use App\Models\Fulfillment;
 use App\Models\Order;
 use App\Models\OrderItem;
@@ -15,6 +14,7 @@ use App\Notifications\FulfillmentFailedNotification;
 use App\Notifications\FulfillmentProcessFailedNotification;
 use App\Services\NotificationRecipientService;
 use App\Services\OperationalIntelligenceService;
+use App\Support\FulfillmentListBroadcaster;
 use Illuminate\Support\Facades\DB;
 
 class FailFulfillment
@@ -95,20 +95,22 @@ class FailFulfillment
                     return;
                 }
                 app(OperationalIntelligenceService::class)->detectFulfillmentFailure($fulfillment);
-                if ($orderOwnerId !== null) {
-                    $owner = User::query()->find($orderOwnerId);
-                    if ($owner !== null) {
-                        $owner->notify(FulfillmentFailedNotification::fromFulfillment($fulfillment, $failureReason));
+                try {
+                    if ($orderOwnerId !== null) {
+                        $owner = User::query()->find($orderOwnerId);
+                        if ($owner !== null) {
+                            $owner->notify(FulfillmentFailedNotification::fromFulfillment($fulfillment, $failureReason));
+                        }
                     }
+                    $adminNotification = FulfillmentProcessFailedNotification::fromFulfillment($fulfillment, $failureReason);
+                    app(NotificationRecipientService::class)->adminUsers()->each(fn ($admin) => $admin->notify($adminNotification));
+                } catch (\Throwable $exception) {
+                    // Optional notification/broadcast channels must not reverse durable failure state.
+                    report($exception);
                 }
-                $adminNotification = FulfillmentProcessFailedNotification::fromFulfillment($fulfillment, $failureReason);
-                app(NotificationRecipientService::class)->adminUsers()->each(fn ($admin) => $admin->notify($adminNotification));
             });
 
-            $fulfillmentId = $lockedFulfillment->id;
-            DB::afterCommit(static function () use ($fulfillmentId): void {
-                event(new FulfillmentListChanged($fulfillmentId, 'failed'));
-            });
+            FulfillmentListBroadcaster::dispatch($lockedFulfillment->id, 'failed');
 
             return $lockedFulfillment->refresh();
         });

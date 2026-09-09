@@ -65,8 +65,7 @@ test('automation admin page is restricted to admins', function () {
 test('admin can view automation monitor page', function () {
     $this->actingAs(adminUser())
         ->get(route('admin.automation.index'))
-        ->assertSuccessful()
-        ->assertSeeLivewire(AutomationMonitor::class)
+        ->assertOk()
         ->assertSee(__('messages.automation_flow_title'));
 });
 

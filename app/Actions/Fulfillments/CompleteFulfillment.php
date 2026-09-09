@@ -7,13 +7,13 @@ namespace App\Actions\Fulfillments;
 use App\Actions\Refunds\DismissPendingRefundForFulfillment;
 use App\Enums\FulfillmentLogLevel;
 use App\Enums\FulfillmentStatus;
-use App\Events\FulfillmentListChanged;
 use App\Jobs\EvaluateLoyaltyForUser;
 use App\Models\Fulfillment;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\User;
 use App\Notifications\FulfillmentCompletedNotification;
+use App\Support\FulfillmentListBroadcaster;
 use Illuminate\Support\Facades\DB;
 
 class CompleteFulfillment
@@ -97,18 +97,20 @@ class CompleteFulfillment
                     dispatch(new EvaluateLoyaltyForUser((int) $userId));
                     $fulfillment = Fulfillment::query()->find($completedFulfillmentId);
                     if ($fulfillment !== null) {
-                        $owner = User::query()->find($userId);
-                        if ($owner !== null) {
-                            $owner->notify(FulfillmentCompletedNotification::fromFulfillment($fulfillment));
+                        try {
+                            $owner = User::query()->find($userId);
+                            if ($owner !== null) {
+                                $owner->notify(FulfillmentCompletedNotification::fromFulfillment($fulfillment));
+                            }
+                        } catch (\Throwable $exception) {
+                            // Optional notification/broadcast channels must not reverse durable completion.
+                            report($exception);
                         }
                     }
                 });
             }
 
-            $fulfillmentId = $lockedFulfillment->id;
-            DB::afterCommit(static function () use ($fulfillmentId): void {
-                event(new FulfillmentListChanged($fulfillmentId, 'completed'));
-            });
+            FulfillmentListBroadcaster::dispatch($lockedFulfillment->id, 'completed');
 
             return $lockedFulfillment->refresh();
         });

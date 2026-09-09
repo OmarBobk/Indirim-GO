@@ -14,6 +14,7 @@ Use this as the primary prompt context for AI tools that will plan or implement 
 - **Access model:** backend routes are hidden by `backend` middleware and permission checks (404 on denial by design).
 - **Mutation safety:** financial writes must stay transactional and idempotent (`lockForUpdate`, idempotency keys, `DB::afterCommit` side effects).
 - **Agent rules:** follow `.cursor/rules/laravel-boost.mdc` for stack versions, conventions, and karman.store financial guardrails.
+- **Track C / C1:** C1.1–C1.3 + C1.2.1 on `local/track-c1`. **C1.4A 2026-09-08:** live controlled purchase accepted; reconcile pending→Cancelled; one refund pending. Worker privacy build `2026-09-08-c1.4a-artifact-privacy` masks player-id inputs in purchase screenshots. Do not invent `wasim-ui-v2`. C1 not fully closed (deploy/Reverb). Canonical: `Vault/Features/C1 — Automation Reliability and Supplier UI Resilience.md`.
 
 ---
 

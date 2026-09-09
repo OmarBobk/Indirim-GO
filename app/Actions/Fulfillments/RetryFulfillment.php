@@ -8,7 +8,6 @@ use App\Enums\FulfillmentLogLevel;
 use App\Enums\FulfillmentStatus;
 use App\Enums\OrderStatus;
 use App\Enums\WalletTransactionType;
-use App\Events\FulfillmentListChanged;
 use App\Jobs\DispatchFulfillmentAutomationJob;
 use App\Models\Fulfillment;
 use App\Models\Order;
@@ -16,6 +15,7 @@ use App\Models\OrderItem;
 use App\Models\User;
 use App\Models\WalletTransaction;
 use App\Services\FulfillmentAutomationService;
+use App\Support\FulfillmentListBroadcaster;
 use Illuminate\Support\Facades\DB;
 
 class RetryFulfillment
@@ -121,8 +121,8 @@ class RetryFulfillment
                 ->log('Fulfillment retry requested');
 
             $fulfillmentId = $lockedFulfillment->id;
+            FulfillmentListBroadcaster::dispatch($fulfillmentId, 'created');
             DB::afterCommit(static function () use ($fulfillmentId): void {
-                event(new FulfillmentListChanged($fulfillmentId, 'created'));
                 $fulfillment = Fulfillment::query()->find($fulfillmentId);
                 if ($fulfillment !== null && app(FulfillmentAutomationService::class)->isEligible($fulfillment)) {
                     DispatchFulfillmentAutomationJob::dispatch($fulfillmentId);

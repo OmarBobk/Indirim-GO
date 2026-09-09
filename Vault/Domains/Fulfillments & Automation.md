@@ -32,11 +32,11 @@ Order line fulfillment: admin manual flow + Node/Playwright automation worker.
 - Dispatch gating; queued stay queued; no refund/cancel on open
 - Dashboard circuit cards + Waiting for automation recovery + pause/resume
 
-## C1.4 (acceptance — NOT CLOSED 2026-08-06)
+## C1.4 (acceptance — NOT CLOSED)
 
-- Automated gates green (Laravel + worker selfchecks); runbook: `Docs/AUTOMATION_OPERATIONS_RUNBOOK.md`
-- **Blocked:** dirty `local/track-c1` worktree (C1.2/C1.3 uncommitted), local env, worker unreachable, probe product empty, no live probe/purchase
-- Verdict **C — Not closed** until live gates pass (or Branch B safe pause with evidence)
+- C1.2.1 2026-09-07: orders signatures tab-aware; live probe healthy
+- C1.4A 2026-09-08: controlled purchase accepted; reconcile pending→Cancelled; refund pending once; circuits stayed enabled
+- Next: C1.2.x orders signatures from private evidence — not `wasim-ui-v2`
 
 ## Key files
 

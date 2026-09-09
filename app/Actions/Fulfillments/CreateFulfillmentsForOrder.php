@@ -8,7 +8,6 @@ use App\Enums\FulfillmentLogLevel;
 use App\Enums\FulfillmentStatus;
 use App\Enums\OrderStatus;
 use App\Enums\ProductAmountMode;
-use App\Events\FulfillmentListChanged;
 use App\Jobs\DispatchFulfillmentAutomationJob;
 use App\Models\Fulfillment;
 use App\Models\Order;
@@ -18,6 +17,7 @@ use App\Notifications\FulfillmentCreatedNotification;
 use App\Services\FulfillmentAutomationService;
 use App\Services\NotificationRecipientService;
 use App\Services\SystemEventService;
+use App\Support\FulfillmentListBroadcaster;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -102,17 +102,7 @@ class CreateFulfillmentsForOrder
                     $fulfillmentId = $fulfillment->id;
                     $orderId = $order->id;
                     DB::afterCommit(static function () use ($fulfillmentId, $orderId): void {
-                        // Optional publication only. Durable fulfillments are already committed.
-                        // Isolate transport/notification failures so a paid purchase cannot become HTTP 500.
-                        try {
-                            event(new FulfillmentListChanged($fulfillmentId, 'created'));
-                        } catch (\Throwable $exception) {
-                            Log::warning('Fulfillment list broadcast failed', [
-                                'error_id' => 'fulfillment_list_broadcast_failed',
-                                'fulfillment_id' => $fulfillmentId,
-                                'exception_class' => $exception::class,
-                            ]);
-                        }
+                        FulfillmentListBroadcaster::dispatch($fulfillmentId, 'created');
 
                         // Automation dispatch is recoverable via fulfillment:dispatch-automation
                         // while the durable row remains Queued. Never silently lose this path

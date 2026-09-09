@@ -6,6 +6,8 @@ namespace App\Actions\Fulfillments;
 
 use App\Events\AutomationRunChanged;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class BroadcastAutomationRunChanged
 {
@@ -15,7 +17,15 @@ class BroadcastAutomationRunChanged
         ?string $status = null,
     ): void {
         $broadcast = static function () use ($runUuid, $type, $status): void {
-            event(new AutomationRunChanged($runUuid, $type, $status));
+            try {
+                event(new AutomationRunChanged($runUuid, $type, $status));
+            } catch (Throwable $exception) {
+                Log::warning('Automation broadcast failed', [
+                    'error_id' => 'automation_broadcast_failed',
+                    'type' => $type,
+                    'exception_class' => $exception::class,
+                ]);
+            }
         };
 
         if (DB::transactionLevel() > 0) {
