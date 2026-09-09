@@ -1,5 +1,6 @@
 import { WORKER_BUILD } from '../build.js';
 import { withBrowserContext } from '../browser/pool.js';
+import { withMaskedSensitiveWasimFields } from '../browser/maskSensitiveScreenshot.js';
 import { uploadArtifactBytes } from '../callbacks/uploadArtifact.js';
 import { postResult } from '../callbacks/postResult.js';
 import { resolveDriver } from '../drivers/index.js';
@@ -77,7 +78,9 @@ export async function executeRun(payload: RunPayload): Promise<void> {
         progress.step('browser_ready');
 
         const screenshot = async (label: string): Promise<void> => {
-          const fileData = await page.screenshot({ type: 'png', fullPage: true });
+          const fileData = await withMaskedSensitiveWasimFields(page, label, async () => (
+            page.screenshot({ type: 'png', fullPage: true })
+          ));
           capturedScreenshotLabels.push(label);
           logger.log('screenshot', `Captured ${label}.png (${fileData.byteLength} bytes)`);
 

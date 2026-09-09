@@ -4,6 +4,9 @@ import {
   FIXTURE_AMBIGUOUS,
   FIXTURE_LOGIN_V1,
   FIXTURE_MAINTENANCE,
+  FIXTURE_ORDERS_LIVE_CURRENT,
+  FIXTURE_ORDERS_MISSING_TAB,
+  FIXTURE_ORDERS_MISSING_TABLE,
   FIXTURE_ORDERS_PARTIAL,
   FIXTURE_ORDERS_V1,
   FIXTURE_PRODUCT_AMBIGUOUS_SUBMIT,
@@ -26,6 +29,7 @@ import {
   isSupplierOrderSuccessful,
   parseSwalPurchaseContent,
 } from '../parseSwalPurchase.js';
+import { wasimOrdersTableId } from '../ordersPageHelpers.js';
 
 function run(name: string, fn: () => void): void {
   fn();
@@ -51,11 +55,28 @@ run('detects product fixture and allows purchase path', () => {
   assert.equal(fixtureBlocksSubmit(result), false);
 });
 
-run('detects orders fixture', () => {
+run('detects legacy historical-tab orders fixture', () => {
   const result = detectWasimUiFromHtml(FIXTURE_ORDERS_V1, '/customer/order');
   assert.equal(result.kind, 'recognized');
   assert.equal(result.reconcileCapable, true);
   assert.equal(fixtureBlocksSubmit(result), true);
+});
+
+run('detects live-current New-tab orders fixture without requiring reload button', () => {
+  const result = detectWasimUiFromHtml(FIXTURE_ORDERS_LIVE_CURRENT, '/customer/order');
+  assert.equal(result.kind, 'recognized');
+  assert.equal(result.reconcileCapable, true);
+  assert.ok(FIXTURE_ORDERS_LIVE_CURRENT.includes('id="responsiveDataTable"'));
+  assert.ok(FIXTURE_ORDERS_LIVE_CURRENT.includes('id="btn-new"'));
+  assert.ok(FIXTURE_ORDERS_LIVE_CURRENT.includes('id="btn-Completed"'));
+  assert.ok(FIXTURE_ORDERS_LIVE_CURRENT.includes('id="btn-Cancelled"'));
+  assert.ok(FIXTURE_ORDERS_LIVE_CURRENT.includes('aria-controls="responsiveDataTable"'));
+});
+
+run('orders table id is tab-aware', () => {
+  assert.equal(wasimOrdersTableId('new'), 'responsiveDataTable');
+  assert.equal(wasimOrdersTableId('completed'), 'responsiveDataTable2');
+  assert.equal(wasimOrdersTableId('cancelled'), 'responsiveDataTable2');
 });
 
 run('rejects unknown UI before submit', () => {
@@ -76,7 +97,7 @@ run('recognizes maintenance and access denied', () => {
   assert.equal(detectWasimUiFromHtml(FIXTURE_ACCESS_DENIED, '/').kind, 'access_denied');
 });
 
-run('partial product / orders mark ambiguous', () => {
+run('partial product / orders mark unsupported', () => {
   assert.equal(
     detectWasimUiFromHtml(FIXTURE_PRODUCT_MISSING_FIELD, '/customer/home/productrequest').kind,
     'ambiguous',
@@ -85,6 +106,19 @@ run('partial product / orders mark ambiguous', () => {
     detectWasimUiFromHtml(FIXTURE_ORDERS_PARTIAL, '/customer/order').kind,
     'ambiguous',
   );
+  assert.equal(
+    detectWasimUiFromHtml(FIXTURE_ORDERS_MISSING_TAB, '/customer/order').failureCode,
+    'orders_ui_unsupported',
+  );
+  assert.equal(
+    detectWasimUiFromHtml(FIXTURE_ORDERS_MISSING_TABLE, '/customer/order').failureCode,
+    'orders_ui_unsupported',
+  );
+});
+
+run('unrelated path with orders markers does not become reconcile-capable', () => {
+  const result = detectWasimUiFromHtml(FIXTURE_ORDERS_LIVE_CURRENT, '/customer/home');
+  assert.notEqual(result.kind, 'recognized');
 });
 
 run('ambiguous submit control count > 1', () => {

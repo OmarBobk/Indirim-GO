@@ -8,9 +8,11 @@ import {
   reloadWasimOrdersTable,
   setWasimStartDate,
   startDateThreeYearsAgo,
+  wasimOrdersTableId,
+  type WasimOrdersTab,
 } from './ordersPageHelpers.js';
 
-type OrderTab = 'cancelled' | 'completed' | 'new';
+type OrderTab = WasimOrdersTab;
 
 type FoundOrder = {
   tab: OrderTab;
@@ -35,22 +37,32 @@ async function clickOrdersTab(page: Page, tab: OrderTab): Promise<void> {
 
 async function loadOrdersTab(page: Page, tab: OrderTab, logger: RunLogger): Promise<void> {
   await clickOrdersTab(page, tab);
-  await setWasimStartDate(page, startDateThreeYearsAgo());
-  await reloadWasimOrdersTable(page);
+
+  if (tab !== 'new') {
+    await setWasimStartDate(page, startDateThreeYearsAgo());
+  }
+
+  await reloadWasimOrdersTable(page, tab);
 
   logger.log('reconcile_tab', `Loaded Wasim orders tab=${tab}`);
 }
 
-async function searchOrderInTable(page: Page, supplierOrderId: string): Promise<number[] | 'duplicate'> {
-  const search = page.locator('input[aria-controls="responsiveDataTable2"]').first();
+async function searchOrderInTable(
+  page: Page,
+  tab: OrderTab,
+  supplierOrderId: string,
+): Promise<number[] | 'duplicate'> {
+  const tableId = wasimOrdersTableId(tab);
+  const search = page.locator(`input[aria-controls="${tableId}"][type="search"]`).first();
 
+  await search.waitFor({ state: 'visible', timeout: 15_000 });
   await search.scrollIntoViewIfNeeded().catch(() => undefined);
   await search.fill('');
   await search.fill(supplierOrderId);
 
-  await page.locator('#responsiveDataTable2_processing').waitFor({ state: 'hidden', timeout: 15_000 }).catch(() => undefined);
+  await page.locator(`#${tableId}_processing`).waitFor({ state: 'hidden', timeout: 15_000 }).catch(() => undefined);
 
-  const rows = page.locator('#responsiveDataTable2 tbody tr');
+  const rows = page.locator(`#${tableId} tbody tr`);
 
   const count = await rows.count();
   const matches: number[] = [];
@@ -71,12 +83,13 @@ async function searchOrderInTable(page: Page, supplierOrderId: string): Promise<
   return matches;
 }
 
-async function readExpandedDetails(page: Page, rowIndex: number): Promise<{
+async function readExpandedDetails(page: Page, tab: OrderTab, rowIndex: number): Promise<{
   statusLabel: string | null;
   processingTime: string | null;
   description: string | null;
 }> {
-  const row = page.locator('#responsiveDataTable2 tbody tr').nth(rowIndex);
+  const tableId = wasimOrdersTableId(tab);
+  const row = page.locator(`#${tableId} tbody tr`).nth(rowIndex);
   const expandControl = row.locator('td.dtr-control').first();
 
   if (await expandControl.isVisible().catch(() => false)) {
@@ -110,7 +123,7 @@ async function findOrderOnTab(
 ): Promise<FoundOrder | null | 'duplicate'> {
   await loadOrdersTab(page, tab, logger);
 
-  const matches = await searchOrderInTable(page, supplierOrderId);
+  const matches = await searchOrderInTable(page, tab, supplierOrderId);
 
   if (matches === 'duplicate') {
     return 'duplicate';
@@ -121,7 +134,7 @@ async function findOrderOnTab(
   }
 
   const rowIndex = matches[0]!;
-  const details = await readExpandedDetails(page, rowIndex);
+  const details = await readExpandedDetails(page, tab, rowIndex);
 
   logger.log(
     'reconcile_found',

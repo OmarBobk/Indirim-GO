@@ -60,11 +60,10 @@ export function detectWasimUiFromHtml(html: string, path: string): {
     has(html, 'id="product-request-buyid"') || has(html, 'إتمام الشراء'),
   ];
   const ordersMarkers = [
-    has(html, 'id="responsiveDataTable2"'),
+    has(html, 'id="responsiveDataTable"') || has(html, 'id="responsiveDataTable2"'),
     has(html, 'id="btn-new"'),
     has(html, 'id="btn-Completed"'),
     has(html, 'id="btn-Cancelled"'),
-    has(html, 'id="btn-Transaction"'),
   ];
 
   const loginOk = loginMarkers.every(Boolean);
@@ -115,7 +114,8 @@ export function detectWasimUiFromHtml(html: string, path: string): {
     return { kind: 'ambiguous', failureCode: 'ambiguous_ui' };
   }
 
-  if (partialOrders > 0 && partialOrders < 5) {
+  // Four required orders markers (table OR either DataTable id + three status tabs).
+  if (partialOrders > 0 && partialOrders < 4) {
     return { kind: 'ambiguous', failureCode: 'orders_ui_unsupported' };
   }
 

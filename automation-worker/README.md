@@ -20,7 +20,7 @@ Returns worker identity, capacity, driver/UI support info, e.g.:
 {
   "status": "ok",
   "ready": true,
-  "build": "2026-08-05-c1.2-ui-adapters",
+  "build": "2026-09-07-c1.2.1-orders-compat",
   "instance_id": "…",
   "uptime_seconds": 42,
   "active_count": 0,
@@ -127,14 +127,14 @@ Verify the **compiled files** (build can succeed while an old Node process keeps
 
 ```bash
 grep wasim_submit_purchase dist/server.js   # must print a match
-npm run build                                # prints "Build OK: 2026-08-05-c1.2-ui-adapters"
+npm run build                                # prints "Build OK: 2026-09-07-c1.2.1-orders-compat"
 ```
 
 Restart the worker, then verify the **live process**:
 
 ```bash
 curl -s http://127.0.0.1:3100/health
-# must include: "build":"2026-08-05-c1.2-ui-adapters","wasim_submit_purchase":true,"wasim_health_probe":true
+# must include: "build":"2026-09-07-c1.2.1-orders-compat","wasim_submit_purchase":true,"wasim_health_probe":true
 ```
 
 If `dist/server.js` has `wasim_submit_purchase` but `curl` still returns only `{"status":"ok"}`, the old process was **not restarted** (pm2/systemd/manual `node` still running).
@@ -154,6 +154,12 @@ Screenshots are captured in memory, uploaded to Laravel immediately (`storage/ap
 ## Operations
 
 See repo root `Docs/AUTOMATION_OPERATIONS_RUNBOOK.md` for daily checks, circuit pause/resume, rollback, and acceptance gates (C1.4).
+
+## Probe login (C1.4A)
+
+If the live session is expired, the probe now uses the existing `wasim-ui-v1` `submitLogin` adapter method (no purchase click, no requirement fill). A healthy purchase contract is **not** enough to buy: reconcile/orders contract must also pass.
+
+Live 2026-09-07 (C1.2.1): New tab uses `#responsiveDataTable`; Completed/Cancelled use `#responsiveDataTable2` + `#btn-Transaction`. Reload is not required for orders-page identity. After patch, live probe reported purchase + reconcile healthy.
 
 ## Drivers
 

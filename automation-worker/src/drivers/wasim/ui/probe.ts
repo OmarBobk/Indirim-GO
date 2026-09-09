@@ -12,7 +12,8 @@ import {
   WASIM_UI_V1_VERSION,
 } from './versions.js';
 import type { WasimUiFailureCode } from './failures.js';
-import type { BrowserContext } from 'playwright';
+import type { BrowserContext, Page } from 'playwright';
+import type { WasimUiAdapter } from './types.js';
 
 export type WasimProbeMode = 'full' | 'session' | 'purchase_contract' | 'reconcile_contract';
 
@@ -47,6 +48,39 @@ export type WasimProbeResponse = {
   duration_ms: number;
   operational_classification: string;
 };
+
+async function authenticateProbeSession(
+  page: Page,
+  adapter: WasimUiAdapter,
+  credentials: WasimProbeRequest['credentials'],
+): Promise<'authenticated' | 'authentication_required' | 'authentication_failed'> {
+  const username = credentials?.username?.trim() ?? '';
+  const password = credentials?.password ?? '';
+
+  if (username === '' || password === '') {
+    return 'authentication_required';
+  }
+
+  const loginFormVisible = await adapter.isLoginFormVisible(page);
+
+  if (!loginFormVisible) {
+    return 'authentication_required';
+  }
+
+  await adapter.submitLogin(page, username, password);
+
+  try {
+    await page.waitForURL((url) => ! isWasimLoginPage(url.toString()), { timeout: 45_000 });
+  } catch {
+    // Verified below.
+  }
+
+  if (isWasimLoginPage(page.url()) || await adapter.isLoginFormVisible(page, 2_000)) {
+    return 'authentication_failed';
+  }
+
+  return 'authenticated';
+}
 
 function classifyState(parts: {
   session: string;
@@ -118,21 +152,31 @@ export async function runWasimHealthProbe(request: WasimProbeRequest): Promise<W
             const productUrl = resolveWasimProductUrl(productApi);
             await page.goto(productUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 });
 
-            const detection = await detectWasimUi(page);
+            let detection = await detectWasimUi(page);
             if (detection.kind === 'recognized') {
               detectedUi = detection.uiVersion;
-            } else if (detection.kind === 'login_required') {
-              sessionState = 'authentication_required';
-              failureCodes.push('authentication_required');
+            } else if (detection.kind === 'login_required' || isWasimLoginPage(page.url())) {
               detectedUi = WASIM_UI_V1_VERSION;
+              const auth = await authenticateProbeSession(page, adapter, request.credentials);
+              sessionState = auth;
+
+              if (auth !== 'authenticated') {
+                failureCodes.push(auth === 'authentication_failed' ? 'authentication_failed' : 'authentication_required');
+              } else {
+                await page.goto(productUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+                detection = await detectWasimUi(page);
+                if (detection.kind === 'recognized') {
+                  detectedUi = detection.uiVersion;
+                }
+              }
             } else {
               failureCodes.push(detection.failureCode);
               sessionState = detection.kind;
             }
 
             if (isWasimLoginPage(page.url())) {
-              sessionState = 'authentication_required';
-              if (!failureCodes.includes('authentication_required')) {
+              sessionState = sessionState === 'authenticated' ? 'authentication_required' : sessionState;
+              if (!failureCodes.includes('authentication_required') && !failureCodes.includes('authentication_failed')) {
                 failureCodes.push('authentication_required');
               }
             } else if (isWasimProductRequestPage(page.url())) {
@@ -189,14 +233,24 @@ export async function runWasimHealthProbe(request: WasimProbeRequest): Promise<W
         if (mode === 'full' || mode === 'session' || mode === 'reconcile_contract') {
           await page.goto(WASIM_ORDERS_URL, { waitUntil: 'domcontentloaded', timeout: 60_000 });
 
-          const detection = await detectWasimUi(page);
+          let detection = await detectWasimUi(page);
 
           if (detection.kind === 'recognized') {
             detectedUi = detection.uiVersion;
-          } else if (detection.kind === 'login_required') {
-            sessionState = sessionState === 'authenticated' ? sessionState : 'authentication_required';
-            if (!failureCodes.includes('authentication_required')) {
-              failureCodes.push('authentication_required');
+          } else if (detection.kind === 'login_required' || isWasimLoginPage(page.url())) {
+            const auth = await authenticateProbeSession(page, adapter, request.credentials);
+            if (auth === 'authenticated') {
+              sessionState = 'authenticated';
+              await page.goto(WASIM_ORDERS_URL, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+              detection = await detectWasimUi(page);
+              if (detection.kind === 'recognized') {
+                detectedUi = detection.uiVersion;
+              }
+            } else {
+              sessionState = sessionState === 'authenticated' ? sessionState : auth;
+              if (!failureCodes.includes(auth === 'authentication_failed' ? 'authentication_failed' : 'authentication_required')) {
+                failureCodes.push(auth === 'authentication_failed' ? 'authentication_failed' : 'authentication_required');
+              }
             }
           } else {
             failureCodes.push(detection.failureCode);
@@ -214,6 +268,10 @@ export async function runWasimHealthProbe(request: WasimProbeRequest): Promise<W
 
               if (!ordersContract.ok && ordersContract.failureCode) {
                 failureCodes.push(ordersContract.failureCode);
+                console.log(JSON.stringify({
+                  event: 'orders_contract_checks',
+                  checks: ordersContract.checks,
+                }));
               }
             }
           } else if (mode !== 'session') {

@@ -42,13 +42,55 @@ export const FIXTURE_ORDERS_V1 = `
   <input id="startDate" />
   <button id="btn-Transaction">Reload</button>
   <table id="responsiveDataTable2"><tbody></tbody></table>
-  <input aria-controls="responsiveDataTable2" />
+  <input aria-controls="responsiveDataTable2" type="search" />
+</body></html>`;
+
+/**
+ * Sanitized live-current orders landing (New tab): main table is #responsiveDataTable.
+ * Historical #responsiveDataTable2 + #btn-Transaction exist in DOM but are not required visible.
+ */
+export const FIXTURE_ORDERS_LIVE_CURRENT = `
+<html><body>
+  <button id="btn-new">New</button>
+  <button id="btn-Completed">Completed</button>
+  <button id="btn-Cancelled">Cancelled</button>
+  <table id="responsiveDataTable">
+    <tbody>
+      <tr>
+        <td class="dtr-control"></td>
+        <td><span class="badge" title="New">New</span></td>
+        <td>ORDER-FIXTURE-001</td>
+      </tr>
+    </tbody>
+  </table>
+  <input aria-controls="responsiveDataTable" type="search" />
+  <div style="display:none">
+    <input id="startDate" />
+    <button id="btn-Transaction">Reload</button>
+    <table id="responsiveDataTable2"><tbody></tbody></table>
+    <input aria-controls="responsiveDataTable2" type="search" />
+  </div>
 </body></html>`;
 
 export const FIXTURE_ORDERS_PARTIAL = `
 <html><body>
   <button id="btn-new">New</button>
   <table id="responsiveDataTable2"><tbody></tbody></table>
+</body></html>`;
+
+export const FIXTURE_ORDERS_MISSING_TAB = `
+<html><body>
+  <button id="btn-new">New</button>
+  <button id="btn-Completed">Completed</button>
+  <table id="responsiveDataTable"><tbody></tbody></table>
+  <input aria-controls="responsiveDataTable" type="search" />
+</body></html>`;
+
+export const FIXTURE_ORDERS_MISSING_TABLE = `
+<html><body>
+  <button id="btn-new">New</button>
+  <button id="btn-Completed">Completed</button>
+  <button id="btn-Cancelled">Cancelled</button>
 </body></html>`;
 
 export const FIXTURE_MAINTENANCE = `

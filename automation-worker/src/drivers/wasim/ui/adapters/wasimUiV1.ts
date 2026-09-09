@@ -373,14 +373,12 @@ export const wasimUiV1Adapter: WasimUiAdapter = {
       tab_new: false,
       tab_completed: false,
       tab_cancelled: false,
-      reload: false,
     };
 
     checks.table = (await countSignature(page, 'orders_table')) > 0;
     checks.tab_new = (await countSignature(page, 'orders_tab_new')) > 0;
     checks.tab_completed = (await countSignature(page, 'orders_tab_completed')) > 0;
     checks.tab_cancelled = (await countSignature(page, 'orders_tab_cancelled')) > 0;
-    checks.reload = (await countSignature(page, 'orders_reload')) > 0;
 
     const ok = Object.values(checks).every(Boolean);
 

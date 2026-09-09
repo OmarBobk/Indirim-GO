@@ -1,4 +1,4 @@
-import { startDateThreeYearsAgo } from './ordersPageHelpers.js';
+import { startDateThreeYearsAgo, wasimOrdersTableId } from './ordersPageHelpers.js';
 
 const date = startDateThreeYearsAgo();
 
@@ -12,6 +12,14 @@ threeYearsAgo.setUTCFullYear(threeYearsAgo.getUTCFullYear() - 3);
 
 if (Math.abs(parsed.getTime() - threeYearsAgo.getTime()) > 86_400_000) {
   throw new Error(`start date not ~3 years ago: ${date}`);
+}
+
+if (wasimOrdersTableId('new') !== 'responsiveDataTable') {
+  throw new Error('new tab must use responsiveDataTable');
+}
+
+if (wasimOrdersTableId('completed') !== 'responsiveDataTable2' || wasimOrdersTableId('cancelled') !== 'responsiveDataTable2') {
+  throw new Error('historical tabs must use responsiveDataTable2');
 }
 
 console.log('ordersPageHelpers self-check passed');

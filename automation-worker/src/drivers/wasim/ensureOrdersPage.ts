@@ -142,7 +142,8 @@ export async function openWasimOrdersPage(
   progress?.step('page_contract_valid');
   progress?.setContractMeta(resolved.adapter.uiVersion, resolved.adapter.ordersContractVersion);
 
-  await page.locator('#responsiveDataTable2, #btn-Transaction').first().waitFor({
+  // Default New tab exposes #responsiveDataTable; historical tabs expose #responsiveDataTable2.
+  await page.locator('#responsiveDataTable, #responsiveDataTable2').first().waitFor({
     state: 'visible',
     timeout: 30_000,
   }).catch(() => undefined);

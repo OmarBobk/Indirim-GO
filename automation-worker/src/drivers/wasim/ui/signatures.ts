@@ -58,9 +58,12 @@ export const WASIM_V1_SIGNATURES: SignatureDefinition[] = [
     count: (page) => countLocator(page, '#product-request-buyid, a:has-text("إتمام الشراء")'),
   },
   {
+    // Live Wasim orders page (2026-09-07): New tab uses #responsiveDataTable;
+    // Completed/Cancelled use #responsiveDataTable2. Either table identity is
+    // stable; requiring only #responsiveDataTable2 fails closed on the default New view.
     code: 'orders_table',
     requiredFor: ['orders'],
-    count: (page) => countLocator(page, '#responsiveDataTable2'),
+    count: (page) => countLocator(page, '#responsiveDataTable, #responsiveDataTable2'),
   },
   {
     code: 'orders_tab_new',
@@ -78,8 +81,10 @@ export const WASIM_V1_SIGNATURES: SignatureDefinition[] = [
     count: (page) => countLocator(page, '#btn-Cancelled'),
   },
   {
+    // Optional: historical-tab date reload. Present/visible on Completed/Cancelled,
+    // hidden (0x0) on New. Not a page-identity invariant.
     code: 'orders_reload',
-    requiredFor: ['orders'],
+    requiredFor: [],
     count: (page) => countLocator(page, '#btn-Transaction'),
   },
   {
