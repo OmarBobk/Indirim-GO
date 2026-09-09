@@ -36,4 +36,13 @@ return [
         'idempotency_header' => 'Idempotency-Key',
         'idempotency_key_max_length' => 128,
     ],
+
+    'topup' => [
+        /**
+         * Completed/failed mobile top-up attempts are retained for recovery.
+         * Rows older than this window are pruned by mobile-topup:prune-attempts.
+         */
+        'idempotency_retention_hours' => 72,
+        'processing_stale_seconds' => 60,
+    ],
 ];

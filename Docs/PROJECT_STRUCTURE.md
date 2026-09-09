@@ -684,7 +684,7 @@ From project rules (`.cursor/rules/laravel-boost.mdc`, `CLAUDE.md`):
 | Customer wallet display | `CustomerWalletDisplay`, header/mobile chip, `CustomerSystemEventPresenter` (`audience=customer`) |
 | Customer Activity | `/activity` (`GetCustomerActivity`, presenters, Echo invalidation) |
 | Topup wallet | `SubmitCustomerTopupRequest` → `CreateTopupRequestAction`, `/wallet/topup`, `TopupProofController` |
-| Mobile API | `routes/api.php`, `Actions/MobileAuth/*`, `Actions/MobileCatalog/*`, `docs/api/v1/openapi.yaml` |
+| Mobile API | `routes/api.php`, `Actions/MobileAuth/*`, `Actions/MobileCatalog/*`, `Actions/MobileWallet/*`, `docs/api/v1/openapi.yaml` 1.5.0 |
 | Fulfillment ops | `pages/backend/fulfillments`, `Actions/Fulfillments/*` |
 | **Browser automation** | `AutomationMonitor` (`/admin/automation`), `FulfillmentAutomationService`, `automation-worker/` |
 | **Wasim reconcile** | `ScheduleWasimOrderReconcile`, `DispatchWasimReconcileJob`, `reconcileOrder.ts` |

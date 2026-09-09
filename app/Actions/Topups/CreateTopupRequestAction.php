@@ -32,6 +32,10 @@ class CreateTopupRequestAction
             }
             unset($attributes['user']);
 
+            $enteredAmount = $attributes['entered_amount'] ?? null;
+            $enteredCurrency = $attributes['entered_currency'] ?? null;
+            unset($attributes['entered_amount'], $attributes['entered_currency']);
+
             if (empty($attributes['status'])) {
                 $attributes['status'] = TopupRequestStatus::Pending;
             }
@@ -59,6 +63,10 @@ class CreateTopupRequestAction
                     'payment_method' => $topupRequest->paymentMethod?->name,
                     'note' => $topupRequest->note ?? null,
                     'topup_public_ref' => $topupRequest->public_ref,
+                    'entered_amount' => is_string($enteredAmount) && $enteredAmount !== '' ? $enteredAmount : null,
+                    'entered_currency' => is_string($enteredCurrency) && $enteredCurrency !== ''
+                        ? strtoupper($enteredCurrency)
+                        : null,
                 ], fn ($v) => $v !== null && $v !== ''),
             ]);
 

@@ -1664,6 +1664,15 @@ return [
         'checkout_retry_required' => 'This checkout did not complete. Resubmit the identical request using the same Idempotency-Key.',
         'checkout_failed' => 'Checkout could not be completed.',
         'order_not_found' => 'Order not found.',
+        'topup_request_pending' => 'You already have a pending top-up request.',
+        'topup_not_found' => 'Top-up request not found.',
+        'topup_attempt_not_found' => 'No top-up attempt was found for this key.',
+        'topup_in_progress' => 'A top-up with this key is already in progress.',
+        'topup_retry_required' => 'This top-up did not complete. Resubmit the identical request using the same Idempotency-Key.',
+        'payment_method_unavailable' => 'This payment method is unavailable.',
+        'proof_not_found' => 'Payment proof was not found.',
+        'invalid_topup_amount' => 'The top-up amount is invalid.',
+        'topup_conversion_unavailable' => 'This currency cannot be converted right now. Enter the amount in USD or try again later.',
     ],
 
     // Errors
