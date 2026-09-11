@@ -1201,22 +1201,17 @@ new class extends Component
             ],
         ];
     @endphp
+    {{--
+        Stable host: deep-link + window listeners must NOT share wire:key with the buy-now shell.
+        Remounting that shell on openBuyNow used to re-run x-init, re-open the package list, and force a second Buy now click.
+    --}}
     <div
         class="relative space-y-4"
-        wire:key="buy-now-shell-{{ (string) ($buyNowProductId ?? '0') }}-{{ $buyNowAmountMode }}"
-        @if ($buyNowAmountMode === \App\Enums\ProductAmountMode::Custom->value)
-            x-data="buyNowCustomAmountEstimate({!! \Illuminate\Support\Js::from($buyNowCustomEstimateConfig)->toHtml() !!})"
-            x-on:buy-now-custom-amount-repriced.window="
-                if ($event.detail.rate !== undefined) { rate = $event.detail.rate; }
-                if ($event.detail.serverError !== undefined) { serverError = $event.detail.serverError; }
-                if ($event.detail.amountInputStr !== undefined && $event.detail.amountInputStr !== null) { amountInputStr = $event.detail.amountInputStr; }
-                if ($event.detail.pricingContext !== undefined) { pricingContext = $event.detail.pricingContext; }
-            "
-        @else
-            x-data
-        @endif
+        data-test="buy-now-overlay-host"
+        x-data
         x-on:open-buy-now.window="$wire.openBuyNow($event.detail.productId, false, $event.detail.quantity === undefined ? null : $event.detail.quantity)"
         x-on:open-package-overlay.window="
+            window.__karmanPackageDeepLinkDone = true;
             $wire.openPackageOverlay($event.detail.packageId);
             if ($event.detail.packageId) {
                 const url = new URL(window.location.href);
@@ -1232,6 +1227,19 @@ new class extends Component
                 $nextTick(() => $dispatch('open-package-overlay', { packageId: packageParam }));
             }
         "
+    >
+    <div
+        class="space-y-4"
+        wire:key="buy-now-shell-{{ (string) ($buyNowProductId ?? '0') }}-{{ $buyNowAmountMode }}"
+        @if ($buyNowAmountMode === \App\Enums\ProductAmountMode::Custom->value)
+            x-data="buyNowCustomAmountEstimate({!! \Illuminate\Support\Js::from($buyNowCustomEstimateConfig)->toHtml() !!})"
+            x-on:buy-now-custom-amount-repriced.window="
+                if ($event.detail.rate !== undefined) { rate = $event.detail.rate; }
+                if ($event.detail.serverError !== undefined) { serverError = $event.detail.serverError; }
+                if ($event.detail.amountInputStr !== undefined && $event.detail.amountInputStr !== null) { amountInputStr = $event.detail.amountInputStr; }
+                if ($event.detail.pricingContext !== undefined) { pricingContext = $event.detail.pricingContext; }
+            "
+        @endif
     >
         <div class="flex items-center">
             <div class="flex items-center">
@@ -1876,5 +1884,6 @@ new class extends Component
             @endunless
             </div>{{-- end buy-now-form flex --}}
         @endif
-    </div>
+    </div>{{-- end buy-now-shell --}}
+    </div>{{-- end buy-now-overlay-host --}}
 </flux:modal>

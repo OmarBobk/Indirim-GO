@@ -430,3 +430,21 @@ it('defaults quantity when openBuyNow omits optional quantity argument', functio
         ->assertSet('buyNowQuantity', 1)
         ->assertStatus(200);
 });
+
+it('keeps package deep-link init off the remounting buy-now shell', function (): void {
+    $source = file_get_contents(resource_path('views/components/main/⚡buy-now-modal.blade.php'));
+
+    expect($source)->toContain('data-test="buy-now-overlay-host"')
+        ->and($source)->toContain('__karmanPackageDeepLinkDone')
+        ->and($source)->toContain('wire:key="buy-now-shell-');
+
+    $hostPos = strpos($source, 'data-test="buy-now-overlay-host"');
+    $deepLinkPos = strpos($source, '__karmanPackageDeepLinkDone');
+    $shellKeyPos = strpos($source, 'wire:key="buy-now-shell-');
+
+    expect($hostPos)->not->toBeFalse()
+        ->and($deepLinkPos)->not->toBeFalse()
+        ->and($shellKeyPos)->not->toBeFalse()
+        ->and($hostPos)->toBeLessThan($deepLinkPos)
+        ->and($deepLinkPos)->toBeLessThan($shellKeyPos);
+});

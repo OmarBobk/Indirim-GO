@@ -97,7 +97,8 @@
     - ###TODO: admin should be able to update user status from /admin/users "let's make it a cool toggle button appear on the Users table status column."
   - ###TODO: when a new order is created, there is a new notification fired for the admin that is something like "new fulfillment has been queued" but admin doesn't understand
     - is it automated someone need to claim it.
-  - ###TODO: the user need to go account page to see the wallet "available to spend" and this is hard not good ux ui
+  - ###TODO: Mobile: the user need to go account page to see the wallet "available to spend" and this is hard not good ux ui
+  - ###TODO: on the mobile screen on the orders page the tabs scrollbar is having a really bad looking scroll
 
 - Frontend:
   - ###DONE wallet transaction in /wallets should be more described
