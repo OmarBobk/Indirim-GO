@@ -92,6 +92,12 @@
       - Spend via `WalletSpendPolicy`; topups repay debt by arithmetic (no separate repay flow).
       - **M6.0.1 shipped:** all product posted wallet mutations (incl. purchase) use `WalletLedger`; debit floor = `Wallet::minimumAllowedBalance()`.
       - Out of scope: debt write-off / forgiveness.
+  - ###TODO: when a new user is registered, he should not be able to make any serious things like (top-up request, try to order ...etc.) until admin activates his account.
+    - ###TODO: this means when a new user is registered, the account status should be not active
+    - ###TODO: admin should be able to update user status from /admin/users "let's make it a cool toggle button appear on the Users table status column."
+  - ###TODO: when a new order is created, there is a new notification fired for the admin that is something like "new fulfillment has been queued" but admin doesn't understand
+    - is it automated someone need to claim it.
+  - ###TODO: the user need to go account page to see the wallet "available to spend" and this is hard not good ux ui
 
 - Frontend:
   - ###DONE wallet transaction in /wallets should be more described
