@@ -5,7 +5,7 @@ declare(strict_types=1);
 use Illuminate\Support\Facades\Route;
 use Symfony\Component\Yaml\Yaml;
 
-test('the authoritative OpenAPI contract documents the complete M1 M2.1 M3.1 and M4.1 surface', function () {
+test('the authoritative OpenAPI contract documents the complete M1 M2.1 M3.1 M4.1 and M5 surface', function () {
     $contractPath = base_path('docs/api/v1/openapi.yaml');
     $contract = file_get_contents($contractPath);
 
@@ -14,7 +14,7 @@ test('the authoritative OpenAPI contract documents the complete M1 M2.1 M3.1 and
         ->and($contract)
         ->toContain(
             'openapi: 3.1.0',
-            'version: 1.4.0',
+            'version: 1.5.0',
             '  /auth/login:',
             '  /auth/two-factor-challenge:',
             '  /auth/logout:',
@@ -23,6 +23,12 @@ test('the authoritative OpenAPI contract documents the complete M1 M2.1 M3.1 and
             '  /packages:',
             '  /packages/{package}:',
             '  /wallet/summary:',
+            '  /wallet/transactions:',
+            '  /wallet/payment-methods:',
+            '  /wallet/topups:',
+            '  /wallet/topups/status:',
+            '  /wallet/topups/{public_ref}:',
+            '  /wallet/topups/{public_ref}/proof:',
             '  /checkout/quote:',
             '  /checkout:',
             '  /checkout/status:',
@@ -44,6 +50,10 @@ test('the authoritative OpenAPI contract documents the complete M1 M2.1 M3.1 and
             'insufficient_wallet_balance',
             'idempotency_conflict',
             'checkout_attempt_not_found',
+            'topup_request_pending',
+            'topup_not_found',
+            'pending_until_admin_approval',
+            'entered_currency',
             'prices_visible',
             'from_price',
             'minimum_price',
@@ -61,6 +71,7 @@ test('the authoritative OpenAPI contract documents the complete M1 M2.1 M3.1 and
             '72 hours',
             'historical `order_items.name`',
             'needs_attention',
+            'admin approval remains the only credit path',
         );
 });
 
@@ -74,6 +85,13 @@ test('implemented mobile routes and middleware remain aligned with OpenAPI', fun
         'api.v1.packages.index' => ['GET', 'api/v1/packages'],
         'api.v1.packages.show' => ['GET', 'api/v1/packages/{package}'],
         'api.v1.wallet.summary' => ['GET', 'api/v1/wallet/summary'],
+        'api.v1.wallet.transactions' => ['GET', 'api/v1/wallet/transactions'],
+        'api.v1.wallet.payment-methods' => ['GET', 'api/v1/wallet/payment-methods'],
+        'api.v1.wallet.topups.status' => ['GET', 'api/v1/wallet/topups/status'],
+        'api.v1.wallet.topups.index' => ['GET', 'api/v1/wallet/topups'],
+        'api.v1.wallet.topups.show' => ['GET', 'api/v1/wallet/topups/{public_ref}'],
+        'api.v1.wallet.topups.proof' => ['GET', 'api/v1/wallet/topups/{public_ref}/proof'],
+        'api.v1.wallet.topups.store' => ['POST', 'api/v1/wallet/topups'],
         'api.v1.checkout.quote' => ['POST', 'api/v1/checkout/quote'],
         'api.v1.checkout' => ['POST', 'api/v1/checkout'],
         'api.v1.checkout.status' => ['GET', 'api/v1/checkout/status'],
@@ -95,6 +113,8 @@ test('implemented mobile routes and middleware remain aligned with OpenAPI', fun
     $purchaseReadMiddleware = Route::getRoutes()->getByName('api.v1.wallet.summary')?->gatherMiddleware() ?? [];
     $ordersIndexMiddleware = Route::getRoutes()->getByName('api.v1.orders.index')?->gatherMiddleware() ?? [];
     $purchaseWriteMiddleware = Route::getRoutes()->getByName('api.v1.checkout')?->gatherMiddleware() ?? [];
+    $topupWriteMiddleware = Route::getRoutes()->getByName('api.v1.wallet.topups.store')?->gatherMiddleware() ?? [];
+    $topupStatusMiddleware = Route::getRoutes()->getByName('api.v1.wallet.topups.status')?->gatherMiddleware() ?? [];
 
     expect($protectedMiddleware)
         ->toContain('auth:sanctum')
@@ -107,7 +127,11 @@ test('implemented mobile routes and middleware remain aligned with OpenAPI', fun
         ->and($ordersIndexMiddleware)
         ->toContain('throttle:mobile-purchase-read')
         ->and($purchaseWriteMiddleware)
-        ->toContain('throttle:mobile-purchase-write');
+        ->toContain('throttle:mobile-purchase-write')
+        ->and($topupWriteMiddleware)
+        ->toContain('throttle:mobile-purchase-write')
+        ->and($topupStatusMiddleware)
+        ->toContain('throttle:mobile-purchase-read');
 });
 
 test('OpenAPI requests responses security and user fields match the implementation', function () {
@@ -124,6 +148,12 @@ test('OpenAPI requests responses security and user fields match the implementati
         '/packages',
         '/packages/{package}',
         '/wallet/summary',
+        '/wallet/transactions',
+        '/wallet/payment-methods',
+        '/wallet/topups',
+        '/wallet/topups/status',
+        '/wallet/topups/{public_ref}',
+        '/wallet/topups/{public_ref}/proof',
         '/checkout/quote',
         '/checkout',
         '/checkout/status',
@@ -215,6 +245,12 @@ test('OpenAPI requests responses security and user fields match the implementati
         ->and($paths['/packages']['get']['security'])->toBe([['bearerAuth' => []]])
         ->and($paths['/packages/{package}']['get']['security'])->toBe([['bearerAuth' => []]])
         ->and($paths['/wallet/summary']['get']['security'])->toBe([['bearerAuth' => []]])
+        ->and($paths['/wallet/topups']['post']['security'])->toBe([['bearerAuth' => []]])
+        ->and($paths['/wallet/topups']['post']['responses'])->toHaveKeys([200, 202, 401, 403, 409, 422, 429])
+        ->and($schemas['SubmitTopupRequest']['required'])->toBe(['amount', 'currency', 'payment_method_id'])
+        ->and($schemas['SubmitTopupRequest']['properties']['currency']['enum'])->toBe(['USD', 'TRY'])
+        ->and($schemas['TopupDetail']['required'])->toContain('pending_until_admin_approval', 'entered_currency', 'wallet_amount')
+        ->and($schemas['WalletSummarySuccess']['properties']['data']['required'])->toContain('pending_topup_public_ref')
         ->and($paths['/checkout']['post']['security'])->toBe([['bearerAuth' => []]])
         ->and($paths['/orders']['get']['security'])->toBe([['bearerAuth' => []]])
         ->and($specification['components']['securitySchemes']['bearerAuth']['scheme'])->toBe('bearer')
@@ -268,6 +304,11 @@ test('OpenAPI requests responses security and user fields match the implementati
         'checkout_attempt_not_found',
         'checkout_retry_required',
         'order_not_found',
+        'topup_request_pending',
+        'topup_not_found',
+        'topup_attempt_not_found',
+        'payment_method_unavailable',
+        'invalid_topup_amount',
     )->and($paths['/auth/login']['post']['parameters'][0]['$ref'])
         ->toBe('#/components/parameters/AcceptLanguage')
         ->and($paths['/catalog/home']['get']['parameters'][0]['$ref'])
@@ -284,5 +325,6 @@ test('mobile security configuration matches the published token semantics', func
         ->and(config('mobile_api.two_factor_challenge.lifetime_minutes'))->toBe(5)
         ->and(config('mobile_api.two_factor_challenge.max_attempts'))->toBe(5)
         ->and(config('mobile_api.checkout.idempotency_retention_hours'))->toBe(72)
+        ->and(config('mobile_api.topup.idempotency_retention_hours'))->toBe(72)
         ->and(config('sanctum.expiration'))->toBeNull();
 });

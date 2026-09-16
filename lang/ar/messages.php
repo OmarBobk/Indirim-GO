@@ -1624,6 +1624,15 @@ return [
         'checkout_retry_required' => 'لم تكتمل عملية الدفع. أعد إرسال الطلب نفسه باستخدام نفس مفتاح Idempotency-Key.',
         'checkout_failed' => 'تعذّر إكمال عملية الدفع.',
         'order_not_found' => 'الطلب غير موجود.',
+        'topup_request_pending' => 'لديك طلب شحن معلّق بالفعل.',
+        'topup_not_found' => 'طلب الشحن غير موجود.',
+        'topup_attempt_not_found' => 'لم يتم العثور على محاولة شحن لهذا المفتاح.',
+        'topup_in_progress' => 'عملية شحن بهذا المفتاح قيد التنفيذ بالفعل.',
+        'topup_retry_required' => 'لم يكتمل طلب الشحن. أعد إرسال الطلب نفسه باستخدام نفس مفتاح Idempotency-Key.',
+        'payment_method_unavailable' => 'طريقة الدفع هذه غير متاحة.',
+        'proof_not_found' => 'إثبات الدفع غير موجود.',
+        'invalid_topup_amount' => 'مبلغ الشحن غير صالح.',
+        'topup_conversion_unavailable' => 'لا يمكن تحويل هذه العملة الآن. أدخل المبلغ بالدولار أو حاول لاحقًا.',
     ],
 
     // Errors

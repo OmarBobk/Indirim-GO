@@ -36,8 +36,9 @@ class SubmitCustomerTopupRequest
         int $paymentMethodId,
         bool $attachProof,
         ?UploadedFile $proofFile = null,
+        ?string $inputCurrency = null,
     ): TopupRequest {
-        return DB::transaction(function () use ($user, $enteredAmount, $paymentMethodId, $attachProof, $proofFile): TopupRequest {
+        return DB::transaction(function () use ($user, $enteredAmount, $paymentMethodId, $attachProof, $proofFile, $inputCurrency): TopupRequest {
             $wallet = Wallet::query()
                 ->where('user_id', $user->id)
                 ->lockForUpdate()
@@ -63,7 +64,12 @@ class SubmitCustomerTopupRequest
                 ]);
             }
 
-            $requestAmount = $this->normalizeAmountForWalletCurrency($enteredAmount, $user, $wallet);
+            [$requestAmount, $normalizedEntered, $enteredCurrency] = $this->normalizeAmountForWalletCurrency(
+                $enteredAmount,
+                $user,
+                $wallet,
+                $inputCurrency,
+            );
 
             $topupRequest = $this->createTopupRequest->handle([
                 'user_id' => $user->id,
@@ -72,6 +78,8 @@ class SubmitCustomerTopupRequest
                 'amount' => $requestAmount,
                 'currency' => $wallet->currency,
                 'status' => TopupRequestStatus::Pending,
+                'entered_amount' => $normalizedEntered,
+                'entered_currency' => $enteredCurrency,
             ]);
 
             if ($attachProof && $proofFile !== null) {
@@ -145,14 +153,29 @@ class SubmitCustomerTopupRequest
         ]);
     }
 
-    private function normalizeAmountForWalletCurrency(string|float|int $enteredAmount, User $user, Wallet $wallet): string
-    {
+    /**
+     * @return array{0: string, 1: string, 2: string} Wallet USD amount, entered amount, entered currency
+     */
+    private function normalizeAmountForWalletCurrency(
+        string|float|int $enteredAmount,
+        User $user,
+        Wallet $wallet,
+        ?string $inputCurrency,
+    ): array {
         $normalizedEntered = LedgerMoney::normalizePositive((string) $enteredAmount);
+        $explicit = $inputCurrency !== null && trim($inputCurrency) !== '';
+        $enteredCurrency = $explicit
+            ? strtoupper(trim($inputCurrency))
+            : strtoupper((string) ($user->preferred_currency ?: $wallet->currency));
 
-        if (
-            strtoupper((string) $user->preferred_currency) === 'TRY'
-            && strtoupper((string) $wallet->currency) === 'USD'
-        ) {
+        if (! in_array($enteredCurrency, ['USD', 'TRY'], true)) {
+            $enteredCurrency = strtoupper((string) ($wallet->currency ?: 'USD'));
+        }
+
+        $shouldConvertTry = $enteredCurrency === 'TRY'
+            && strtoupper((string) $wallet->currency) === 'USD';
+
+        if ($shouldConvertTry) {
             $rate = WebsiteSetting::getUsdTryRate();
 
             if ($rate !== null && $rate > 0) {
@@ -160,10 +183,20 @@ class SubmitCustomerTopupRequest
                 $tryCents = (int) round((float) bcmul($normalizedEntered, '100', 0));
                 $usdCents = (int) ceil($tryCents / $rate);
 
-                return LedgerMoney::normalizePositive(bcdiv((string) $usdCents, '100', 2));
+                return [
+                    LedgerMoney::normalizePositive(bcdiv((string) $usdCents, '100', 2)),
+                    $normalizedEntered,
+                    'TRY',
+                ];
+            }
+
+            if ($explicit) {
+                throw ValidationException::withMessages([
+                    'currency' => __('messages.mobile_api.topup_conversion_unavailable'),
+                ]);
             }
         }
 
-        return $normalizedEntered;
+        return [$normalizedEntered, $normalizedEntered, $enteredCurrency];
     }
 }
